@@ -275,41 +275,6 @@ const STOCK_INITIAL_COULEURS = {
   "Aigue-marine": 0,
 };
 
-const CHEPTEL_INITIAL_AUTO = (() => {
-  const counts = STOCK_INITIAL_COULEURS;
-  let index = 1;
-  const items = [];
-
-  Object.entries(counts).forEach(([couleur, count]) => {
-    for (let i = 1; i <= count; i += 1) {
-      items.push({
-        id: `auto-${index}`,
-        nom: `${couleur} #${i}`,
-        sexe: i % 2 === 0 ? "Mâle" : "Femelle",
-        couleur,
-        generation: 1, // évite l'appel avant l'initialisation de GENERATIONS_MULDO
-        statut: "Fertile",
-        sterile: false,
-        capacites: [],
-        capacite1: "Aucune",
-        capacite2: "Aucune",
-        reproductrice: false,
-        reproRestantes: 1,
-        reproductionsRestantes: 1,
-        amour: 100,
-        endurance: 100,
-        maturite: 100,
-        serenite: 50,
-        note: "Créé automatiquement depuis le screen du cheptel. Sexe à corriger si besoin.",
-      });
-      index += 1;
-    }
-  });
-
-  return items;
-})();
-
-
 const RECETTES_SPECIALES_MULDO = {
   "Roux": [
     ["Doré et Pourpre", "Doré et Indigo"],
@@ -592,6 +557,42 @@ function generationDeCouleur(couleur) {
   }
   return couleur.includes(" et ") ? 4 : 1;
 }
+
+// Doit rester après generationDeCouleur/GENERATIONS_MULDO : le calcul de la
+// génération a besoin des deux au moment de l'évaluation de ce module.
+const CHEPTEL_INITIAL_AUTO = (() => {
+  const counts = STOCK_INITIAL_COULEURS;
+  let index = 1;
+  const items = [];
+
+  Object.entries(counts).forEach(([couleur, count]) => {
+    for (let i = 1; i <= count; i += 1) {
+      items.push({
+        id: `auto-${index}`,
+        nom: `${couleur} #${i}`,
+        sexe: i % 2 === 0 ? "Mâle" : "Femelle",
+        couleur,
+        generation: generationDeCouleur(couleur),
+        statut: "Fertile",
+        sterile: false,
+        capacites: [],
+        capacite1: "Aucune",
+        capacite2: "Aucune",
+        reproductrice: false,
+        reproRestantes: 1,
+        reproductionsRestantes: 1,
+        amour: 100,
+        endurance: 100,
+        maturite: 100,
+        serenite: 50,
+        note: "Créé automatiquement depuis le screen du cheptel. Sexe à corriger si besoin.",
+      });
+      index += 1;
+    }
+  });
+
+  return items;
+})();
 
 function sexeMuldo(m) {
   const sexe = String(m?.sexe || "").toLowerCase();
@@ -3510,7 +3511,7 @@ function LabeledSelect({ label, value, options, onChange }) {
 function NewMuldoModal({ cheptel, onClose, onCreate }) {
   const [form, setForm] = useState(() => ({
     nom: genererNomCourt(COULEURS_MULDO[0]),
-    sexe: "F", couleur: COULEURS_MULDO[0], generation: 1, statut: "Fertile",
+    sexe: "F", couleur: COULEURS_MULDO[0], generation: generationDeCouleur(COULEURS_MULDO[0]), statut: "Fertile",
     capacite1: "Aucune", capacite2: "Aucune", pere: "", mere: "",
   }));
   // Tant que l'utilisateur n'a pas saisi son propre nom, on suit la couleur.
