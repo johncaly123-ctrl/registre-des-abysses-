@@ -114,3 +114,9 @@ exception when duplicate_object then null; end $$;
 
 alter table profils drop constraint if exists profils_style_ailes_check;
 alter table profils add constraint profils_style_ailes_check check (style_ailes in ('or', 'abysses', 'muldo'));
+
+-- v7 : seulement 3 styles d'ailes (dragodinde, muldo, volkorne) — or/abysses retirés
+update profils set style_ailes = 'muldo' where style_ailes in ('or', 'abysses');
+alter table profils drop constraint if exists profils_style_ailes_check;
+alter table profils add constraint profils_style_ailes_check check (style_ailes in ('dragodinde', 'muldo', 'volkorne'));
+alter table profils alter column style_ailes set default 'muldo';

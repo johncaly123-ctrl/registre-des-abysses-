@@ -1488,12 +1488,13 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_PROFIL));
       if (saved && typeof saved === "object") {
-        return { pseudo: saved.pseudo || "", soutien: !!saved.soutien, styleAiles: saved.styleAiles === "abysses" ? "abysses" : "or", niveauAiles: Math.max(1, Math.min(5, Math.ceil((Number(saved.niveauAiles) || 1) / (Number(saved.niveauAiles) > 5 ? 2 : 1)))) };
+        const styleValide = ["dragodinde", "muldo", "volkorne"].includes(saved.styleAiles) ? saved.styleAiles : "muldo";
+        return { pseudo: saved.pseudo || "", soutien: !!saved.soutien, styleAiles: styleValide, niveauAiles: Math.max(1, Math.min(5, Math.ceil((Number(saved.niveauAiles) || 1) / (Number(saved.niveauAiles) > 5 ? 2 : 1)))) };
       }
     } catch (e) {
       console.error(e);
     }
-    return { pseudo: "", soutien: false, styleAiles: "or", niveauAiles: 1 };
+    return { pseudo: "", soutien: false, styleAiles: "muldo", niveauAiles: 1 };
   });
   const setProfil = (next) => {
     setProfilState(next);
@@ -4429,8 +4430,14 @@ function ProfilModal({ compte, profilLocal, onClose }) {
   };
 
   const configManquante = !supabaseEstConfigure() || !supabase;
+  // "muldo" est conditionné au succès de génération (déjà réellement suivi
+  // dans l'appli) en plus du don ; "dragodinde"/"volkorne" ne dépendent pour
+  // l'instant que du palier de don, faute de suivi d'élevage pour ces
+  // montures — à resserrer plus tard quand ces pages existeront.
   const tierMuldo = profil ? tierAilesMuldo(profil.niveau_ailes, profil.succes_generation_muldo) : 0;
-  const niveauEffectif = profil?.style_ailes === "muldo" ? tierMuldo : profil?.niveau_ailes;
+  const tierDon = profil ? Math.max(0, Math.min(5, Number(profil.niveau_ailes) || 0)) : 0;
+  const tiersParStyle = { dragodinde: tierDon, muldo: tierMuldo, volkorne: tierDon };
+  const niveauEffectif = profil ? (tiersParStyle[profil.style_ailes] ?? tierDon) : 0;
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
@@ -4454,7 +4461,7 @@ function ProfilModal({ compte, profilLocal, onClose }) {
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={20} />
+              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={20} />
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.user.email} <span style={{ opacity: .6 }}>(privé)</span></span>
             </div>
 
@@ -4464,34 +4471,44 @@ function ProfilModal({ compte, profilLocal, onClose }) {
               <button className="btn btn-coral" style={{ marginTop: 8 }} onClick={() => patcher({ description: description.trim().slice(0, 300) }, "Description enregistrée.")}>Enregistrer</button>
             </div>
 
-            {profil.niveau_ailes > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Style d'ailes ({nomNiveauAiles(profil.style_ailes, niveauEffectif)})</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button className="btn btn-ghost" style={profil.style_ailes !== "abysses" && profil.style_ailes !== "muldo" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined} onClick={() => patcher({ style_ailes: "or" }, "Ailes dorées équipées.")}>
-                    <AileNiveau style="or" taille={18} niveau={profil.niveau_ailes} /> Dorées
-                  </button>
-                  <button className="btn btn-ghost" style={profil.style_ailes === "abysses" ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined} onClick={() => patcher({ style_ailes: "abysses" }, "Ailes abyssales équipées.")}>
-                    <AileNiveau style="abysses" taille={18} niveau={profil.niveau_ailes} /> Abyssales
-                  </button>
-                  <button
-                    className="btn btn-ghost"
-                    disabled={tierMuldo < 1}
-                    style={profil.style_ailes === "muldo" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : tierMuldo < 1 ? { opacity: .5 } : undefined}
-                    title={tierMuldo < 1 ? `Débloqué à partir de la génération ${2} validée (page Succès) et d'un don palier 1 — actuellement génération ${profil.succes_generation_muldo || 0} validée` : undefined}
-                    onClick={() => tierMuldo >= 1 && patcher({ style_ailes: "muldo" }, "Ailes muldo équipées.")}
-                  >
-                    <AileNiveau style="muldo" taille={18} niveau={Math.max(1, tierMuldo)} /> Muldo{tierMuldo < 1 ? " 🔒" : ""}
-                  </button>
-                </div>
-                {tierMuldo < 1 && (
-                  <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
-                    Ailes muldo : débloquées par palier de don ET par succès de génération (palier × 2). Génération actuellement
-                    validée : <b>{profil.succes_generation_muldo || 0}</b> — valide plus de générations dans la page Succès pour progresser.
-                  </div>
-                )}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+                Style d'ailes{niveauEffectif > 0 ? ` (${nomNiveauAiles(profil.style_ailes, niveauEffectif)})` : ""}
               </div>
-            )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[
+                  { style: "dragodinde", label: "Dragodinde" },
+                  { style: "muldo", label: "Muldo" },
+                  { style: "volkorne", label: "Volkorne" },
+                ].map(({ style, label }) => {
+                  const tier = tiersParStyle[style];
+                  const verrouille = tier < 1;
+                  const actif = profil.style_ailes === style;
+                  return (
+                    <button
+                      key={style}
+                      className="btn btn-ghost"
+                      disabled={verrouille}
+                      style={actif ? { borderColor: "var(--gold)", color: "var(--gold2)" } : verrouille ? { opacity: .5 } : undefined}
+                      title={verrouille ? (
+                        style === "muldo"
+                          ? `Débloqué à partir de la génération 2 validée (page Succès) et d'un don palier 1 — actuellement génération ${profil.succes_generation_muldo || 0} validée`
+                          : "Débloqué à partir du palier de don 1"
+                      ) : undefined}
+                      onClick={() => !verrouille && patcher({ style_ailes: style }, `Ailes ${label} équipées.`)}
+                    >
+                      <AileNiveau style={style} taille={18} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+              {tierMuldo < 1 && (
+                <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
+                  Ailes muldo : débloquées par palier de don ET par succès de génération (palier × 2). Génération actuellement
+                  validée : <b>{profil.succes_generation_muldo || 0}</b> — valide plus de générations dans la page Succès pour progresser.
+                </div>
+              )}
+            </div>
 
             <div style={{ marginTop: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input className="field" type="password" placeholder="Nouveau mot de passe" value={nouveauMdp} onChange={(e) => setNouveauMdp(e.target.value)} style={{ width: 200 }} />
@@ -4504,14 +4521,18 @@ function ProfilModal({ compte, profilLocal, onClose }) {
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
               <b>🪽 Soutien &amp; ailes</b>
               <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-                {profil.niveau_ailes > 0
-                  ? <>Palier actuel : <b style={{ color: "var(--gold2)" }}>{nomNiveauAiles(profil.style_ailes, profil.niveau_ailes)}</b>. Merci ! 💛</>
+                {niveauEffectif > 0
+                  ? <>Palier actuel : <b style={{ color: "var(--gold2)" }}>{nomNiveauAiles(profil.style_ailes, niveauEffectif)}</b>. Merci ! 💛</>
                   : <>Le Registre est gratuit — les soutiens gagnent leurs ailes, visibles dans toute la Taverne.</>}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginTop: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 10 }}>
                 {[1,2,3,4,5].map((n) => (
                   <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === profil.niveau_ailes ? "var(--gold)" : "var(--line)"}`, background: n === profil.niveau_ailes ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
-                    <div style={{ display: "flex", justifyContent: "center", gap: 3 }}><AileNiveau style="or" miroir taille={18} niveau={n} /><AileNiveau style="abysses" taille={18} niveau={n} /></div>
+                    <div style={{ display: "flex", justifyContent: "center", gap: 3 }}>
+                      <AileNiveau style="dragodinde" miroir taille={16} niveau={n} />
+                      <AileNiveau style="muldo" taille={16} niveau={n} />
+                      <AileNiveau style="volkorne" taille={16} niveau={n} />
+                    </div>
                     <div style={{ fontWeight: 800, color: "var(--gold2)", marginTop: 4, fontSize: 13 }}>{montantPourNiveau(n)} €</div>
                   </div>
                 ))}
@@ -5084,25 +5105,32 @@ function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo }) {
 }
 
 // ---------- Cosmétiques de soutien ----------
-// Deux styles d'ailes au choix pour les soutiens du projet : "or" (plumes de
-// taverne dorées) et "abysses" (voiles marines cyan, clin d'œil à Sufokia).
+// Trois styles d'ailes au choix pour les soutiens du projet, chacun sur le
+// thème d'une monture Dofus : "dragodinde" (plumes dorées), "muldo" (voiles
+// bleu-turquoise, débloquées par succès de génération en plus du don — voir
+// tierAilesMuldo) et "volkorne" (griffes/flammes sombres).
 const NOMS_NIVEAUX_AILES = {
-  or: ["Éclat Naissant", "Lueur Ascendante", "Rayonnement Divin", "Auréole Éternelle", "Apogée Céleste"],
-  abysses: ["Murmure des Ombres", "Éveil des Abysses", "Corruption Élégante", "Emprise des Ténèbres", "Seigneur Abyssal"],
-  // Ailes "muldo" : débloquées par succès de génération (voir tierAilesMuldo)
-  // en plus du palier de don — noms provisoires, libres à ajuster.
+  dragodinde: ["Envol Naissant", "Plume Dorée", "Grâce Ailée", "Splendeur Céleste", "Majesté Solaire"],
   muldo: ["Sang Neuf", "Robe Affirmée", "Instinct du Troupeau", "Sagesse du Cheptel", "Légende Vivante"],
+  volkorne: ["Braise Naissante", "Griffe Ardente", "Fureur Cornue", "Rugissement Infernal", "Apocalypse Vivante"],
+};
+
+// Teinte de la lueur (drop-shadow) autour des images PNG, par style.
+const HALO_AILES = {
+  dragodinde: "rgba(240,207,114,",
+  muldo: "rgba(101,199,193,",
+  volkorne: "rgba(232,120,50,",
 };
 
 function nomNiveauAiles(style, niveau) {
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
-  return (NOMS_NIVEAUX_AILES[style] || NOMS_NIVEAUX_AILES.or)[n - 1] || "";
+  return (NOMS_NIVEAUX_AILES[style] || NOMS_NIVEAUX_AILES.muldo)[n - 1] || "";
 }
 
-// Une image personnalisée (public/ailes/or-3.png, abysses-5.png…) remplace le
-// SVG si elle existe — idéal pour tes visuels haute définition aux grandes
-// tailles ; sinon, l'aile vectorielle graduée prend le relais.
-function AileNiveau({ style = "or", miroir = false, taille = 22, niveau = 1 }) {
+// Une image personnalisée (public/ailes/dragodinde-3.png, volkorne-5.png…)
+// remplace le SVG si elle existe ; sinon l'aile vectorielle graduée prend le
+// relais.
+function AileNiveau({ style = "muldo", miroir = false, taille = 22, niveau = 1 }) {
   const [imageKo, setImageKo] = useState(false);
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
   if (!imageKo) {
@@ -5117,7 +5145,7 @@ function AileNiveau({ style = "or", miroir = false, taille = 22, niveau = 1 }) {
           height: Math.round(taille * (1 + (n - 1) * 0.14)),
           width: "auto",
           verticalAlign: "middle",
-          filter: `drop-shadow(0 0 ${3 + n}px ${style === "abysses" ? "rgba(101,199,193,.4)" : "rgba(240,207,114,.4)"})`,
+          filter: `drop-shadow(0 0 ${3 + n}px ${(HALO_AILES[style] || HALO_AILES.muldo)}.4))`,
         }}
       />
     );
@@ -5132,20 +5160,20 @@ function ailesImagesDisponibles() {
     AILES_IMAGES_DISPO = false;
     const test = new Image();
     test.onload = () => { AILES_IMAGES_DISPO = true; };
-    test.src = "ailes/or-1.png";
+    test.src = "ailes/muldo-1.png";
   }
   return AILES_IMAGES_DISPO;
 }
 
 // Une aile isolée pour encadrer un pseudo. Si un fichier dédié existe
-// (or-5-gauche.png / -droite.png) il est utilisé tel quel ; sinon on recadre à
-// la volée une moitié de la paire complète ; sinon repli SVG.
-function DemiAile({ style = "or", cote = "gauche", taille = 20, niveau = 1 }) {
+// (muldo-5-gauche.png / -droite.png) il est utilisé tel quel ; sinon on
+// recadre à la volée une moitié de la paire complète ; sinon repli SVG.
+function DemiAile({ style = "muldo", cote = "gauche", taille = 20, niveau = 1 }) {
   const [etat, setEtat] = useState("dedie"); // dedie -> moitie -> svg
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
   const base = `ailes/${style}-${n}`;
   const h = Math.round(taille * (1 + (n - 1) * 0.16));
-  const ombre = `drop-shadow(0 0 ${2 + n}px ${style === "abysses" ? "rgba(101,199,193,.4)" : "rgba(240,207,114,.4)"})`;
+  const ombre = `drop-shadow(0 0 ${2 + n}px ${(HALO_AILES[style] || HALO_AILES.muldo)}.4))`;
 
   if (etat === "dedie") {
     return (
@@ -5177,7 +5205,7 @@ function DemiAile({ style = "or", cote = "gauche", taille = 20, niveau = 1 }) {
   return <AileSvg style={style} miroir={cote === "gauche"} taille={taille} niveau={n} />;
 }
 
-function AileSvg({ style = "or", miroir = false, taille = 22, niveau = 1 }) {
+function AileSvg({ style = "muldo", miroir = false, taille = 22, niveau = 1 }) {
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
   const abysses = style === "abysses";
   const teinte = abysses ? "#3fb8b1" : "var(--gold2)";
@@ -5235,17 +5263,22 @@ function AileSvg({ style = "or", miroir = false, taille = 22, niveau = 1 }) {
   );
 }
 
-function PseudoAvecAiles({ pseudo, soutien, styleAiles = "or", taille = 20, niveau = 1 }) {
+const ORNEMENT_AILES = { dragodinde: "✦", muldo: "❖", volkorne: "🔥" };
+const DEGRADE_AILES = {
+  dragodinde: "linear-gradient(92deg, #fff3d0 10%, var(--gold2) 55%, var(--gold) 95%)",
+  muldo: "linear-gradient(92deg, #bfeeea 10%, var(--cyan) 55%, #2e7f7a 95%)",
+  volkorne: "linear-gradient(92deg, #ffcf9e 10%, #e87832 55%, #7a2e10 95%)",
+};
+
+function PseudoAvecAiles({ pseudo, soutien, styleAiles = "muldo", taille = 20, niveau = 1 }) {
   if (!pseudo) return null;
   if (!soutien) {
     return <span style={{ fontWeight: 700, fontSize: 14 }}>{pseudo}</span>;
   }
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
-  const base = styleAiles === "abysses" ? "❖" : "✦";
+  const base = ORNEMENT_AILES[styleAiles] || ORNEMENT_AILES.muldo;
   const ornement = n >= 5 ? `✧${base}✧` : n >= 3 ? `${base}${base}` : base;
-  const degrade = styleAiles === "abysses"
-    ? "linear-gradient(92deg, #bfeeea 10%, var(--cyan) 55%, #2e7f7a 95%)"
-    : "linear-gradient(92deg, #fff3d0 10%, var(--gold2) 55%, var(--gold) 95%)";
+  const degrade = DEGRADE_AILES[styleAiles] || DEGRADE_AILES.muldo;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }} title={`Soutien du Registre — ${nomNiveauAiles(styleAiles, n)} (niveau ${n})`}>
       <DemiAile style={styleAiles} cote="gauche" taille={taille} niveau={n} />
@@ -5284,8 +5317,8 @@ function SoutienPanel({ profil, setProfil }) {
       </div>
       <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
         Le Registre restera utilisable gratuitement. Les soutiens gagnent leurs ailes selon leur don, en
-        cinq paliers de 5 à 20 € — de l'Éclat Naissant à l'Apogée Céleste, du Murmure des Ombres au
-        Seigneur Abyssal.
+        cinq paliers de 5 à 20 € — trois styles au choix : Dragodinde, Muldo (débloqué aussi par succès de
+        génération) et Volkorne.
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginTop: 12 }}>
         <div>
@@ -5302,31 +5335,22 @@ function SoutienPanel({ profil, setProfil }) {
         <div>
           <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Style d'ailes</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={profil.styleAiles !== "abysses" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
-              onClick={() => set({ styleAiles: "or" })}
-            >
-              <AileSvg style="or" taille={18} /> Ailes d'Or
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={profil.styleAiles === "abysses" ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined}
-              onClick={() => set({ styleAiles: "abysses" })}
-            >
-              <AileSvg style="abysses" taille={18} /> Ailes des Abysses
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={profil.styleAiles === "muldo" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
-              onClick={() => set({ styleAiles: "muldo" })}
-              title="Aperçu local — en vrai, débloquées par palier de don ET succès de génération"
-            >
-              <AileSvg style="muldo" taille={18} /> Ailes Muldo
-            </button>
+            {[
+              { style: "dragodinde", label: "Dragodinde" },
+              { style: "muldo", label: "Muldo" },
+              { style: "volkorne", label: "Volkorne" },
+            ].map(({ style, label }) => (
+              <button
+                key={style}
+                type="button"
+                className="btn btn-ghost"
+                style={profil.styleAiles === style ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+                onClick={() => set({ styleAiles: style })}
+                title={style === "muldo" ? "Aperçu local — en vrai, débloquées par palier de don ET succès de génération" : undefined}
+              >
+                <AileSvg style={style} taille={18} /> {label}
+              </button>
+            ))}
           </div>
         </div>
         <div>
@@ -5339,7 +5363,7 @@ function SoutienPanel({ profil, setProfil }) {
             max={5}
             value={niveau}
             onChange={(e) => set({ niveauAiles: Number(e.target.value) })}
-            style={{ width: 180, accentColor: profil.styleAiles === "abysses" ? "#65c7c1" : "#d6a64a" }}
+            style={{ width: 180, accentColor: "#d6a64a" }}
           />
         </div>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 12, paddingBottom: 9 }} title="Interrupteur local d'aperçu — à remplacer par la validation du paiement (Stripe) en version en ligne">
@@ -5353,21 +5377,20 @@ function SoutienPanel({ profil, setProfil }) {
       </div>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14, padding: "10px 12px", border: "1px dashed var(--line)", borderRadius: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="or" taille={44} niveau={niveau} />
-          <span style={{ color: "var(--gold2)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("or", niveau)}</span>
+          <AileNiveau style="dragodinde" taille={44} niveau={niveau} />
+          <span style={{ color: "var(--gold2)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("dragodinde", niveau)}</span>
         </div>
         <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="abysses" taille={44} niveau={niveau} />
-          <span style={{ color: "var(--cyan)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("abysses", niveau)}</span>
+          <AileNiveau style="muldo" taille={44} niveau={niveau} />
+          <span style={{ color: "var(--cyan)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("muldo", niveau)}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="muldo" taille={44} niveau={niveau} />
-          <span style={{ color: "var(--gold2)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("muldo", niveau)}</span>
+          <AileNiveau style="volkorne" taille={44} niveau={niveau} />
+          <span style={{ color: "#e87832", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("volkorne", niveau)}</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11, alignSelf: "center" }}>
-          Palier 2 : plumes/veines · 3 : stratification/ossature · 4 : auréole/pointes + scintillement · 5 : apothéose.
-          Dépose tes visuels dans public/ailes/ (or-1.png … abysses-5.png) pour remplacer les dessins.
+          Dépose tes visuels dans public/ailes/ (dragodinde-1.png … volkorne-5.png) pour remplacer les dessins.
         </span>
       </div>
     </div>

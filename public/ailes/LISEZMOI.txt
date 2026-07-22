@@ -1,6 +1,6 @@
-Dépose ici tes visuels d'ailes (une aile DROITE par fichier, fond transparent) :
-  or-1.png … or-5.png        (Éclat Naissant → Apogée Céleste)
-  abysses-1.png … abysses-5.png  (Murmure des Ombres → Seigneur Abyssal)
-L'application les affichera à la place des ailes vectorielles (l'aile gauche
-est générée en miroir automatiquement). Sans fichier, le dessin SVG gradué
-prend le relais.
+Visuels des ailes de soutien — une PAIRE complète (aile gauche + aile droite
+ensemble) par fichier, fond transparent, affichée telle quelle sans miroir :
+  dragodinde-1.png … dragodinde-5.png  (Envol Naissant → Majesté Solaire)
+  muldo-1.png … muldo-5.png            (Sang Neuf → Légende Vivante)
+  volkorne-1.png … volkorne-5.png      (Braise Naissante → Apocalypse Vivante)
+Sans fichier, le dessin SVG gradué prend le relais.
