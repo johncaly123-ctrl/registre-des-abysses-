@@ -4106,13 +4106,12 @@ function RechercheMuldoDeroulante({ muldos, valeurId, onChoisir, placeholder, ex
   const etiquette = (m) => `${m.nom || m.id?.slice(0, 6)} — ${m.couleur} ${sexeMuldo(m) === "F" ? "♀" : sexeMuldo(m) === "M" ? "♂" : "?"} · G${generationDeCouleur(m.couleur)} · ${muldoReproductible(m) ? "fertile" : "stérile"}`;
   const choisi = (muldos || []).find((m) => m.id === valeurId) || null;
   const prefixe = plierCouleur(recherche.trim());
+  // L'ordre est décidé par l'appelant (ex. priorité même couleur/même sexe
+  // pour le clonage) : on filtre seulement par préfixe, sans re-trier.
   const suggestions = (!ferme && prefixe)
     ? (muldos || [])
         .filter((m) => m.id !== exclureId
           && (plierCouleur(m.nom || "").startsWith(prefixe) || plierCouleur(m.couleur || "").startsWith(prefixe)))
-        // Stériles d'abord : ce sont les candidats naturels au clonage.
-        .sort((x, y) => Number(muldoReproductible(x)) - Number(muldoReproductible(y))
-          || (x.couleur || "").localeCompare(y.couleur || "", "fr"))
         .slice(0, 60)
     : [];
 
@@ -4742,22 +4741,59 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
   const memeGeneration = A && B && genA === genB;
   const pret = A && B && A.id !== B.id && memeGeneration;
 
+  // Seuls les stériles sont clonables : on ne les propose jamais mélangés aux fertiles.
+  const candidatsSteriles = useMemo(
+    () => (muldos || []).filter((m) => !muldoReproductible(m)),
+    [muldos]
+  );
+
+  // Une fois l'un des deux muldos choisi, l'autre sélecteur se limite à sa
+  // génération et priorise : même couleur + même sexe > même couleur + sexe
+  // différent > le reste (couleur différente, le sexe n'a alors pas d'importance).
+  const candidatsPour = (autre) => {
+    if (!autre) {
+      return [...candidatsSteriles].sort((x, y) =>
+        (x.couleur || "").localeCompare(y.couleur || "", "fr") || (x.nom || "").localeCompare(y.nom || "", "fr")
+      );
+    }
+    const genRef = generationDeCouleur(autre.couleur);
+    const sexeAutre = sexeMuldo(autre);
+    const priorite = (m) => {
+      if (m.couleur === autre.couleur && sexeMuldo(m) === sexeAutre) return 0;
+      if (m.couleur === autre.couleur) return 1;
+      return 2;
+    };
+    return candidatsSteriles
+      .filter((m) => generationDeCouleur(m.couleur) === genRef)
+      .sort((x, y) => priorite(x) - priorite(y)
+        || (x.couleur || "").localeCompare(y.couleur || "", "fr")
+        || (x.nom || "").localeCompare(y.nom || "", "fr"));
+  };
+  const candidatsA = useMemo(() => candidatsPour(B), [candidatsSteriles, B]);
+  const candidatsB = useMemo(() => candidatsPour(A), [candidatsSteriles, A]);
+
+  // Deux parents de même sexe donnent obligatoirement un bébé du même sexe.
+  const sexeA = A ? sexeMuldo(A) : null;
+  const sexeB = B ? sexeMuldo(B) : null;
+  const sexeImpose = (sexeA && sexeA === sexeB) ? sexeA : null;
+  const sexeChoisi = sexeImpose || choix.sexe;
+
   return (
     <div>
       <div className="panel-card">
         <h2 style={{ marginTop: 0 }}>Clonage des stériles</h2>
         <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
-          Deux montures de <b>même génération</b> sont détruites pour créer une nouvelle monture
-          <b> Fertile</b>, d'une des deux couleurs (tirage du jeu). La généalogie est conservée, mais
-          les capacités sont perdues et les jauges remises à zéro.{" "}
-          {(muldos || []).filter((m) => !muldoReproductible(m)).length} stérile(s) ·{" "}
-          {(muldos || []).filter((m) => muldoReproductible(m)).length} fertile(s) — la recherche couvre
-          tout le cheptel (les stériles arrivent en tête), les stériles apparaîtront au fil des
-          reproductions consommées.
+          Deux montures stériles de <b>même génération</b> sont détruites pour créer une nouvelle
+          monture <b>Fertile</b>, d'une des deux couleurs (tirage du jeu). La généalogie est
+          conservée, mais les capacités sont perdues et les jauges remises à zéro.{" "}
+          {candidatsSteriles.length} stérile(s) disponible(s) pour le clonage — les fertiles
+          n'apparaissent pas ici, ils arriveront au fil des reproductions consommées. Une fois le
+          premier muldo choisi, le second se limite à sa génération, en priorité même couleur/même
+          sexe, puis même couleur, puis le reste.
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
           <RechercheMuldoDeroulante
-            muldos={muldos}
+            muldos={candidatsA}
             valeurId={fusionA}
             exclureId={fusionB}
             onChoisir={setFusionA}
@@ -4765,7 +4801,7 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
           />
           <span style={{ color: "var(--gold2)", fontSize: 20, alignSelf: "center" }}>+</span>
           <RechercheMuldoDeroulante
-            muldos={muldos}
+            muldos={candidatsB}
             valeurId={fusionB}
             exclureId={fusionA}
             onChoisir={setFusionB}
@@ -4816,45 +4852,47 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
               <span style={{ color: "var(--muted)", fontSize: 12 }}>Sexe obtenu :</span>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={choix.sexe === "M" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
-                onClick={() => setChoix((prev) => ({ ...prev, sexe: "M" }))}
-              >
-                ♂ Mâle
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={choix.sexe === "F" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
-                onClick={() => setChoix((prev) => ({ ...prev, sexe: "F" }))}
-              >
-                ♀ Femelle
-              </button>
+              {sexeImpose ? (
+                <span className="pill" style={{ padding: "6px 12px", fontSize: 14, border: "1px solid var(--gold)", color: "var(--gold)" }}>
+                  {sexeImpose === "M" ? "♂ Mâle" : "♀ Femelle"} — imposé (les deux parents sont {sexeImpose === "M" ? "mâles" : "femelles"})
+                </span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={choix.sexe === "M" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+                    onClick={() => setChoix((prev) => ({ ...prev, sexe: "M" }))}
+                  >
+                    ♂ Mâle
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={choix.sexe === "F" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+                    onClick={() => setChoix((prev) => ({ ...prev, sexe: "F" }))}
+                  >
+                    ♀ Femelle
+                  </button>
+                </>
+              )}
             </div>
             <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
-              Sexe aléatoire · capacités perdues · jauges à zéro · généalogie des deux parents conservée.
+              {sexeImpose ? "Sexe imposé par les parents" : "Sexe aléatoire"} · capacités perdues · jauges à
+              zéro · généalogie des deux parents conservée.
             </div>
-            {(muldoReproductible(A) || muldoReproductible(B)) && (
-              <div style={{ color: "#e8896a", fontSize: 13, marginTop: 8 }}>
-                ⚠ {[A, B].filter((m) => muldoReproductible(m)).map((m) => m.nom || m.couleur).join(" et ")}{" "}
-                {muldoReproductible(A) && muldoReproductible(B) ? "sont encore fertiles" : "est encore fertile"} :
-                le clonage détruira une reproduction non utilisée. En principe on clone des stériles.
-              </div>
-            )}
             <button
               className="btn btn-coral"
-              style={{ marginTop: 12, opacity: (A.couleur === B.couleur || choix.couleur) && choix.sexe ? 1 : 0.5 }}
-              disabled={!((A.couleur === B.couleur || choix.couleur) && choix.sexe)}
+              style={{ marginTop: 12, opacity: (A.couleur === B.couleur || choix.couleur) && sexeChoisi ? 1 : 0.5 }}
+              disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi)}
               onClick={() => {
-                onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, choix.sexe);
+                onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi);
                 setChoix({ couleur: null, sexe: null });
               }}
             >
               Cloner — enregistrer ce résultat
             </button>
-            {!((A.couleur === B.couleur || choix.couleur) && choix.sexe) && (
+            {!((A.couleur === B.couleur || choix.couleur) && sexeChoisi) && (
               <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
                 Fais le clonage en jeu, puis sélectionne la couleur et le sexe réellement obtenus.
               </div>
