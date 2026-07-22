@@ -97,3 +97,6 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   alter publication supabase_realtime add table sujets;
 exception when duplicate_object then null; end $$;
+
+-- v5 : changement de test (accès SQL direct via l'API de gestion Supabase)
+comment on table profils is 'Profils publics des éleveurs — pseudo, ailes de soutien, description.';
