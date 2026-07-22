@@ -1,0 +1,8 @@
+/* Reset minimal — toute la mise en page vit dans App.jsx.
+   Surtout ne pas remettre le gabarit Vite par défaut (max-width sur #root,
+   body en flex) : il crée des bandes noires et casse le sticky. */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  background: #0c0a08;
+}

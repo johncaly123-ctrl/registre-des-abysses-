@@ -1,0 +1,6 @@
+Dépose ici tes propres images de muldos (captures personnelles), nommées en
+minuscules sans accents avec des tirets :
+  dore.png, ebene.png, dore-et-amande.png, aigue-marine.png, ...
+L'application les affichera automatiquement à la place des badges générés.
+N'utilise pas d'images extraites du jeu si tu publies le site : ce sont des
+visuels propriété d'Ankama.

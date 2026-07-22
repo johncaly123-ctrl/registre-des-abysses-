@@ -1,0 +1,6 @@
+Dépose ici tes visuels d'ailes (une aile DROITE par fichier, fond transparent) :
+  or-1.png … or-5.png        (Éclat Naissant → Apogée Céleste)
+  abysses-1.png … abysses-5.png  (Murmure des Ombres → Seigneur Abyssal)
+L'application les affichera à la place des ailes vectorielles (l'aile gauche
+est générée en miroir automatiquement). Sans fichier, le dessin SVG gradué
+prend le relais.
