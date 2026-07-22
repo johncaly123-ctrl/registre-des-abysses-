@@ -1600,6 +1600,7 @@ export default function App() {
   };
 
   const selected = selectedId ? byId[selectedId] : null;
+  const voirMuldo = (id) => { setSelectedId(id); setPage("cheptel"); };
 
   const analyseCible = useMemo(() => analyseRecettesPourCible(couleurCible, cheptel), [couleurCible, cheptel]);
   const actionsSelection = useMemo(() => selected ? actionsAvecCouleur(selected.couleur, cheptel) : [], [selected, cheptel]);
@@ -2681,6 +2682,7 @@ const persist = useCallback(async (next) => {
                 actionsDuJour={actionsDuJour}
                 suggestions={suggestions}
                 registerBirth={registerBirth}
+                onVoirMuldo={voirMuldo}
               />
               <GraphiquesPanel cheptel={cheptel} journal={journal} instantanes={instantanes} />
               <EstimationKamasPanel cheptel={cheptel} />
@@ -2738,7 +2740,7 @@ const persist = useCallback(async (next) => {
               cheptel={cheptel}
               updateCheptel={updateCheptel}
               showToast={showToast}
-              onVoirMuldo={(id) => { setSelectedId(id); setPage("cheptel"); }}
+              onVoirMuldo={voirMuldo}
               onSupprimerMuldo={(m) => {
                 if (window.confirm(`Supprimer définitivement ${m.nom || m.couleur} ? (généalogie : ce muldo a des parents ou descendants connus)`)) {
                   deleteMuldo(m.id);
@@ -2801,6 +2803,7 @@ const persist = useCallback(async (next) => {
               cheptel={cheptel}
               objectif={objectifGpsActif}
               journal={journal}
+              onVoirMuldo={voirMuldo}
               fusion={{
                 muldos: cheptel,
                 fusionA,
@@ -3685,7 +3688,25 @@ function StatCard({ value, label, emoji }) {
   );
 }
 
-function DashboardDofusPanel({ cheptel, plan, historiqueCouleurs, actionsDuJour, suggestions, registerBirth }) {
+// Petit bouton pour ouvrir la fiche d'un muldo (page Cheptel) depuis une
+// suggestion (accouplement, clonage) — pratique pour le supprimer ou le
+// repasser stérile en cas d'erreur de saisie, sans devoir le rechercher.
+function BoutonFiche({ id, onVoir, label }) {
+  if (!onVoir || !id) return null;
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost"
+      title={`Ouvrir la fiche${label ? " de " + label : ""}`}
+      style={{ padding: "2px 7px", fontSize: 11, lineHeight: 1.4 }}
+      onClick={() => onVoir(id)}
+    >
+      🔍 Fiche
+    </button>
+  );
+}
+
+function DashboardDofusPanel({ cheptel, plan, historiqueCouleurs, actionsDuJour, suggestions, registerBirth, onVoirMuldo }) {
   const fertiles = cheptel.filter((m) => muldoReproductible(m)).length;
   const prets = actionsDuJour.pret.length;
   const dec = Object.values(historiqueCouleurs || {}).filter(Boolean).length;
@@ -3730,7 +3751,15 @@ function DashboardDofusPanel({ cheptel, plan, historiqueCouleurs, actionsDuJour,
           const cl = collisionLabel(s.coll);
           return (
             <div key={i} style={{ padding: 12, borderRadius: 14, border: "1px solid var(--line)", background: "rgba(0,0,0,.12)", marginBottom: 10 }}>
-              <b>♀ {s.f.nom}</b> <span style={{ color: "var(--gold2)" }}>×</span> <b>♂ {s.m.nom}</b>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <b>♀ {s.f.nom}</b>
+                <BoutonFiche id={s.f.id} onVoir={onVoirMuldo} label={s.f.nom} />
+              </span>
+              <span style={{ color: "var(--gold2)", margin: "0 6px" }}>×</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <b>♂ {s.m.nom}</b>
+                <BoutonFiche id={s.m.id} onVoir={onVoirMuldo} label={s.m.nom} />
+              </span>
               <div style={{ color: cl.color, fontSize: 12, marginTop: 4 }}>{cl.label}</div>
               <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => registerBirth(s.f.id, s.m.id)}>
                 <Baby size={13} /> Marquer accouplés → naissance
@@ -4669,8 +4698,10 @@ function TavernePage({ compte, onOuvrirProfil }) {
 // Suggestions de clonage : classe les duos de stériles (même génération)
 // selon l'utilité des couleurs qu'ils peuvent redonner — proche de l'objectif
 // GPS courant, et bonus fort si plus aucun fertile de cette couleur n'existe.
-function suggererClonages(cheptel, objectif) {
-  const candidats = (cheptel || []).filter((m) => !muldoReproductible(m));
+function suggererClonages(cheptel, objectif, generationFiltre) {
+  const candidats = (cheptel || [])
+    .filter((m) => !muldoReproductible(m))
+    .filter((m) => !generationFiltre || generationDeCouleur(m.couleur) === generationFiltre);
   if (candidats.length < 2) return [];
   const { distances } = distancesEtParentsVersObjectif(objectif);
   const fertilesParCouleur = new Map();
@@ -4730,8 +4761,7 @@ function suggererClonages(cheptel, objectif) {
   return retenues;
 }
 
-function ClonagePage({ fusion, cheptel, objectif, journal }) {
-  const suggestionsClonage = suggererClonages(cheptel, objectif);
+function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo }) {
   const { muldos, fusionA, fusionB, setFusionA, setFusionB, onFusion } = fusion;
   const [choix, setChoix] = useState({ couleur: null, sexe: null });
   const A = (muldos || []).find((m) => m.id === fusionA) || null;
@@ -4746,6 +4776,14 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
     () => (muldos || []).filter((m) => !muldoReproductible(m)),
     [muldos]
   );
+
+  // Filtre de génération pour les suggestions (facultatif) : "toutes" ou un numéro précis.
+  const generationsDisponibles = useMemo(
+    () => [...new Set(candidatsSteriles.map((m) => generationDeCouleur(m.couleur)))].sort((a, b) => a - b),
+    [candidatsSteriles]
+  );
+  const [genFiltre, setGenFiltre] = useState("toutes");
+  const suggestionsClonage = suggererClonages(cheptel, objectif, genFiltre === "toutes" ? null : Number(genFiltre));
 
   // Une fois l'un des deux muldos choisi, l'autre sélecteur se limite à sa
   // génération et priorise : même couleur + même sexe > même couleur + sexe
@@ -4905,23 +4943,42 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
         {!pret && A && B && memeGeneration && A.id !== B.id && null}
       </div>
 
-      {suggestionsClonage.length > 0 && (
-        <div className="panel-card" style={{ marginTop: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Clonages suggérés</h2>
-          <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
-            Classés selon ton objectif GPS actuel (<b style={{ color: "var(--gold2)" }}>{objectif}</b>) :
-            priorité aux couleurs proches de l'objectif et à celles dont tu n'as plus aucun fertile.
-            Un clic remplit les deux sélecteurs — fais le clonage en jeu, puis enregistre le résultat réel.
+      <div className="panel-card" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Clonages suggérés</h2>
+          {generationsDisponibles.length > 1 && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+              Génération :
+              <select className="field" value={genFiltre} onChange={(e) => setGenFiltre(e.target.value)} style={{ padding: "4px 8px", fontSize: 12 }}>
+                <option value="toutes">Toutes</option>
+                {generationsDisponibles.map((g) => <option key={g} value={g}>G{g}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10, marginTop: 6 }}>
+          Classés selon ton objectif GPS actuel (<b style={{ color: "var(--gold2)" }}>{objectif}</b>) :
+          priorité aux couleurs proches de l'objectif et à celles dont tu n'as plus aucun fertile.
+          Un clic remplit les deux sélecteurs — fais le clonage en jeu, puis enregistre le résultat réel.
+          Limité à 6 suggestions à la fois (chaque muldo n'apparaît que dans une seule paire) — les
+          autres remontent au fil des clonages effectués.
+        </div>
+        {suggestionsClonage.length === 0 && (
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>
+            Aucune suggestion {genFiltre !== "toutes" ? `pour la génération ${genFiltre}` : "pour le moment"}.
           </div>
-          {suggestionsClonage.map((s) => (
+        )}
+        {suggestionsClonage.map((s) => (
             <div key={`${s.a.id}|${s.b.id}`} style={{
               display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
               borderTop: "1px solid rgba(255,255,255,.06)", padding: "9px 0",
             }}>
               <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom || s.a.couleur}
+                <BoutonFiche id={s.a.id} onVoir={onVoirMuldo} label={s.a.nom || s.a.couleur} />
                 <span style={{ color: "var(--gold2)" }}>+</span>
                 <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom || s.b.couleur}
+                <BoutonFiche id={s.b.id} onVoir={onVoirMuldo} label={s.b.nom || s.b.couleur} />
                 <span className="pill" style={{ padding: "2px 8px", fontSize: 11 }}>G{s.generation}</span>
               </span>
               <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>
@@ -4939,8 +4996,7 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
               </button>
             </div>
           ))}
-        </div>
-      )}
+      </div>
 
       <BebesARenommerPanel journal={journal} />
     </div>
