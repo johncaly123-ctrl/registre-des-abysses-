@@ -1210,6 +1210,20 @@ function progressionParGeneration(cheptel, historiqueCouleurs = {}) {
   });
 }
 
+// Plus haute génération entièrement validée dans les Succès — sert de base
+// au déblocage des ailes "muldo" (barème palier × 2, voir tierAilesMuldo).
+function plusHauteGenerationValidee(cheptel, historiqueCouleurs) {
+  const completes = progressionParGeneration(cheptel, historiqueCouleurs)
+    .filter((p) => p.pct === 100)
+    .map((p) => p.generation);
+  return completes.length ? Math.max(...completes) : 0;
+}
+
+function tierAilesMuldo(niveauAilesDonation, generationValidee) {
+  const tierParSucces = Math.floor((Number(generationValidee) || 0) / 2);
+  return Math.max(0, Math.min(5, Math.min(Number(niveauAilesDonation) || 0, tierParSucces)));
+}
+
 function choisirObjectifGpsAutomatique({
   mode,
   objectifCouleur,
@@ -1492,6 +1506,18 @@ export default function App() {
   const compte = useCompte();
   const [profilOuvert, setProfilOuvert] = useState(false);
   useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
+  // Pousse la génération muldo la plus haute validée vers le profil Supabase
+  // (auto-déclaratif) dès qu'elle change — sert de condition de déblocage
+  // des ailes "muldo", en plus du palier de don.
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const gen = plusHauteGenerationValidee(cheptel, historiqueCouleurs);
+    if (compte.profil.succes_generation_muldo !== gen) {
+      supabase.from("profils").update({ succes_generation_muldo: gen })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [cheptel, historiqueCouleurs, compte.session, compte.profil]);
   const [instantanes, setInstantanes] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_INSTANTANES));
@@ -4403,6 +4429,8 @@ function ProfilModal({ compte, profilLocal, onClose }) {
   };
 
   const configManquante = !supabaseEstConfigure() || !supabase;
+  const tierMuldo = profil ? tierAilesMuldo(profil.niveau_ailes, profil.succes_generation_muldo) : 0;
+  const niveauEffectif = profil?.style_ailes === "muldo" ? tierMuldo : profil?.niveau_ailes;
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
@@ -4426,7 +4454,7 @@ function ProfilModal({ compte, profilLocal, onClose }) {
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={profil.niveau_ailes} taille={20} />
+              <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={20} />
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.user.email} <span style={{ opacity: .6 }}>(privé)</span></span>
             </div>
 
@@ -4438,15 +4466,30 @@ function ProfilModal({ compte, profilLocal, onClose }) {
 
             {profil.niveau_ailes > 0 && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Style d'ailes ({nomNiveauAiles(profil.style_ailes, profil.niveau_ailes)})</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-ghost" style={profil.style_ailes !== "abysses" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined} onClick={() => patcher({ style_ailes: "or" }, "Ailes dorées équipées.")}>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Style d'ailes ({nomNiveauAiles(profil.style_ailes, niveauEffectif)})</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-ghost" style={profil.style_ailes !== "abysses" && profil.style_ailes !== "muldo" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined} onClick={() => patcher({ style_ailes: "or" }, "Ailes dorées équipées.")}>
                     <AileNiveau style="or" taille={18} niveau={profil.niveau_ailes} /> Dorées
                   </button>
                   <button className="btn btn-ghost" style={profil.style_ailes === "abysses" ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined} onClick={() => patcher({ style_ailes: "abysses" }, "Ailes abyssales équipées.")}>
                     <AileNiveau style="abysses" taille={18} niveau={profil.niveau_ailes} /> Abyssales
                   </button>
+                  <button
+                    className="btn btn-ghost"
+                    disabled={tierMuldo < 1}
+                    style={profil.style_ailes === "muldo" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : tierMuldo < 1 ? { opacity: .5 } : undefined}
+                    title={tierMuldo < 1 ? `Débloqué à partir de la génération ${2} validée (page Succès) et d'un don palier 1 — actuellement génération ${profil.succes_generation_muldo || 0} validée` : undefined}
+                    onClick={() => tierMuldo >= 1 && patcher({ style_ailes: "muldo" }, "Ailes muldo équipées.")}
+                  >
+                    <AileNiveau style="muldo" taille={18} niveau={Math.max(1, tierMuldo)} /> Muldo{tierMuldo < 1 ? " 🔒" : ""}
+                  </button>
                 </div>
+                {tierMuldo < 1 && (
+                  <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
+                    Ailes muldo : débloquées par palier de don ET par succès de génération (palier × 2). Génération actuellement
+                    validée : <b>{profil.succes_generation_muldo || 0}</b> — valide plus de générations dans la page Succès pour progresser.
+                  </div>
+                )}
               </div>
             )}
 
@@ -4505,7 +4548,7 @@ function TavernePage({ compte, onOuvrirProfil }) {
   const chargerProfils = async (ids) => {
     const manquants = [...new Set(ids)].filter((id) => id && !profilsParId[id]);
     if (!manquants.length) return;
-    const { data } = await supabase.from("profils").select("id, pseudo, style_ailes, niveau_ailes, description").in("id", manquants);
+    const { data } = await supabase.from("profils").select("id, pseudo, style_ailes, niveau_ailes, succes_generation_muldo, description").in("id", manquants);
     const carte = {};
     (data || []).forEach((p) => { carte[p.id] = p; });
     setProfilsParId((prev) => ({ ...prev, ...carte }));
@@ -4589,9 +4632,12 @@ function TavernePage({ compte, onOuvrirProfil }) {
   const AuteurAile = ({ id, taille = 16 }) => {
     const p = profilsParId[id];
     if (!p) return <span style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)" }}>Éleveur</span>;
+    const niveauEffectif = p.style_ailes === "muldo"
+      ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo)
+      : p.niveau_ailes;
     return (
       <span title={p.description || undefined}>
-        <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={taille} />
+        <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={taille} />
       </span>
     );
   };
@@ -5043,11 +5089,14 @@ function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo }) {
 const NOMS_NIVEAUX_AILES = {
   or: ["Éclat Naissant", "Lueur Ascendante", "Rayonnement Divin", "Auréole Éternelle", "Apogée Céleste"],
   abysses: ["Murmure des Ombres", "Éveil des Abysses", "Corruption Élégante", "Emprise des Ténèbres", "Seigneur Abyssal"],
+  // Ailes "muldo" : débloquées par succès de génération (voir tierAilesMuldo)
+  // en plus du palier de don — noms provisoires, libres à ajuster.
+  muldo: ["Sang Neuf", "Robe Affirmée", "Instinct du Troupeau", "Sagesse du Cheptel", "Légende Vivante"],
 };
 
 function nomNiveauAiles(style, niveau) {
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
-  return (NOMS_NIVEAUX_AILES[style === "abysses" ? "abysses" : "or"] || [])[n - 1] || "";
+  return (NOMS_NIVEAUX_AILES[style] || NOMS_NIVEAUX_AILES.or)[n - 1] || "";
 }
 
 // Une image personnalisée (public/ailes/or-3.png, abysses-5.png…) remplace le
@@ -5061,7 +5110,7 @@ function AileNiveau({ style = "or", miroir = false, taille = 22, niveau = 1 }) {
     // fond transparent : on les affiche telles quelles, sans miroir ni blend.
     return (
       <img
-        src={`ailes/${style === "abysses" ? "abysses" : "or"}-${n}.png`}
+        src={`ailes/${style}-${n}.png`}
         alt=""
         onError={() => setImageKo(true)}
         style={{
@@ -5094,7 +5143,7 @@ function ailesImagesDisponibles() {
 function DemiAile({ style = "or", cote = "gauche", taille = 20, niveau = 1 }) {
   const [etat, setEtat] = useState("dedie"); // dedie -> moitie -> svg
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
-  const base = `ailes/${style === "abysses" ? "abysses" : "or"}-${n}`;
+  const base = `ailes/${style}-${n}`;
   const h = Math.round(taille * (1 + (n - 1) * 0.16));
   const ombre = `drop-shadow(0 0 ${2 + n}px ${style === "abysses" ? "rgba(101,199,193,.4)" : "rgba(240,207,114,.4)"})`;
 
@@ -5269,6 +5318,15 @@ function SoutienPanel({ profil, setProfil }) {
             >
               <AileSvg style="abysses" taille={18} /> Ailes des Abysses
             </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={profil.styleAiles === "muldo" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+              onClick={() => set({ styleAiles: "muldo" })}
+              title="Aperçu local — en vrai, débloquées par palier de don ET succès de génération"
+            >
+              <AileSvg style="muldo" taille={18} /> Ailes Muldo
+            </button>
           </div>
         </div>
         <div>
@@ -5302,6 +5360,10 @@ function SoutienPanel({ profil, setProfil }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
           <AileNiveau style="abysses" taille={44} niveau={niveau} />
           <span style={{ color: "var(--cyan)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("abysses", niveau)}</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+          <AileNiveau style="muldo" taille={44} niveau={niveau} />
+          <span style={{ color: "var(--gold2)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("muldo", niveau)}</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11, alignSelf: "center" }}>
           Palier 2 : plumes/veines · 3 : stratification/ossature · 4 : auréole/pointes + scintillement · 5 : apothéose.

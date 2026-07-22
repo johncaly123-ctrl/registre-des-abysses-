@@ -100,3 +100,17 @@ exception when duplicate_object then null; end $$;
 
 -- v5 : changement de test (accès SQL direct via l'API de gestion Supabase)
 comment on table profils is 'Profils publics des éleveurs — pseudo, ailes de soutien, description.';
+
+-- v6 : ailes "muldo" débloquées par succès de génération (en plus du don)
+-- Auto-déclaratif comme historiqueCouleurs aujourd'hui : pas de trigger de
+-- protection, la policy d'update existante (auth.uid() = id) suffit — ce
+-- champ reflète une progression calculée côté client à partir de données
+-- déjà locales, le tricher ne rapporte rien puisqu'il ne reflète plus la
+-- vraie progression du joueur.
+alter table profils add column if not exists succes_generation_muldo int not null default 0;
+do $$ begin
+  alter table profils add constraint succes_generation_muldo_bornes check (succes_generation_muldo between 0 and 10);
+exception when duplicate_object then null; end $$;
+
+alter table profils drop constraint if exists profils_style_ailes_check;
+alter table profils add constraint profils_style_ailes_check check (style_ailes in ('or', 'abysses', 'muldo'));
