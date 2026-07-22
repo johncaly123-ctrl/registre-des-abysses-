@@ -4774,43 +4774,6 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
         </div>
       </div>
 
-      {suggestionsClonage.length > 0 && (
-        <div className="panel-card" style={{ marginTop: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Clonages suggérés</h2>
-          <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
-            Classés selon ton objectif GPS actuel (<b style={{ color: "var(--gold2)" }}>{objectif}</b>) :
-            priorité aux couleurs proches de l'objectif et à celles dont tu n'as plus aucun fertile.
-            Un clic remplit les deux sélecteurs — fais le clonage en jeu, puis enregistre le résultat réel.
-          </div>
-          {suggestionsClonage.map((s) => (
-            <div key={`${s.a.id}|${s.b.id}`} style={{
-              display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
-              borderTop: "1px solid rgba(255,255,255,.06)", padding: "9px 0",
-            }}>
-              <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom || s.a.couleur}
-                <span style={{ color: "var(--gold2)" }}>+</span>
-                <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom || s.b.couleur}
-                <span className="pill" style={{ padding: "2px 8px", fontSize: 11 }}>G{s.generation}</span>
-              </span>
-              <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>
-                {s.memeCouleur
-                  ? <>résultat garanti : <b>{s.a.couleur}</b> — {s.raisons[0].texte}</>
-                  : s.raisons.map((r, i) => (
-                      <span key={r.couleur}>{i > 0 && " · "}<b>{r.couleur}</b> : {r.texte}</span>
-                    ))}
-              </span>
-              <button
-                className="btn btn-ghost"
-                onClick={() => { setFusionA(s.a.id); setFusionB(s.b.id); }}
-              >
-                Choisir ce duo
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="panel-card" style={{ marginTop: 16 }}>
         <b>Résultat du clonage</b>
         {!A || !B ? (
@@ -4903,6 +4866,43 @@ function ClonagePage({ fusion, cheptel, objectif, journal }) {
         )}
         {!pret && A && B && memeGeneration && A.id !== B.id && null}
       </div>
+
+      {suggestionsClonage.length > 0 && (
+        <div className="panel-card" style={{ marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Clonages suggérés</h2>
+          <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
+            Classés selon ton objectif GPS actuel (<b style={{ color: "var(--gold2)" }}>{objectif}</b>) :
+            priorité aux couleurs proches de l'objectif et à celles dont tu n'as plus aucun fertile.
+            Un clic remplit les deux sélecteurs — fais le clonage en jeu, puis enregistre le résultat réel.
+          </div>
+          {suggestionsClonage.map((s) => (
+            <div key={`${s.a.id}|${s.b.id}`} style={{
+              display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+              borderTop: "1px solid rgba(255,255,255,.06)", padding: "9px 0",
+            }}>
+              <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom || s.a.couleur}
+                <span style={{ color: "var(--gold2)" }}>+</span>
+                <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom || s.b.couleur}
+                <span className="pill" style={{ padding: "2px 8px", fontSize: 11 }}>G{s.generation}</span>
+              </span>
+              <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>
+                {s.memeCouleur
+                  ? <>résultat garanti : <b>{s.a.couleur}</b> — {s.raisons[0].texte}</>
+                  : s.raisons.map((r, i) => (
+                      <span key={r.couleur}>{i > 0 && " · "}<b>{r.couleur}</b> : {r.texte}</span>
+                    ))}
+              </span>
+              <button
+                className="btn btn-ghost"
+                onClick={() => { setFusionA(s.a.id); setFusionB(s.b.id); }}
+              >
+                Choisir ce duo
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <BebesARenommerPanel journal={journal} />
     </div>
