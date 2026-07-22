@@ -2,6 +2,16 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
 import { Plus, Trash2, Waves, Heart, Zap, Sparkles, Droplets, AlertTriangle, ChevronRight, X, Skull, Baby, Save } from "lucide-react";
+import {
+  useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane,
+  DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
+  CLES_SAUVEGARDE_DRAGODINDE,
+} from "./Dragodinde.jsx";
+import {
+  useVolkorneElevage, VolkorneCheptelListPane, VolkorneCheptelMainPane,
+  VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
+  CLES_SAUVEGARDE_VOLKORNE,
+} from "./Volkorne.jsx";
 
 // ---------- constantes de design ----------
 const COLORS = {
@@ -1505,6 +1515,8 @@ export default function App() {
     }
   };
   const compte = useCompte();
+  const eleveDragodinde = useDragodindeElevage();
+  const eleveVolkorne = useVolkorneElevage();
   const [profilOuvert, setProfilOuvert] = useState(false);
   useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
   // Pousse la génération muldo la plus haute validée vers le profil Supabase
@@ -2684,6 +2696,8 @@ const persist = useCallback(async (next) => {
           readyCount={readyCount}
           fertileCount={fertileCount}
           discoveredTotal={discoveredTotal}
+          cheptelDragodinde={eleveDragodinde.cheptel}
+          cheptelVolkorne={eleveVolkorne.cheptel}
         />
 
         {page === "cheptel" && (
@@ -2700,6 +2714,8 @@ const persist = useCallback(async (next) => {
             </div>
           </div>
         )}
+        {page === "cheptel-dragodinde" && <DragodindeCheptelListPane {...eleveDragodinde.cheptelListProps} />}
+        {page === "cheptel-volkorne" && <VolkorneCheptelListPane {...eleveVolkorne.cheptelListProps} />}
 
         {page === "gps" && null}
 
@@ -2846,6 +2862,18 @@ const persist = useCallback(async (next) => {
               }}
             />
           )}
+
+          {page === "cheptel-dragodinde" && <DragodindeCheptelMainPane {...eleveDragodinde.cheptelMainProps} />}
+          {page === "synchronisation-dragodinde" && <DragodindeSynchronisationPage {...eleveDragodinde.syncProps} showToast={showToast} />}
+          {page === "gps-dragodinde" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} />}
+          {page === "clonage-dragodinde" && <DragodindeClonagePage {...eleveDragodinde.clonageProps} />}
+          {page === "succes-dragodinde" && <DragodindeSuccesPage {...eleveDragodinde.succesProps} />}
+
+          {page === "cheptel-volkorne" && <VolkorneCheptelMainPane {...eleveVolkorne.cheptelMainProps} />}
+          {page === "synchronisation-volkorne" && <VolkorneSynchronisationPage {...eleveVolkorne.syncProps} showToast={showToast} />}
+          {page === "gps-volkorne" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} />}
+          {page === "clonage-volkorne" && <VolkorneClonagePage {...eleveVolkorne.clonageProps} />}
+          {page === "succes-volkorne" && <VolkorneSuccesPage {...eleveVolkorne.succesProps} />}
         </div>
       </div>
 
@@ -3704,15 +3732,25 @@ function DashboardPanel({cheptel,plan,historiqueCouleurs}){
 }
 
 
-function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal }) {
+function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal, cheptelDragodinde, cheptelVolkorne }) {
   const nav = [
     ["dashboard", "🏠", "Dashboard"],
-    ["cheptel", "🐴", "Cheptel"],
-    ["synchronisation", "📷", "Synchronisation"],
-    ["gps", "🛰️", "GPS"],
-    ["clonage", "🧬", "Clonage"],
     ["taverne", "🍻", "Taverne"],
-    ["succes", "🏆", "Succès"],
+    ["cheptel", "🐴", "Muldo · Cheptel"],
+    ["synchronisation", "📷", "Muldo · Synchro"],
+    ["gps", "🛰️", "Muldo · GPS"],
+    ["clonage", "🧬", "Muldo · Clonage"],
+    ["succes", "🏆", "Muldo · Succès"],
+    ["cheptel-dragodinde", "🐲", "Dragodinde · Cheptel"],
+    ["synchronisation-dragodinde", "📷", "Dragodinde · Synchro"],
+    ["gps-dragodinde", "🛰️", "Dragodinde · GPS"],
+    ["clonage-dragodinde", "🧬", "Dragodinde · Clonage"],
+    ["succes-dragodinde", "🏆", "Dragodinde · Succès"],
+    ["cheptel-volkorne", "🐎", "Volkorne · Cheptel"],
+    ["synchronisation-volkorne", "📷", "Volkorne · Synchro"],
+    ["gps-volkorne", "🛰️", "Volkorne · GPS"],
+    ["clonage-volkorne", "🧬", "Volkorne · Clonage"],
+    ["succes-volkorne", "🏆", "Volkorne · Succès"],
   ];
 
   return (
@@ -3730,10 +3768,19 @@ function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discover
       ))}
 
       <div className="side-metric">
-        <div><b style={{ color: "var(--gold2)" }}>{cheptel.length}</b> muldos enregistrés</div>
+        <div style={{ fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>Muldos</div>
+        <div><b style={{ color: "var(--gold2)" }}>{cheptel.length}</b> enregistrés</div>
         <div><b style={{ color: "var(--green)" }}>{fertileCount}</b> fertiles</div>
-        <div><b style={{ color: "var(--cyan)" }}>{readyCount}</b> prêts maintenant</div>
+        <div><b style={{ color: "var(--cyan)" }}>{readyCount}</b> prêts</div>
         <div><b style={{ color: "var(--gold2)" }}>{discoveredTotal}</b> couleurs découvertes</div>
+      </div>
+      <div className="side-metric">
+        <div style={{ fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>Dragodindes</div>
+        <div><b style={{ color: "var(--gold2)" }}>{(cheptelDragodinde || []).length}</b> enregistrés</div>
+      </div>
+      <div className="side-metric">
+        <div style={{ fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>Volkornes</div>
+        <div><b style={{ color: "var(--gold2)" }}>{(cheptelVolkorne || []).length}</b> enregistrés</div>
       </div>
     </aside>
   );
@@ -5407,6 +5454,8 @@ const CLES_SAUVEGARDE = [
   STORAGE_JOURNAL,
   STORAGE_INSTANTANES,
   STORAGE_PROFIL,
+  ...CLES_SAUVEGARDE_DRAGODINDE,
+  ...CLES_SAUVEGARDE_VOLKORNE,
 ];
 
 function SauvegardePanel({ showToast }) {
