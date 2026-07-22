@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import Tesseract from "tesseract.js";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
 import { Plus, Trash2, Waves, Heart, Zap, Sparkles, Droplets, AlertTriangle, ChevronRight, X, Skull, Baby, Save } from "lucide-react";
@@ -7107,6 +7106,11 @@ function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, onVoirM
     try {
       setOcrEnCours(true);
       let texteFinal = "";
+
+      // Tesseract.js (~2 Mo) n'est chargé qu'ici, à la demande, pour ne pas
+      // alourdir le chargement initial du site pour les visiteurs qui ne
+      // font pas de synchronisation par capture.
+      const { default: Tesseract } = await import("tesseract.js");
 
       for (let i = 0; i < files.length; i++) {
         const imagePreparee = await preparerImageOCR(files[i]);
