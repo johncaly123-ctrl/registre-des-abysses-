@@ -1449,6 +1449,7 @@ function geneticPartners(target, cheptel, byId) {
 export default function App() {
   const [cheptel, setCheptel] = useState(CHEPTEL_INITIAL_AUTO);
   const [selectedId, setSelectedId] = useState(null);
+  const [ficheRapideId, setFicheRapideId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
@@ -1601,7 +1602,10 @@ export default function App() {
   };
 
   const selected = selectedId ? byId[selectedId] : null;
-  const voirMuldo = (id) => { setSelectedId(id); setPage("cheptel"); };
+  // Ouvre la fiche d'un muldo directement là où on se trouve (GPS, Clonage,
+  // Dashboard, Synchronisation…) au lieu de forcer une navigation vers Cheptel.
+  const voirMuldo = (id) => setFicheRapideId(id);
+  const ficheRapide = ficheRapideId ? byId[ficheRapideId] : null;
 
   const analyseCible = useMemo(() => analyseRecettesPourCible(couleurCible, cheptel), [couleurCible, cheptel]);
   const actionsSelection = useMemo(() => selected ? actionsAvecCouleur(selected.couleur, cheptel) : [], [selected, cheptel]);
@@ -2720,6 +2724,7 @@ const persist = useCallback(async (next) => {
               onTerminerGroupe={(g) => realiserCouplesGps(g.couples || [])}
               onAnnuler={annulerDernierCoupleGps}
               onReinitialiser={reinitialiserSessionGps}
+              onVoirMuldo={voirMuldo}
             />
           )}
 
@@ -2822,6 +2827,16 @@ const persist = useCallback(async (next) => {
 
       {profilOuvert && (
         <ProfilModal compte={compte} profilLocal={profil} onClose={() => setProfilOuvert(false)} />
+      )}
+
+      {ficheRapide && (
+        <FicheRapideModal
+          muldo={ficheRapide}
+          byId={byId}
+          onPatch={(p) => patchMuldo(ficheRapide.id, p)}
+          onDelete={() => { deleteMuldo(ficheRapide.id); setFicheRapideId(null); }}
+          onClose={() => setFicheRapideId(null)}
+        />
       )}
 
       <footer style={{
@@ -3335,6 +3350,25 @@ function ActionCard({ muldo }) {
       <div style={{ fontSize: 16, fontFamily: "Inter, sans-serif", fontWeight: 800 }}>{action.label}</div>
       <div style={{ fontSize: 12, color: COLORS.text, fontFamily: "Inter, sans-serif", marginTop: 5 }}>Objet / zone : <b>{action.objet}</b></div>
       <div style={{ fontSize: 11.5, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 5 }}>{action.detail}</div>
+    </div>
+  );
+}
+
+// Fiche d'un muldo ouverte par-dessus la page courante (GPS, Clonage,
+// Dashboard, Synchronisation…) — pas besoin de quitter la page pour
+// supprimer ou corriger un muldo saisi par erreur.
+function FicheRapideModal({ muldo, byId, onPatch, onDelete, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(640px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 18, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <span style={{ fontWeight: 700, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <MuldoBadge couleur={muldo.couleur} taille={18} /> {muldo.nom || muldo.couleur}
+          </span>
+          <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
+        </div>
+        <MuldoDetail muldo={muldo} byId={byId} onPatch={onPatch} onDelete={onDelete} />
+      </div>
     </div>
   );
 }
@@ -6002,6 +6036,7 @@ function GpsDofusPage({
   onTerminerGroupe,
   onAnnuler,
   onReinitialiser,
+  onVoirMuldo,
 }) {
   const [etapesOuvertes, setEtapesOuvertes] = useState({});
   const toggleEtapes = (key) => {
@@ -6448,14 +6483,16 @@ function GpsDofusPage({
               × {g.quantite}
             </span>
             <div>
-              <b>♂ <CouleurCopiable couleur={g.male.couleur} /></b>
+              <b>♂ <CouleurCopiable couleur={g.male.couleur} /></b>{" "}
+              <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} />
               <span style={{
                 color: "var(--gold2)",
                 margin: "0 7px",
               }}>
                 ×
               </span>
-              <b>♀ <CouleurCopiable couleur={g.femelle.couleur} /></b>
+              <b>♀ <CouleurCopiable couleur={g.femelle.couleur} /></b>{" "}
+              <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />
               <div style={{
                 color: "var(--muted)",
                 fontSize: 11,
