@@ -1493,6 +1493,12 @@ export default function App() {
   const [modePurification, setModePurification] = useState(false);
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState({});
   const [page, setPage] = useState("dashboard");
+  // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
+  // "cheptel" | "synchro" | "gps" | "clonage". Partagé entre les 3, réinitialisé
+  // implicitement en changeant de section (on ne mémorise pas par créature).
+  const [sousPage, setSousPage] = useState("cheptel");
+  // Créature affichée sur la page Succès (elle regroupe les 3 sous un seul onglet).
+  const [succesCreature, setSuccesCreature] = useState("muldo");
   const [naissances, setNaissances] = useState([]);
   const [profil, setProfilState] = useState(() => {
     try {
@@ -2700,7 +2706,7 @@ const persist = useCallback(async (next) => {
           cheptelVolkorne={eleveVolkorne.cheptel}
         />
 
-        {page === "cheptel" && (
+        {page === "muldo" && sousPage === "cheptel" && (
           <div className="tech-column">
             <div style={{ padding: 14, borderBottom: "1px solid var(--line)" }}>
               <input className="field" placeholder="Rechercher un muldo…" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -2714,10 +2720,8 @@ const persist = useCallback(async (next) => {
             </div>
           </div>
         )}
-        {page === "cheptel-dragodinde" && <DragodindeCheptelListPane {...eleveDragodinde.cheptelListProps} />}
-        {page === "cheptel-volkorne" && <VolkorneCheptelListPane {...eleveVolkorne.cheptelListProps} />}
-
-        {page === "gps" && null}
+        {page === "dragodinde" && sousPage === "cheptel" && <DragodindeCheptelListPane {...eleveDragodinde.cheptelListProps} />}
+        {page === "volkorne" && sousPage === "cheptel" && <VolkorneCheptelListPane {...eleveVolkorne.cheptelListProps} />}
 
         <div className="main-view">
           {page === "dashboard" && (
@@ -2739,141 +2743,173 @@ const persist = useCallback(async (next) => {
             </>
           )}
 
-          {page === "gps" && (
-            <GpsDofusPage
-              session={sessionGps}
-              mode={modeGps}
-              setMode={setModeGps}
-              objectif={objectifGpsActif}
-              objectifCouleur={objectifGps}
-              setObjectifCouleur={setObjectifGps}
-              generationCible={generationGps}
-              setGenerationCible={setGenerationGps}
-              generationMin={generationCollectionMin}
-              setGenerationMin={setGenerationCollectionMin}
-              generationMax={generationCollectionMax}
-              setGenerationMax={setGenerationCollectionMax}
-              choixObjectif={choixObjectifGps}
-              progressionGenerations={progressionGps}
-              purification={modePurification}
-              setPurification={setModePurification}
-              suivi={gpsSuiviActif}
-              naissances={naissances}
-              journal={journal}
-              onConfirmerNaissance={confirmerNaissance}
-              onSupprimerNaissance={supprimerNaissance}
-              onRealiserUn={(g) => realiserCouplesGps((g.couples || []).slice(0, 1))}
-              onTerminerGroupe={(g) => realiserCouplesGps(g.couples || [])}
-              onAnnuler={annulerDernierCoupleGps}
-              onReinitialiser={reinitialiserSessionGps}
-              onVoirMuldo={voirMuldo}
-            />
-          )}
-
-          {page === "succes" && (
-            <SuccesDofusPage
-              historiqueCouleurs={historiqueCouleurs}
-              cheptel={cheptel}
-              objectifGeneration={objectifGeneration}
-              plan={planGeneration}
-              onToggleCouleur={basculerCouleurHistorique}
-              onValidateGeneration={validerGenerationHistorique}
-              onValidateAll={validerToutHistorique}
-              onResetHistory={reinitialiserHistoriqueManuel}
-            />
-          )}
-
-          {page === "synchronisation" && (
-            <SynchronisationFiltresPage
-              cheptel={cheptel}
-              updateCheptel={updateCheptel}
-              showToast={showToast}
-              onVoirMuldo={voirMuldo}
-              onSupprimerMuldo={(m) => {
-                if (window.confirm(`Supprimer définitivement ${m.nom || m.couleur} ? (généalogie : ce muldo a des parents ou descendants connus)`)) {
-                  deleteMuldo(m.id);
-                  showToast(`${m.nom || m.couleur} supprimé.`);
-                }
-              }}
-            />
-          )}
-
-          {page === "cheptel" && (
-            <>
-            <div className="cheptel-layout">
-              <div className="cheptel-liste">
-                <CheptelOverviewPage
-                  cheptel={filtered}
-                  selectedId={selectedId}
-                  setSelectedId={setSelectedId}
-                  filter={filter}
-                  setFilter={setFilter}
-                  actionsDuJour={actionsDuJour}
-                  importProps={{
-                    captureText,
-                    setCaptureText,
-                    capturePreview,
-                    setCapturePreview,
-                    importCapture,
-                    onImport: importerCaptureDansCheptel,
-                  }}
-                />
-              </div>
-              {selected && (
-                <div className="cheptel-backdrop" onClick={() => setSelectedId(null)} />
-              )}
-              {selected && (
-                <div className="cheptel-detail">
-                  <div className="cheptel-detail-barre">
-                    <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7 }}>
-                      <MuldoBadge couleur={selected.couleur} taille={18} /> {selected.nom || selected.couleur}
-                    </span>
-                    <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedId(null)}>
-                      ✕ Fermer
-                    </button>
-                  </div>
-                  <div className="cheptel-detail-corps">
-                    <MuldoDetail muldo={selected} byId={byId} onPatch={(p) => patchMuldo(selected.id, p)} onDelete={() => deleteMuldo(selected.id)} />
-                  </div>
-                </div>
-              )}
-            </div>
-            <ArbreGenealogiquePanel cheptel={cheptel} onSelect={setSelectedId} />
-            </>
-          )}
-
           {page === "taverne" && (
             <TavernePage compte={compte} onOuvrirProfil={() => setProfilOuvert(true)} />
           )}
 
-          {page === "clonage" && (
-            <ClonagePage
-              cheptel={cheptel}
-              objectif={objectifGpsActif}
-              journal={journal}
-              onVoirMuldo={voirMuldo}
-              fusion={{
-                muldos: cheptel,
-                fusionA,
-                fusionB,
-                setFusionA,
-                setFusionB,
-                onFusion: fusionnerSteriles,
-              }}
-            />
+          {page === "succes" && (
+            <>
+              <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+                {[["muldo", "🐴", "Muldo"], ["dragodinde", "🐲", "Dragodinde"], ["volkorne", "🐎", "Volkorne"]].map(([key, icon, label]) => (
+                  <button
+                    key={key}
+                    className="btn btn-ghost"
+                    style={succesCreature === key ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+                    onClick={() => setSuccesCreature(key)}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+              {succesCreature === "muldo" && (
+                <SuccesDofusPage
+                  historiqueCouleurs={historiqueCouleurs}
+                  cheptel={cheptel}
+                  objectifGeneration={objectifGeneration}
+                  plan={planGeneration}
+                  onToggleCouleur={basculerCouleurHistorique}
+                  onValidateGeneration={validerGenerationHistorique}
+                  onValidateAll={validerToutHistorique}
+                  onResetHistory={reinitialiserHistoriqueManuel}
+                />
+              )}
+              {succesCreature === "dragodinde" && <DragodindeSuccesPage {...eleveDragodinde.succesProps} />}
+              {succesCreature === "volkorne" && <VolkorneSuccesPage {...eleveVolkorne.succesProps} />}
+            </>
           )}
 
-          {page === "cheptel-dragodinde" && <DragodindeCheptelMainPane {...eleveDragodinde.cheptelMainProps} />}
-          {page === "synchronisation-dragodinde" && <DragodindeSynchronisationPage {...eleveDragodinde.syncProps} showToast={showToast} />}
-          {page === "gps-dragodinde" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} />}
-          {page === "clonage-dragodinde" && <DragodindeClonagePage {...eleveDragodinde.clonageProps} />}
-          {page === "succes-dragodinde" && <DragodindeSuccesPage {...eleveDragodinde.succesProps} />}
+          {page === "muldo" && (
+            <>
+              <SousNavOutils sousPage={sousPage} setSousPage={setSousPage} />
 
-          {page === "cheptel-volkorne" && <VolkorneCheptelMainPane {...eleveVolkorne.cheptelMainProps} />}
-          {page === "synchronisation-volkorne" && <VolkorneSynchronisationPage {...eleveVolkorne.syncProps} showToast={showToast} />}
-          {page === "gps-volkorne" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} />}
-          {page === "clonage-volkorne" && <VolkorneClonagePage {...eleveVolkorne.clonageProps} />}
-          {page === "succes-volkorne" && <VolkorneSuccesPage {...eleveVolkorne.succesProps} />}
+              {sousPage === "gps" && (
+                <GpsDofusPage
+                  session={sessionGps}
+                  mode={modeGps}
+                  setMode={setModeGps}
+                  objectif={objectifGpsActif}
+                  objectifCouleur={objectifGps}
+                  setObjectifCouleur={setObjectifGps}
+                  generationCible={generationGps}
+                  setGenerationCible={setGenerationGps}
+                  generationMin={generationCollectionMin}
+                  setGenerationMin={setGenerationCollectionMin}
+                  generationMax={generationCollectionMax}
+                  setGenerationMax={setGenerationCollectionMax}
+                  choixObjectif={choixObjectifGps}
+                  progressionGenerations={progressionGps}
+                  purification={modePurification}
+                  setPurification={setModePurification}
+                  suivi={gpsSuiviActif}
+                  naissances={naissances}
+                  journal={journal}
+                  onConfirmerNaissance={confirmerNaissance}
+                  onSupprimerNaissance={supprimerNaissance}
+                  onRealiserUn={(g) => realiserCouplesGps((g.couples || []).slice(0, 1))}
+                  onTerminerGroupe={(g) => realiserCouplesGps(g.couples || [])}
+                  onAnnuler={annulerDernierCoupleGps}
+                  onReinitialiser={reinitialiserSessionGps}
+                  onVoirMuldo={voirMuldo}
+                />
+              )}
+
+              {sousPage === "synchro" && (
+                <SynchronisationFiltresPage
+                  cheptel={cheptel}
+                  updateCheptel={updateCheptel}
+                  showToast={showToast}
+                  onVoirMuldo={voirMuldo}
+                  onSupprimerMuldo={(m) => {
+                    if (window.confirm(`Supprimer définitivement ${m.nom || m.couleur} ? (généalogie : ce muldo a des parents ou descendants connus)`)) {
+                      deleteMuldo(m.id);
+                      showToast(`${m.nom || m.couleur} supprimé.`);
+                    }
+                  }}
+                />
+              )}
+
+              {sousPage === "cheptel" && (
+                <>
+                <div className="cheptel-layout">
+                  <div className="cheptel-liste">
+                    <CheptelOverviewPage
+                      cheptel={filtered}
+                      selectedId={selectedId}
+                      setSelectedId={setSelectedId}
+                      filter={filter}
+                      setFilter={setFilter}
+                      actionsDuJour={actionsDuJour}
+                      importProps={{
+                        captureText,
+                        setCaptureText,
+                        capturePreview,
+                        setCapturePreview,
+                        importCapture,
+                        onImport: importerCaptureDansCheptel,
+                      }}
+                    />
+                  </div>
+                  {selected && (
+                    <div className="cheptel-backdrop" onClick={() => setSelectedId(null)} />
+                  )}
+                  {selected && (
+                    <div className="cheptel-detail">
+                      <div className="cheptel-detail-barre">
+                        <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7 }}>
+                          <MuldoBadge couleur={selected.couleur} taille={18} /> {selected.nom || selected.couleur}
+                        </span>
+                        <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedId(null)}>
+                          ✕ Fermer
+                        </button>
+                      </div>
+                      <div className="cheptel-detail-corps">
+                        <MuldoDetail muldo={selected} byId={byId} onPatch={(p) => patchMuldo(selected.id, p)} onDelete={() => deleteMuldo(selected.id)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <ArbreGenealogiquePanel cheptel={cheptel} onSelect={setSelectedId} />
+                </>
+              )}
+
+              {sousPage === "clonage" && (
+                <ClonagePage
+                  cheptel={cheptel}
+                  objectif={objectifGpsActif}
+                  journal={journal}
+                  onVoirMuldo={voirMuldo}
+                  fusion={{
+                    muldos: cheptel,
+                    fusionA,
+                    fusionB,
+                    setFusionA,
+                    setFusionB,
+                    onFusion: fusionnerSteriles,
+                  }}
+                />
+              )}
+            </>
+          )}
+
+          {page === "dragodinde" && (
+            <>
+              <SousNavOutils sousPage={sousPage} setSousPage={setSousPage} />
+              {sousPage === "cheptel" && <DragodindeCheptelMainPane {...eleveDragodinde.cheptelMainProps} />}
+              {sousPage === "synchro" && <DragodindeSynchronisationPage {...eleveDragodinde.syncProps} showToast={showToast} />}
+              {sousPage === "gps" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} />}
+              {sousPage === "clonage" && <DragodindeClonagePage {...eleveDragodinde.clonageProps} />}
+            </>
+          )}
+
+          {page === "volkorne" && (
+            <>
+              <SousNavOutils sousPage={sousPage} setSousPage={setSousPage} />
+              {sousPage === "cheptel" && <VolkorneCheptelMainPane {...eleveVolkorne.cheptelMainProps} />}
+              {sousPage === "synchro" && <VolkorneSynchronisationPage {...eleveVolkorne.syncProps} showToast={showToast} />}
+              {sousPage === "gps" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} />}
+              {sousPage === "clonage" && <VolkorneClonagePage {...eleveVolkorne.clonageProps} />}
+            </>
+          )}
         </div>
       </div>
 
@@ -3732,25 +3768,40 @@ function DashboardPanel({cheptel,plan,historiqueCouleurs}){
 }
 
 
+// Barre d'onglets affichée en entrant dans une section créature (Muldo,
+// Dragodinde, Volkorne) — permet de passer de Cheptel à Synchro/GPS/Clonage
+// sans repasser par le menu latéral.
+function SousNavOutils({ sousPage, setSousPage }) {
+  const outils = [
+    ["cheptel", "🐴", "Cheptel"],
+    ["synchro", "📷", "Synchro"],
+    ["gps", "🛰️", "GPS"],
+    ["clonage", "🧬", "Clonage"],
+  ];
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+      {outils.map(([key, icon, label]) => (
+        <button
+          key={key}
+          className="btn btn-ghost"
+          style={sousPage === key ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+          onClick={() => setSousPage(key)}
+        >
+          {icon} {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal, cheptelDragodinde, cheptelVolkorne }) {
   const nav = [
     ["dashboard", "🏠", "Dashboard"],
+    ["dragodinde", "🐲", "Dragodinde"],
+    ["muldo", "🐴", "Muldo"],
+    ["volkorne", "🐎", "Volkorne"],
     ["taverne", "🍻", "Taverne"],
-    ["cheptel", "🐴", "Muldo · Cheptel"],
-    ["synchronisation", "📷", "Muldo · Synchro"],
-    ["gps", "🛰️", "Muldo · GPS"],
-    ["clonage", "🧬", "Muldo · Clonage"],
-    ["succes", "🏆", "Muldo · Succès"],
-    ["cheptel-dragodinde", "🐲", "Dragodinde · Cheptel"],
-    ["synchronisation-dragodinde", "📷", "Dragodinde · Synchro"],
-    ["gps-dragodinde", "🛰️", "Dragodinde · GPS"],
-    ["clonage-dragodinde", "🧬", "Dragodinde · Clonage"],
-    ["succes-dragodinde", "🏆", "Dragodinde · Succès"],
-    ["cheptel-volkorne", "🐎", "Volkorne · Cheptel"],
-    ["synchronisation-volkorne", "📷", "Volkorne · Synchro"],
-    ["gps-volkorne", "🛰️", "Volkorne · GPS"],
-    ["clonage-volkorne", "🧬", "Volkorne · Clonage"],
-    ["succes-volkorne", "🏆", "Volkorne · Succès"],
+    ["succes", "🏆", "Succès"],
   ];
 
   return (
