@@ -3,7 +3,7 @@ import { flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
-import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
+import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2 } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane,
@@ -1097,11 +1097,39 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose }) {
                   </div>
                 ))}
               </div>
+              {LIENS_DON_STRIPE.some(Boolean) && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 6 }}>
+                    Palier attribué automatiquement dès le paiement confirmé :
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {LIENS_DON_STRIPE.map((lien, i) => {
+                      const n = i + 1;
+                      if (!lien) return null;
+                      const url = `${lien}${lien.includes("?") ? "&" : "?"}client_reference_id=${encodeURIComponent(session.user.id)}`;
+                      return (
+                        <a
+                          key={n}
+                          className="btn btn-coral"
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ textDecoration: "none", display: "inline-flex" }}
+                        >
+                          💳 {montantPourNiveau(n)} €
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {LIEN_DON && (
-                <a className="btn btn-coral" href={LIEN_DON} target="_blank" rel="noreferrer" style={{ marginTop: 12, textDecoration: "none", display: "inline-flex" }}>💛 Soutenir le Registre</a>
+                <a className="btn btn-ghost" href={LIEN_DON} target="_blank" rel="noreferrer" style={{ marginTop: 12, textDecoration: "none", display: "inline-flex" }}>💛 Don manuel (PayPal)</a>
               )}
               <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 8 }}>
-                Indique ton pseudo dans le message du don : les ailes sont attribuées manuellement (Stripe automatisera ça plus tard).
+                {LIENS_DON_STRIPE.some(Boolean)
+                  ? "Les boutons ci-dessus attribuent le palier automatiquement. Le don PayPal reste manuel : indique ton pseudo dans le message, attribution sous quelques jours."
+                  : "Indique ton pseudo dans le message du don : les ailes sont attribuées manuellement (Stripe automatisera ça plus tard)."}
               </div>
             </div>
           </div>
