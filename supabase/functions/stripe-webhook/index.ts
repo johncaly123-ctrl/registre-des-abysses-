@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   }
 
   if (event.type !== "checkout.session.completed") {
-    return new Response(`événement ignoré (${event.type})`, { status: 200 });
+    return new Response("evenement ignore (" + event.type + ")", { status: 200 });
   }
 
   const session = event.data.object;
@@ -54,17 +54,17 @@ Deno.serve(async (req) => {
   const montantTotal = (session.amount_total ?? 0) / 100; // centimes -> euros
 
   if (!userId) {
-    return new Response("don sans client_reference_id : à réconcilier manuellement", { status: 200 });
+    return new Response("don sans client_reference_id : a reconcilier manuellement", { status: 200 });
   }
 
-  // Le palier atteint est le plus haut palier dont le montant est couvert —
-  // permet un don légèrement au-dessus d'un palier sans être ignoré.
+  // Le palier atteint est le plus haut palier dont le montant est couvert -
+  // permet un don legerement au-dessus d'un palier sans etre ignore.
   let palier = 0;
   MONTANTS_NIVEAUX_EUROS.forEach((montant, i) => {
     if (montantTotal >= montant) palier = i + 1;
   });
   if (palier < 1) {
-    return new Response(`montant ${montantTotal} € sous le premier palier, ignoré`, { status: 200 });
+    return new Response("montant " + montantTotal + " EUR sous le premier palier, ignore", { status: 200 });
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -74,19 +74,19 @@ Deno.serve(async (req) => {
     .eq("id", userId)
     .single();
   if (erreurLecture) {
-    return new Response(`profil ${userId} introuvable : ${erreurLecture.message}`, { status: 200 });
+    return new Response("profil " + userId + " introuvable : " + erreurLecture.message, { status: 200 });
   }
 
-  // Ne fait jamais redescendre le palier : un don plus petit après un don
-  // plus gros ne doit pas rétrograder le donateur.
+  // Ne fait jamais redescendre le palier - un don plus petit apres un don
+  // plus gros ne doit pas retrograder le donateur.
   const nouveauNiveau = Math.max(Number(profilActuel?.niveau_ailes) || 0, palier);
   const { error: erreurEcriture } = await supabase
     .from("profils")
     .update({ niveau_ailes: nouveauNiveau })
     .eq("id", userId);
   if (erreurEcriture) {
-    return new Response(`échec mise à jour niveau_ailes : ${erreurEcriture.message}`, { status: 500 });
+    return new Response("echec mise a jour niveau_ailes : " + erreurEcriture.message, { status: 500 });
   }
 
-  return new Response(`palier ${nouveauNiveau} attribué à ${userId} (don de ${montantTotal} €)`, { status: 200 });
+  return new Response("palier " + nouveauNiveau + " attribue a " + userId + " (don de " + montantTotal + " EUR)", { status: 200 });
 });
