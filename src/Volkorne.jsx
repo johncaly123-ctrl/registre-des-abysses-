@@ -5,9 +5,17 @@
 // C:\Users\Caly\.claude\plans\dazzling-painting-shamir.md pour le contexte.
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
-import { Trash2, Baby } from "lucide-react";
+import { Trash2, Baby, Heart, Zap, Sparkles, Droplets } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
-import { NaissancesEnAttentePanel, ListeCoursesPanel, BebesARenommerPanel } from "./panneauxElevage.jsx";
+import { NaissancesEnAttentePanel, ListeCoursesPanel, BebesARenommerPanel, CouleurCopiable, NomCopiable, exporterFicheImage } from "./panneauxElevage.jsx";
+import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
+
+const JAUGES_VOLKORNE = [
+  { key: "amour", label: "Amour", icon: Heart },
+  { key: "endurance", label: "Endurance", icon: Zap },
+  { key: "maturite", label: "Maturité", icon: Sparkles },
+  { key: "serenite", label: "Sérénité", icon: Droplets },
+];
 
 // ---------- Génétique : 15 couleurs monocolores, 105 bicolores (C(15,2)) ----------
 // Générations des monocolores confirmées sur l'outil de croisement dofusdb.fr.
@@ -544,10 +552,10 @@ const PALETTE_VOLKORNE = {
   jade: "#5EBE8F", rubis: "#C43A4E", saphir: "#3A5EC4", amethyste: "#8E5EC4",
 };
 function foldKey(mot) { return String(mot).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
-function teintesDeCouleurVolkorne(couleur) {
+export function teintesDeCouleurVolkorne(couleur) {
   return String(couleur).split(" et ").map((p) => PALETTE_VOLKORNE[foldKey(p.trim())] || "#8a7a63");
 }
-function slugCouleurVolkorne(couleur) { return foldKey(couleur).replace(/[^a-z]+/g, "-").replace(/(^-|-$)/g, ""); }
+export function slugCouleurVolkorne(couleur) { return foldKey(couleur).replace(/[^a-z]+/g, "-").replace(/(^-|-$)/g, ""); }
 function VolkorneBadge({ couleur, taille = 22 }) {
   const [ko, setKo] = useState(false);
   if (!ko) {
@@ -616,10 +624,13 @@ function VolkorneDetail({ m, byId, onPatch, onDelete }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}>{m.nom || m.couleur}</h3>
-        <button className="btn btn-ghost" onClick={onDelete}><Trash2 size={13} /> Retirer</button>
+        <h3 style={{ margin: 0 }}><NomCopiable nom={m.nom || m.couleur} /></h3>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={() => exporterFicheImage(m, { teintesFn: teintesDeCouleurVolkorne, slugFn: slugCouleurVolkorne, nomCreature: "volkornes" })} title="Télécharger une image de cette fiche">🖼️ Exporter</button>
+          <button className="btn btn-ghost" onClick={onDelete}><Trash2 size={13} /> Retirer</button>
+        </div>
       </div>
-      <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Génération {generationDeCouleurVolkorne(m.couleur)} · {m.couleur}</div>
+      <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Génération {generationDeCouleurVolkorne(m.couleur)} · <CouleurCopiable couleur={m.couleur} gras={false} BadgeComponent={VolkorneBadge} /></div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
         <label style={{ fontSize: 11, color: "var(--muted)" }}>Sexe
           <select className="field" value={m.sexe || ""} onChange={(e) => onPatch({ sexe: e.target.value })}>
@@ -643,15 +654,46 @@ function VolkorneDetail({ m, byId, onPatch, onDelete }) {
           />
         </label>
       </div>
+      <div className="panel-card" style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "var(--gold)", marginBottom: 10, fontWeight: 900 }}>Capacités</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {[0, 1].map((index) => {
+            const valeurs = capacitesMuldo(m);
+            return (
+              <label key={index} style={{ fontSize: 11, color: "var(--muted)" }}>{`Capacité ${index + 1}`}
+                <select
+                  className="field"
+                  value={valeurs[index] || "Aucune"}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const next = [...valeurs];
+                    if (value === "Aucune") next.splice(index, 1);
+                    else next[index] = value;
+                    const propres = [...new Set(next.filter((c) => c && c !== "Aucune"))].slice(0, 2);
+                    onPatch({
+                      capacites: propres,
+                      capacite1: propres[0] || "Aucune",
+                      capacite2: propres[1] || "Aucune",
+                    });
+                  }}
+                >
+                  {CAPACITES_MULDO.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+      </div>
       <div style={{ marginTop: 12, padding: 10, borderRadius: 10, border: `1px solid ${action.color}`, background: "rgba(0,0,0,.12)" }}>
         <b style={{ color: action.color }}>{action.label}</b>
         <div style={{ fontSize: 12, marginTop: 4 }}>Objet : {action.objet}</div>
         <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 2 }}>{action.detail}</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-        {["amour", "endurance", "maturite", "serenite"].map((cle) => (
-          <label key={cle} style={{ fontSize: 11, color: "var(--muted)", textTransform: "capitalize" }}>{cle}
-            <input type="range" min={0} max={100} value={Number(m[cle]) || 0} onChange={(e) => onPatch({ [cle]: Number(e.target.value) })} style={{ width: "100%" }} />
+        {JAUGES_VOLKORNE.map(({ key, label, icon: Icon }) => (
+          <label key={key} style={{ fontSize: 11, color: "var(--muted)" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Icon size={12} /> {label}</span>
+            <input type="range" min={0} max={100} value={Number(m[key]) || 0} onChange={(e) => onPatch({ [key]: Number(e.target.value) })} style={{ width: "100%" }} />
           </label>
         ))}
       </div>

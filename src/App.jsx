@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { chargerJSON, sauvegarderJSON, creerEcritureDebattue, flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
-import { NaissancesEnAttentePanel, CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel, ListeCoursesPanel, BebesARenommerPanel, copierPressePapiers } from "./panneauxElevage.jsx";
+import { NaissancesEnAttentePanel, CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel, ListeCoursesPanel, BebesARenommerPanel, copierPressePapiers, CouleurCopiable, NomCopiable, exporterFicheImage } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
 import { Plus, Trash2, Waves, Heart, Zap, Sparkles, Droplets, AlertTriangle, ChevronRight, X, Skull, Baby, Save } from "lucide-react";
@@ -2054,7 +2054,7 @@ function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => exporterFicheMuldoImage(muldo)} title="Télécharger une image de cette fiche, à partager sur Discord/le forum">🖼️ Exporter</button>
+          <button className="btn btn-ghost" onClick={() => exporterFicheImage(muldo, { teintesFn: teintesDeCouleur, slugFn: slugCouleur, nomCreature: "muldos" })} title="Télécharger une image de cette fiche, à partager sur Discord/le forum">🖼️ Exporter</button>
           <button className="btn btn-ghost" onClick={onDelete}><Trash2 size={13} /> Retirer</button>
         </div>
       </div>
@@ -2634,148 +2634,6 @@ function MuldoBadge({ couleur, taille = 22 }) {
 // pensée pour être partagée telle quelle sur Discord/le forum. Dessine la
 // pastille de couleur à la main (mêmes teintes que MuldoBadge) plutôt que de
 // charger une image externe, pour rester fiable même sans visuel personnalisé.
-function exporterFicheMuldoImage(muldo) {
-  const largeur = 900, hauteur = 520;
-  const canvas = document.createElement("canvas");
-  canvas.width = largeur; canvas.height = hauteur;
-  const ctx = canvas.getContext("2d");
-
-  const degrade = ctx.createLinearGradient(0, 0, largeur, hauteur);
-  degrade.addColorStop(0, "#2b241d");
-  degrade.addColorStop(1, "#17130f");
-  ctx.fillStyle = degrade;
-  ctx.fillRect(0, 0, largeur, hauteur);
-
-  ctx.strokeStyle = "#d6a64a";
-  ctx.lineWidth = 4;
-  ctx.strokeRect(10, 10, largeur - 20, hauteur - 20);
-
-  // Pastille de couleur (mêmes teintes que MuldoBadge, coupée en 2 si bicolore)
-  const teintes = teintesDeCouleur(muldo.couleur);
-  const cx = 165, cy = 260, r = 120;
-  ctx.save();
-  if (teintes.length >= 2) {
-    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2); ctx.closePath();
-    ctx.fillStyle = teintes[1]; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.arc(cx, cy, r, Math.PI / 2, -Math.PI / 2); ctx.closePath();
-    ctx.fillStyle = teintes[0]; ctx.fill();
-  } else {
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = teintes[0]; ctx.fill();
-  }
-  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.35)";
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-  ctx.restore();
-
-  const gaucheTexte = 340;
-  const largeurDispoTitre = largeur - gaucheTexte - 30;
-  ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = "#f4ead4";
-  let tailleTitre = 44;
-  const titre = muldo.nom || muldo.couleur;
-  ctx.font = `bold ${tailleTitre}px Georgia, 'Iowan Old Style', serif`;
-  while (tailleTitre > 22 && ctx.measureText(titre).width > largeurDispoTitre) {
-    tailleTitre -= 2;
-    ctx.font = `bold ${tailleTitre}px Georgia, 'Iowan Old Style', serif`;
-  }
-  ctx.fillText(titre, gaucheTexte, 150);
-
-  ctx.fillStyle = "#d6a64a";
-  ctx.font = "600 24px Georgia, serif";
-  ctx.fillText(muldo.couleur, gaucheTexte, 190);
-
-  const lignes = [
-    `Génération ${muldo.generation}`,
-    `${muldo.sexe === "F" ? "♀ Femelle" : "♂ Mâle"}`,
-    `${muldo.statut || (muldo.sterile ? "Stérile" : "Fertile")}`,
-  ];
-  ctx.fillStyle = "#c9bfae";
-  ctx.font = "22px Georgia, sans-serif";
-  lignes.forEach((ligne, i) => ctx.fillText(ligne, gaucheTexte, 245 + i * 36));
-
-  ctx.fillStyle = "rgba(244,234,212,.55)";
-  ctx.font = "16px Georgia, sans-serif";
-  ctx.fillText("🍺 Registre des Abysses — élevage de muldos", gaucheTexte, hauteur - 50);
-  ctx.font = "13px Georgia, sans-serif";
-  ctx.fillText("Projet communautaire non affilié à Ankama.", gaucheTexte, hauteur - 28);
-
-  canvas.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const lien = document.createElement("a");
-    lien.href = url;
-    lien.download = `muldo-${slugCouleur(muldo.couleur)}-${(muldo.nom || "fiche").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`;
-    document.body.appendChild(lien);
-    lien.click();
-    document.body.removeChild(lien);
-    URL.revokeObjectURL(url);
-  }, "image/png");
-}
-
-// Nom de couleur cliquable : copie "Muldo <Couleur>" (nom exact à l'HDV créatures).
-function CouleurCopiable({ couleur, gras = true }) {
-  const [copie, setCopie] = useState(false);
-  const onClick = async (e) => {
-    e.stopPropagation();
-    if (await copierPressePapiers(`Muldo ${couleur}`)) {
-      setCopie(true);
-      setTimeout(() => setCopie(false), 1200);
-    }
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`Copier « Muldo ${couleur} » pour la recherche HDV`}
-      style={{
-        background: "none",
-        border: "none",
-        padding: 0,
-        color: "inherit",
-        font: "inherit",
-        fontWeight: gras ? 700 : "inherit",
-        cursor: "pointer",
-        textDecoration: "underline dotted",
-        textUnderlineOffset: 3,
-      }}
-    >
-      <MuldoBadge couleur={couleur} taille={18} />{" "}{couleur}{copie ? " ✓" : ""}
-    </button>
-  );
-}
-
-// Nom cliquable : copie le nom exact (pratique pour le renommage en jeu ou
-// pour retrouver la bonne fiche), sans le badge couleur de CouleurCopiable.
-function NomCopiable({ nom, gras = true }) {
-  const [copie, setCopie] = useState(false);
-  const onClick = async (e) => {
-    e.stopPropagation();
-    if (await copierPressePapiers(nom)) {
-      setCopie(true);
-      setTimeout(() => setCopie(false), 1200);
-    }
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`Copier « ${nom} »`}
-      style={{
-        background: "none",
-        border: "none",
-        padding: 0,
-        color: "inherit",
-        font: "inherit",
-        fontWeight: gras ? 700 : "inherit",
-        cursor: "pointer",
-        textDecoration: "underline dotted",
-        textUnderlineOffset: 3,
-      }}
-    >
-      {nom}{copie ? " ✓" : ""}
-    </button>
-  );
-}
 
 function formatKamas(n) {
   return `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(n) || 0))} k`;
@@ -5420,9 +5278,9 @@ function GpsDofusPage({
               <b>♀ <NomCopiable nom={g.femelle.nom || g.femelle.couleur} /></b>{" "}
               <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                <CouleurCopiable couleur={g.male.couleur} gras={false} />
+                <CouleurCopiable couleur={g.male.couleur} gras={false} BadgeComponent={MuldoBadge} />
                 <span style={{ margin: "0 5px" }}>×</span>
-                <CouleurCopiable couleur={g.femelle.couleur} gras={false} />
+                <CouleurCopiable couleur={g.femelle.couleur} gras={false} BadgeComponent={MuldoBadge} />
               </div>
               <div style={{
                 color: "var(--muted)",

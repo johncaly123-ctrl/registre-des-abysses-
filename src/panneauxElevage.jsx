@@ -25,6 +25,147 @@ export async function copierPressePapiers(texte) {
   }
 }
 
+// ---------- Nom / couleur copiables en un clic ----------
+export function CouleurCopiable({ couleur, gras = true, BadgeComponent }) {
+  const [copie, setCopie] = useState(false);
+  const onClick = async (e) => {
+    e.stopPropagation();
+    if (await copierPressePapiers(couleur)) {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 1200);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Copier « ${couleur} » pour la recherche HDV`}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        color: "inherit",
+        font: "inherit",
+        fontWeight: gras ? 700 : "inherit",
+        cursor: "pointer",
+        textDecoration: "underline dotted",
+        textUnderlineOffset: 3,
+      }}
+    >
+      {BadgeComponent && <BadgeComponent couleur={couleur} taille={18} />}{" "}{couleur}{copie ? " ✓" : ""}
+    </button>
+  );
+}
+
+export function NomCopiable({ nom, gras = true }) {
+  const [copie, setCopie] = useState(false);
+  const onClick = async (e) => {
+    e.stopPropagation();
+    if (await copierPressePapiers(nom)) {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 1200);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Copier « ${nom} »`}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        color: "inherit",
+        font: "inherit",
+        fontWeight: gras ? 700 : "inherit",
+        cursor: "pointer",
+        textDecoration: "underline dotted",
+        textUnderlineOffset: 3,
+      }}
+    >
+      {nom}{copie ? " ✓" : ""}
+    </button>
+  );
+}
+
+// ---------- Export de fiche en image ----------
+export function exporterFicheImage(muldo, { teintesFn, slugFn, nomCreature }) {
+  const largeur = 900, hauteur = 520;
+  const canvas = document.createElement("canvas");
+  canvas.width = largeur; canvas.height = hauteur;
+  const ctx = canvas.getContext("2d");
+
+  const degrade = ctx.createLinearGradient(0, 0, largeur, hauteur);
+  degrade.addColorStop(0, "#2b241d");
+  degrade.addColorStop(1, "#17130f");
+  ctx.fillStyle = degrade;
+  ctx.fillRect(0, 0, largeur, hauteur);
+
+  ctx.strokeStyle = "#d6a64a";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, 10, largeur - 20, hauteur - 20);
+
+  const teintes = teintesFn(muldo.couleur);
+  const cx = 165, cy = 260, r = 120;
+  ctx.save();
+  if (teintes.length >= 2) {
+    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2); ctx.closePath();
+    ctx.fillStyle = teintes[1]; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.arc(cx, cy, r, Math.PI / 2, -Math.PI / 2); ctx.closePath();
+    ctx.fillStyle = teintes[0]; ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = teintes[0]; ctx.fill();
+  }
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.35)";
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+
+  const gaucheTexte = 340;
+  const largeurDispoTitre = largeur - gaucheTexte - 30;
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#f4ead4";
+  let tailleTitre = 44;
+  const titre = muldo.nom || muldo.couleur;
+  ctx.font = `bold ${tailleTitre}px Georgia, 'Iowan Old Style', serif`;
+  while (tailleTitre > 22 && ctx.measureText(titre).width > largeurDispoTitre) {
+    tailleTitre -= 2;
+    ctx.font = `bold ${tailleTitre}px Georgia, 'Iowan Old Style', serif`;
+  }
+  ctx.fillText(titre, gaucheTexte, 150);
+
+  ctx.fillStyle = "#d6a64a";
+  ctx.font = "600 24px Georgia, serif";
+  ctx.fillText(muldo.couleur, gaucheTexte, 190);
+
+  const lignes = [
+    `Génération ${muldo.generation}`,
+    `${muldo.sexe === "F" ? "♀ Femelle" : "♂ Mâle"}`,
+    `${muldo.statut || (muldo.sterile ? "Stérile" : "Fertile")}`,
+  ];
+  ctx.fillStyle = "#c9bfae";
+  ctx.font = "22px Georgia, sans-serif";
+  lignes.forEach((ligne, i) => ctx.fillText(ligne, gaucheTexte, 245 + i * 36));
+
+  ctx.fillStyle = "rgba(244,234,212,.55)";
+  ctx.font = "16px Georgia, sans-serif";
+  ctx.fillText(`🍺 Registre des Abysses — élevage de ${nomCreature}`, gaucheTexte, hauteur - 50);
+  ctx.font = "13px Georgia, sans-serif";
+  ctx.fillText("Projet communautaire non affilié à Ankama.", gaucheTexte, hauteur - 28);
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const lien = document.createElement("a");
+    lien.href = url;
+    lien.download = `${slugFn(muldo.couleur)}-${(muldo.nom || "fiche").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`;
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+    URL.revokeObjectURL(url);
+  }, "image/png");
+}
+
 // ---------- Derniers bébés à renommer en jeu ----------
 export function BebesARenommerPanel({ journal, BadgeComponent }) {
   const [copie, setCopie] = useState(null);
@@ -169,7 +310,7 @@ export function ListeCoursesPanel({
         <div style={{ marginTop: 10 }}>
           {courses.map((c) => (
             <div key={`${c.couleur}|${c.sexe}`} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "4px 0", fontSize: 13, borderBottom: "1px solid rgba(255,255,255,.04)", flexWrap: "wrap" }}>
-              <b>{c.sexe === "F" ? "♀" : "♂"} <BadgeComponent couleur={c.couleur} taille={16} /> {c.couleur}</b>
+              <b>{c.sexe === "F" ? "♀" : "♂"} <CouleurCopiable couleur={c.couleur} BadgeComponent={BadgeComponent} /></b>
               <span style={{ color: "var(--muted)", fontSize: 12 }}>
                 G{c.generation} · débloquerait jusqu'à {c.impact} couple(s)
                 {c.generation === 1 ? ` · capturable ${lieuCapture}` : " · via HDV, élevage ou clonage"}
