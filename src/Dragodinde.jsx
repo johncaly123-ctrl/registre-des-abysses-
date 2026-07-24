@@ -960,11 +960,17 @@ export function useDragodindeElevage() {
 
   const objectifGpsActif = choixObjectifGps.objectif || objectifGps;
 
-  const gpsSuiviActif = gpsSuivi.mode === modeGps
-    && gpsSuivi.objectif === objectifGpsActif
-    && gpsSuivi.purification === purification
-    ? gpsSuivi
-    : { mode: modeGps, objectif: objectifGpsActif, purification, consommes: [], historique: [], totalInitial: 0 };
+  // Mémoïsé : sinon un nouvel objet est créé à chaque rendu dès que la
+  // session suivie ne correspond pas aux réglages courants, ce qui casse la
+  // mémoïsation en aval (cheptelGpsDisponible -> sessionGps) et relance
+  // l'affectation hongroise O(n^3) sur tout le cheptel à chaque rendu.
+  const gpsSuiviActif = useMemo(() => (
+    gpsSuivi.mode === modeGps
+      && gpsSuivi.objectif === objectifGpsActif
+      && gpsSuivi.purification === purification
+      ? gpsSuivi
+      : { mode: modeGps, objectif: objectifGpsActif, purification, consommes: [], historique: [], totalInitial: 0 }
+  ), [gpsSuivi, modeGps, objectifGpsActif, purification]);
 
   const cheptelGpsDisponible = useMemo(() => {
     const idsConsommes = new Set(gpsSuiviActif.consommes || []);
