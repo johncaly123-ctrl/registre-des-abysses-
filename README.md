@@ -16,3 +16,7 @@ Outil communautaire non affilié à Ankama.
 - **Vercel** : importer le dépôt GitHub, framework "Vite", aucun réglage nécessaire.
 - Toutes les données restent dans le navigateur du visiteur (localStorage) :
   aucun serveur, aucune base de données à gérer.
+
+## Communauté
+Rejoins la communauté sur Discord pour échanger sur l'élevage, signaler un bug ou
+proposer une idée : lien à venir (voir `LIEN_DISCORD` dans `src/configSupabase.js`).

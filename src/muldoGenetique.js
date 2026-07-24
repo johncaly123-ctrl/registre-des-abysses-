@@ -9,19 +9,21 @@ import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonu
 export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres };
 
 // ---------- constantes de design ----------
+// Alias vers les variables CSS du thème (voir :root dans App.jsx) plutôt que
+// des couleurs figées, pour que ces valeurs suivent le bascule clair/sombre.
 export const COLORS = {
-  bg: "#0A1B22",
-  panel: "#102B34",
-  panelAlt: "#0D242C",
-  line: "#1E4650",
-  coral: "#E8734A",
-  coralDim: "#B85A38",
-  glow: "#4FD1C5",
-  glowDim: "#2E7A72",
-  text: "#E7EDE9",
-  muted: "#6C8A94",
-  danger: "#D9534F",
-  gold: "#D4A94C",
+  bg: "var(--bg)",
+  panel: "var(--panel)",
+  panelAlt: "var(--panel2)",
+  line: "var(--line)",
+  coral: "var(--accent)",
+  coralDim: "var(--accent)",
+  glow: "var(--cyan)",
+  glowDim: "var(--cyan)",
+  text: "var(--text)",
+  muted: "var(--muted)",
+  danger: "var(--red)",
+  gold: "var(--gold)",
 };
 
 export const COULEURS_MULDO = [

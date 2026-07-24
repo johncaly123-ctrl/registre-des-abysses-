@@ -10,6 +10,10 @@ export const supabaseEstConfigure = () => SUPABASE_URL.startsWith("https://");
 // Lien de don (Ko-fi, PayPal…) affiché sur la page Profil. Laisse vide pour masquer.
 export const LIEN_DON = "https://paypal.me/caly191";
 
+// Lien d'invitation Discord de la communauté, affiché dans le pied de page.
+// Laisse vide tant que le serveur Discord n'existe pas (le lien est masqué).
+export const LIEN_DISCORD = "";
+
 // Payment Links Stripe (Dashboard Stripe -> Payment Links -> "+ Créer") pour
 // l'attribution AUTOMATIQUE du palier d'ailes : un lien "paiement unique"
 // par palier, aux montants exacts 5 / 8 / 12 / 16 / 20 € (dans l'ordre —

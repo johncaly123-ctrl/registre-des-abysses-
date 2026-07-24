@@ -6,6 +6,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { Trash2, ChevronRight } from "lucide-react";
 import { COLORS } from "./muldoGenetique.js";
+import { supabase } from "./supabaseClient.js";
+
+// Nom de serveur Dofus — texte libre (pas de liste figée qui deviendrait vite
+// obsolète), partagé entre les 3 créatures : un joueur ne change pas de
+// serveur d'une page d'estimation à l'autre.
+const STORAGE_SERVEUR = "muldo-serveur-v1";
 
 export async function copierPressePapiers(texte) {
   try {
@@ -726,12 +732,28 @@ export function GpsDofusPage({
   nomObjectifLabel = "Muldo objectif",
   nomEntitePluriel = "Muldos",
   supporteReproducteur = true,
+  onPartagerTaverne,
 }) {
   const [etapesOuvertes, setEtapesOuvertes] = useState({});
   const toggleEtapes = (key) => {
     setEtapesOuvertes((prev) => ({ ...prev, [key]: !prev[key] }));
   };
   const [forcerJaugesNettoyage, setForcerJaugesNettoyage] = useState(false);
+  const [planCopie, setPlanCopie] = useState(false);
+
+  const resumeTextePlan = () => {
+    const lignes = (session.groupes || []).map((g) =>
+      `${g.quantite}x ${g.male.couleur} × ${g.femelle.couleur} → ${g.resultat || "?"}`
+    );
+    const entete = `Plan GPS ${nomEntitePluriel}${objectif ? ` — objectif ${objectif}` : ""}`;
+    return lignes.length ? `${entete}\n${lignes.join("\n")}` : `${entete}\nAucun croisement possible avec le cheptel actuel.`;
+  };
+  const copierPlan = async () => {
+    if (await copierPressePapiers(resumeTextePlan())) {
+      setPlanCopie(true);
+      setTimeout(() => setPlanCopie(false), 1500);
+    }
+  };
 
   const pct = session.totalFertiles
     ? Math.round(session.utilises / session.totalFertiles * 100)
@@ -757,22 +779,32 @@ export function GpsDofusPage({
 
   return (
     <div>
-      <div style={{ marginBottom: 18 }}>
-        <div style={{
-          color: "var(--gold)",
-          fontSize: 12,
-          fontWeight: 950,
-          letterSpacing: 1.6,
-          textTransform: "uppercase",
-        }}>
-          GPS session complète
+      <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <div style={{
+            color: "var(--gold)",
+            fontSize: 12,
+            fontWeight: 950,
+            letterSpacing: 1.6,
+            textTransform: "uppercase",
+          }}>
+            GPS session complète
+          </div>
+          <h1 style={{ margin: "6px 0 0", fontSize: 34 }}>
+            Objectif intelligent
+          </h1>
+          <div style={{ color: "var(--muted)", marginTop: 7 }}>
+            Le plan est recalculé après chaque accouplement réalisé.
+          </div>
         </div>
-        <h1 style={{ margin: "6px 0 0", fontSize: 34 }}>
-          Objectif intelligent
-        </h1>
-        <div style={{ color: "var(--muted)", marginTop: 7 }}>
-          Le plan est recalculé après chaque accouplement réalisé.
-        </div>
+        {(session.groupes || []).length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn-ghost" onClick={copierPlan}>{planCopie ? "✓ Copié" : "📋 Copier le plan"}</button>
+            {onPartagerTaverne && (
+              <button className="btn btn-ghost" onClick={() => onPartagerTaverne(resumeTextePlan())}>🍻 Partager dans la Taverne</button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="panel-card" style={{ marginBottom: 16 }}>
@@ -1461,7 +1493,46 @@ export function formatKamas(n) {
 // sont saisis à la main par couleur (une fois), persistés, et le total suit
 // automatiquement l'évolution du cheptel. Les stériles sont comptés avec une
 // décote réglable (leur valeur réelle est surtout le recyclage).
-export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge }) {
+export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge, creature, userId }) {
+  const [sourcePrix, setSourcePrix] = useState("perso");
+  const [serveur, setServeur] = useState(() => localStorage.getItem(STORAGE_SERVEUR) || "");
+  useEffect(() => {
+    localStorage.setItem(STORAGE_SERVEUR, serveur);
+  }, [serveur]);
+  // couleur -> { median, nb }, chargé depuis Supabase pour (creature, serveur).
+  const [communaute, setCommunaute] = useState({});
+  const [chargementCommunaute, setChargementCommunaute] = useState(false);
+  const serveurNormalise = serveur.trim();
+  useEffect(() => {
+    if (!supabase || sourcePrix !== "communaute" || !serveurNormalise) { setCommunaute({}); return; }
+    let annule = false;
+    setChargementCommunaute(true);
+    supabase.from("prix_communautaires_medianes")
+      .select("couleur, prix_median, nb_soumissions")
+      .eq("creature", creature)
+      .eq("serveur", serveurNormalise)
+      .then(({ data }) => {
+        if (annule) return;
+        const carte = {};
+        (data || []).forEach((l) => { carte[l.couleur] = { median: Number(l.prix_median), nb: Number(l.nb_soumissions) }; });
+        setCommunaute(carte);
+        setChargementCommunaute(false);
+      });
+    return () => { annule = true; };
+  }, [sourcePrix, serveurNormalise, creature]);
+
+  const [saisieCommunaute, setSaisieCommunaute] = useState({});
+  const proposerPrixCommunaute = async (couleur) => {
+    const valeur = Number(saisieCommunaute[couleur]);
+    if (!supabase || !userId || !serveurNormalise || !Number.isFinite(valeur) || valeur < 0) return;
+    await supabase.from("prix_communautaires").upsert(
+      { creature, couleur, serveur: serveurNormalise, prix: valeur, auteur: userId },
+      { onConflict: "creature,couleur,serveur,auteur" }
+    );
+    setSaisieCommunaute((prev) => ({ ...prev, [couleur]: "" }));
+    setCommunaute((prev) => ({ ...prev, [couleur]: { median: valeur, nb: (prev[couleur]?.nb || 0) + (prev[couleur] ? 0 : 1) } }));
+  };
+
   const [config, setConfig] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey));
@@ -1498,7 +1569,11 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
     });
     return [...parCouleur.values()]
       .map((l) => {
-        const prixUnitaire = Number(config.prix[l.couleur]) || 0;
+        const prixPerso = Number(config.prix[l.couleur]) || 0;
+        const prixCommunaute = communaute[l.couleur]?.median;
+        // Communauté choisie mais aucune soumission pour cette couleur/serveur
+        // encore : repli automatique sur le prix personnel.
+        const prixUnitaire = sourcePrix === "communaute" && Number.isFinite(prixCommunaute) ? prixCommunaute : prixPerso;
         const sousTotal = l.fertiles * prixUnitaire
           + (l.steriles + l.seniles) * prixUnitaire * (config.decoteSterile / 100);
         const generation = generationDeCouleurFn(l.couleur);
@@ -1507,10 +1582,10 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
         const valeurExtraction = generation >= 2
           ? ((l.fertiles + l.steriles) * generation + l.seniles * 1) * (Number(config.prixAmbre) || 0)
           : 0;
-        return { ...l, prixUnitaire, sousTotal, generation, valeurExtraction };
+        return { ...l, prixPerso, prixUnitaire, sousTotal, generation, valeurExtraction };
       })
       .sort((a, b) => (a.generation - b.generation) || a.couleur.localeCompare(b.couleur, "fr"));
-  }, [cheptel, config, generationDeCouleurFn]);
+  }, [cheptel, config, generationDeCouleurFn, sourcePrix, communaute]);
 
   const total = lignes.reduce((n, l) => n + l.sousTotal, 0);
   const totalExtraction = lignes.reduce((n, l) => n + l.valeurExtraction, 0);
@@ -1550,6 +1625,29 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
         recherche de l'HDV créatures.{" "}
         {sansPrix > 0 && <span style={{ color: "#e8896a" }}>{sansPrix} couleur(s) sans prix : elles comptent pour 0.</span>}
       </div>
+
+      {supabase && creature && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, fontSize: 12, color: "var(--muted)", flexWrap: "wrap" }}>
+          <span>Source des prix :</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button type="button" className={`btn ${sourcePrix === "perso" ? "btn-coral" : "btn-ghost"}`} style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSourcePrix("perso")}>Personnel</button>
+            <button type="button" className={`btn ${sourcePrix === "communaute" ? "btn-coral" : "btn-ghost"}`} style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSourcePrix("communaute")}>Communauté (médiane serveur)</button>
+          </div>
+          {sourcePrix === "communaute" && (
+            <>
+              <input
+                className="field"
+                placeholder="Ton serveur (ex. Dodge)"
+                value={serveur}
+                onChange={(e) => setServeur(e.target.value)}
+                style={{ width: 160, padding: "5px 10px" }}
+              />
+              {!serveurNormalise && <span>Renseigne un serveur pour voir les prix communautaires.</span>}
+              {chargementCommunaute && <span>chargement…</span>}
+            </>
+          )}
+        </div>
+      )}
 
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: "var(--muted)" }}>
         Valeur d'un stérile :
@@ -1598,15 +1696,39 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
             </span>
             <span>{l.fertiles}</span>
             <span style={{ color: "var(--muted)" }}>{l.steriles}</span>
-            <input
-              type="number"
-              className="field"
-              min={0}
-              placeholder="prix en k"
-              value={config.prix[l.couleur] ?? ""}
-              onChange={(e) => setPrixCouleur(l.couleur, e.target.value)}
-              style={{ width: "100%", padding: "4px 8px" }}
-            />
+            {sourcePrix === "perso" || !serveurNormalise ? (
+              <input
+                type="number"
+                className="field"
+                min={0}
+                placeholder="prix en k"
+                value={config.prix[l.couleur] ?? ""}
+                onChange={(e) => setPrixCouleur(l.couleur, e.target.value)}
+                style={{ width: "100%", padding: "4px 8px" }}
+              />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 12, color: communaute[l.couleur] ? "var(--text)" : "var(--muted)" }}>
+                  {communaute[l.couleur]
+                    ? `${formatKamas(communaute[l.couleur].median)} (${communaute[l.couleur].nb} avis)`
+                    : `perso : ${formatKamas(l.prixPerso)}`}
+                </span>
+                {userId && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <input
+                      type="number"
+                      className="field"
+                      min={0}
+                      placeholder="proposer"
+                      value={saisieCommunaute[l.couleur] ?? ""}
+                      onChange={(e) => setSaisieCommunaute((prev) => ({ ...prev, [l.couleur]: e.target.value }))}
+                      style={{ width: 70, padding: "3px 6px", fontSize: 11 }}
+                    />
+                    <button type="button" className="btn btn-ghost" style={{ padding: "3px 6px", fontSize: 11 }} onClick={() => proposerPrixCommunaute(l.couleur)}>OK</button>
+                  </div>
+                )}
+              </div>
+            )}
             <span style={{ textAlign: "right", color: l.sousTotal ? "var(--text)" : "var(--muted)" }}>{formatKamas(l.sousTotal)}</span>
             <span
               title={l.generation >= 2

@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
-import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable } from "./panneauxElevage.jsx";
+import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers } from "./panneauxElevage.jsx";
+import { GuidePage } from "./GuidePage.jsx";
+import { OnboardingOverlay } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
-import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE } from "./configSupabase.js";
+import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2 } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
   CLES_SAUVEGARDE_DRAGODINDE, generationDeCouleurDragodinde, sexeDragodinde, plierCouleurDragodinde,
+  GENERATIONS_DRAGODINDE,
 } from "./Dragodinde.jsx";
 import {
   useVolkorneElevage, VolkorneCheptelListPane, VolkorneCheptelMainPane,
   VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
   CLES_SAUVEGARDE_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
+  GENERATIONS_VOLKORNE,
 } from "./Volkorne.jsx";
 import {
   useMuldoElevage, MuldoBadge, MuldoDetail, NewMuldoModal, FicheRapideModal,
@@ -36,26 +40,77 @@ import {
 } from "./muldoGenetique.js";
 
 
+// Équivalent générique de plusHauteGenerationValidee (muldoGenetique.js) pour
+// Dragodinde/Volkorne, qui n'ont pas leur propre fonction exportée du même nom.
+function plusHauteGenerationValideeGenerique(cheptel, historiqueCouleurs, generationsTable) {
+  const present = new Set((cheptel || []).map((m) => m.couleur));
+  const seen = (c) => Boolean(historiqueCouleurs?.[c]) || present.has(c);
+  const completes = Object.entries(generationsTable || {})
+    .filter(([, couleurs]) => couleurs.length && couleurs.every(seen))
+    .map(([g]) => Number(g));
+  return completes.length ? Math.max(...completes) : 0;
+}
+
 const STORAGE_PRIX_KAMAS = "muldo-prix-kamas-v1";
 const STORAGE_PRIX_KAMAS_DRAGODINDE = "dragodinde-prix-kamas-v1";
 const STORAGE_PRIX_KAMAS_VOLKORNE = "volkorne-prix-kamas-v1";
 const STORAGE_PROFIL = "muldo-profil-v1";
+const STORAGE_THEME = "muldo-theme-v1";
+const STORAGE_ONBOARDING_GPS = "muldo-onboarding-gps-v1";
 
 
 // ---------- composant principal ----------
 export default function App() {
+  // Cheptel public en lecture seule (?voir=pseudo) : lu une fois au montage,
+  // ne change jamais après (un partage de lien recharge la page).
+  const [pseudoPublic] = useState(() => new URLSearchParams(window.location.search).get("voir") || null);
   const [toast, setToast] = useState(null);
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
   };
-  const [page, setPage] = useState("dashboard");
+  // Permet d'atterrir directement sur une page via ?page=guide (utile pour le
+  // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
+  const [page, setPage] = useState(() => {
+    const demandee = new URLSearchParams(window.location.search).get("page");
+    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "taverne", "succes", "guide"];
+    return pagesValides.includes(demandee) ? demandee : "dashboard";
+  });
   // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
   // "cheptel" | "synchro" | "gps" | "clonage". Partagé entre les 3, réinitialisé
   // implicitement en changeant de section (on ne mémorise pas par créature).
   const [sousPage, setSousPage] = useState("cheptel");
   // Créature affichée sur la page Succès (elle regroupe les 3 sous un seul onglet).
   const [succesCreature, setSuccesCreature] = useState("muldo");
+  const [theme, setTheme] = useState(() => {
+    const enregistre = localStorage.getItem(STORAGE_THEME);
+    if (enregistre === "clair" || enregistre === "sombre") return enregistre;
+    return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "clair" : "sombre";
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(STORAGE_THEME, theme);
+  }, [theme]);
+  const [onboardingGpsOuvert, setOnboardingGpsOuvert] = useState(false);
+  useEffect(() => {
+    if (sousPage === "gps" && !localStorage.getItem(STORAGE_ONBOARDING_GPS)) {
+      setOnboardingGpsOuvert(true);
+    }
+  }, [sousPage]);
+  const fermerOnboardingGps = () => {
+    localStorage.setItem(STORAGE_ONBOARDING_GPS, "1");
+    setOnboardingGpsOuvert(false);
+  };
+  const [demandeClassementTaverne, setDemandeClassementTaverne] = useState(false);
+  const voirClassementDepuisSucces = () => {
+    setDemandeClassementTaverne(true);
+    setPage("taverne");
+  };
+  const [brouillonTaverne, setBrouillonTaverne] = useState("");
+  const partagerDansTaverne = (texte) => {
+    setBrouillonTaverne(texte);
+    setPage("taverne");
+  };
   const [profil, setProfilState] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_PROFIL));
@@ -106,6 +161,64 @@ export default function App() {
         .then(() => compte.rafraichirProfil());
     }
   }, [eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
+  // Mêmes poussées auto-déclaratives que ci-dessus, pour Dragodinde et Volkorne
+  // — alimentent le classement des éleveurs étendu aux 3 créatures.
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const gen = plusHauteGenerationValideeGenerique(eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, GENERATIONS_DRAGODINDE);
+    if (compte.profil.succes_generation_dragodinde !== gen) {
+      supabase.from("profils").update({ succes_generation_dragodinde: gen })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const nb = Object.values(eleveDragodinde.historiqueCouleurs || {}).filter(Boolean).length;
+    if (compte.profil.couleurs_decouvertes_dragodinde !== nb) {
+      supabase.from("profils").update({ couleurs_decouvertes_dragodinde: nb })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const gen = plusHauteGenerationValideeGenerique(eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, GENERATIONS_VOLKORNE);
+    if (compte.profil.succes_generation_volkorne !== gen) {
+      supabase.from("profils").update({ succes_generation_volkorne: gen })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const nb = Object.values(eleveVolkorne.historiqueCouleurs || {}).filter(Boolean).length;
+    if (compte.profil.couleurs_decouvertes_volkorne !== nb) {
+      supabase.from("profils").update({ couleurs_decouvertes_volkorne: nb })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
+
+  // Titre d'onglet dynamique : reflète la page (et, pour les créatures, le
+  // sous-onglet) affichée — plus lisible dans l'historique/les favoris du
+  // navigateur qu'un titre statique unique.
+  useEffect(() => {
+    const NOMS_CREATURE = { muldo: "Muldos", dragodinde: "Dragodindes", volkorne: "Volkornes" };
+    const NOMS_SOUS_PAGE = { cheptel: "Cheptel", synchro: "Synchronisation", gps: "GPS", clonage: "Clonage" };
+    let titre;
+    if (page === "dashboard") titre = "Tableau de bord";
+    else if (page === "taverne") titre = "Taverne";
+    else if (page === "succes") titre = "Succès";
+    else if (page === "guide") titre = "Guide";
+    else if (NOMS_CREATURE[page]) titre = `${NOMS_SOUS_PAGE[sousPage] || ""} ${NOMS_CREATURE[page]}`.trim();
+    else titre = "Registre des Abysses";
+    document.title = `${titre} — Registre des Abysses`;
+  }, [page, sousPage]);
+
+  if (pseudoPublic) {
+    return <CheptelPublicPage pseudo={pseudoPublic} />;
+  }
 
   if (eleveMuldo.loading) {
     return (
@@ -136,6 +249,36 @@ export default function App() {
           --muted: #a9967c;
           --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
           --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          --page-bg: #0c0a08;
+          --shell-bg:
+            radial-gradient(900px 420px at 35% -15%, rgba(214,166,74,.22), transparent 62%),
+            radial-gradient(1000px 600px at 108% 112%, rgba(101,199,193,.10), transparent 58%),
+            radial-gradient(700px 400px at -8% 108%, rgba(30,70,80,.35), transparent 60%),
+            linear-gradient(160deg, #120f0c 0%, #1f1812 55%, #15161a 100%);
+        }
+        /* Thème clair — première passe, à affiner visuellement (teintes exactes
+           laissées à l'appréciation du propriétaire du site). */
+        :root[data-theme="clair"] {
+          --bg: #f7f1e6;
+          --bg2: #efe4d0;
+          --panel: #fffaf0;
+          --panel2: #f3e9d6;
+          --panel3: #ead9bd;
+          --line: #d8c39f;
+          --gold: #b9822f;
+          --gold2: #8f6220;
+          --accent: #b56b2e;
+          --green: #2f9142;
+          --cyan: #1f8f88;
+          --red: #b23d32;
+          --text: #2b2013;
+          --muted: #7a6b52;
+          --page-bg: #f2ead9;
+          --shell-bg:
+            radial-gradient(900px 420px at 35% -15%, rgba(214,166,74,.16), transparent 62%),
+            radial-gradient(1000px 600px at 108% 112%, rgba(101,199,193,.12), transparent 58%),
+            radial-gradient(700px 400px at -8% 108%, rgba(180,150,100,.18), transparent 60%),
+            linear-gradient(160deg, #fbf6ea 0%, #f3e8d3 55%, #eee7df 100%);
         }
         * { box-sizing: border-box; }
         /* Neutralise ENTIÈREMENT le gabarit Vite par défaut (index.css) :
@@ -143,7 +286,7 @@ export default function App() {
            - body en display:flex = #root rétréci à son contenu et collé à gauche. */
         html, body {
           margin:0 !important; padding:0 !important;
-          background:#0c0a08;
+          background:var(--page-bg);
           display:block !important;
           min-height:100vh;
         }
@@ -162,11 +305,7 @@ export default function App() {
           color: var(--text);
           font-family: var(--font-ui);
           border: 0;
-          background:
-            radial-gradient(900px 420px at 35% -15%, rgba(214,166,74,.22), transparent 62%),
-            radial-gradient(1000px 600px at 108% 112%, rgba(101,199,193,.10), transparent 58%),
-            radial-gradient(700px 400px at -8% 108%, rgba(30,70,80,.35), transparent 60%),
-            linear-gradient(160deg, #120f0c 0%, #1f1812 55%, #15161a 100%);
+          background: var(--shell-bg);
           box-shadow: 0 24px 80px rgba(0,0,0,.35);
         }
         .loading-screen { display:flex; align-items:center; justify-content:center; min-height:520px; color:var(--muted); }
@@ -211,7 +350,7 @@ export default function App() {
         .app-header {
           min-height:76px; padding:12px 24px;
           display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-          background:linear-gradient(180deg, rgba(53,43,34,.9), rgba(35,29,23,.72));
+          background:linear-gradient(180deg, var(--panel3), var(--panel2));
           border-bottom:1px solid var(--line);
           box-shadow: 0 1px 0 rgba(240,207,114,.14), 0 2px 0 rgba(0,0,0,.25);
         }
@@ -235,7 +374,7 @@ export default function App() {
         .layout { display:flex; min-height:646px; }
         .sidebar {
           width:236px; padding:16px 12px; border-right:1px solid var(--line);
-          background:linear-gradient(180deg, rgba(43,36,29,.95), rgba(22,22,25,.98));
+          background:linear-gradient(180deg, var(--panel2), var(--bg));
           display:flex; flex-direction:column;
         }
         .sidebar-title { font-family:var(--font-display); font-size:12px; letter-spacing:1.8px; text-transform:uppercase; color:var(--gold); margin:8px 10px 14px; font-weight:700; }
@@ -251,7 +390,7 @@ export default function App() {
 
         .tech-column {
           width:360px; border-right:1px solid var(--line); display:flex; flex-direction:column;
-          background:rgba(23,19,15,.72);
+          background:var(--bg2);
         }
         /* Pas d'overflow ici : un conteneur overflow:auto qui ne défile pas
            lui-même capturerait le position:sticky de la fiche cheptel. C'est
@@ -260,7 +399,7 @@ export default function App() {
         .main-view > * + * { margin-top:16px; }
 
         .panel-card {
-          background:linear-gradient(180deg, rgba(53,43,34,.96), rgba(43,36,29,.96));
+          background:linear-gradient(180deg, var(--panel3), var(--panel2));
           border:1px solid var(--line); border-radius:18px; padding:18px 20px;
           box-shadow:0 14px 36px rgba(0,0,0,.22);
         }
@@ -269,7 +408,7 @@ export default function App() {
         .stat-grid { display:grid; grid-template-columns: repeat(4, minmax(150px,1fr)); gap:14px; margin-bottom:16px; }
         .stat-card {
           position:relative; overflow:hidden; min-height:116px; padding:18px; border-radius:18px;
-          background:linear-gradient(145deg, rgba(64,50,37,.96), rgba(37,30,23,.96));
+          background:linear-gradient(145deg, var(--panel3), var(--panel2));
           border:1px solid var(--line);
         }
         .stat-card:after {
@@ -284,7 +423,7 @@ export default function App() {
           border-radius:22px; padding:24px; border:1px solid rgba(214,166,74,.55);
           background:
             radial-gradient(580px 220px at 20% 0%, rgba(240,207,114,.18), transparent 60%),
-            linear-gradient(145deg, rgba(65,48,31,.96), rgba(37,29,20,.96));
+            linear-gradient(145deg, var(--panel3), var(--panel2));
         }
         .gps-title { color:var(--gold2); font-weight:800; letter-spacing:1.4px; text-transform:uppercase; font-size:11px; }
         .gps-target { font-family:var(--font-display); font-size:32px; margin:10px 0 12px; font-weight:800; }
@@ -300,7 +439,7 @@ export default function App() {
         .muldo-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
         .muldo-card {
           cursor:pointer; border-radius:16px; padding:14px; border:1px solid var(--line);
-          background:linear-gradient(145deg, rgba(53,43,34,.96), rgba(34,28,22,.96));
+          background:linear-gradient(145deg, var(--panel3), var(--panel2));
           transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
         }
         .muldo-card:hover { transform:translateY(-2px); border-color:var(--gold); box-shadow:0 10px 24px rgba(0,0,0,.28); }
@@ -326,7 +465,7 @@ export default function App() {
           overflow:auto;
           border:1px solid var(--gold);
           border-radius:18px;
-          background:linear-gradient(180deg, rgba(53,43,34,.98), rgba(43,36,29,.98));
+          background:linear-gradient(180deg, var(--panel3), var(--panel2));
           box-shadow:0 18px 44px rgba(0,0,0,.4);
           animation: detail-in .18s ease;
         }
@@ -335,7 +474,7 @@ export default function App() {
           position:sticky; top:0; z-index:5;
           display:flex; justify-content:space-between; align-items:center; gap:10px;
           padding:10px 14px;
-          background:linear-gradient(180deg, rgba(64,50,37,.98), rgba(53,43,34,.98));
+          background:linear-gradient(180deg, var(--panel3), var(--panel2));
           border-bottom:1px solid var(--line);
         }
         .cheptel-detail-corps { padding: 8px 18px 22px; }
@@ -396,6 +535,14 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
               className="btn btn-ghost"
+              onClick={() => setTheme((t) => (t === "clair" ? "sombre" : "clair"))}
+              title={theme === "clair" ? "Passer en thème sombre" : "Passer en thème clair"}
+              style={{ padding: "8px 12px" }}
+            >
+              {theme === "clair" ? "🌙" : "☀️"}
+            </button>
+            <button
+              className="btn btn-ghost"
               onClick={() => setProfilOuvert(true)}
               title="Mon profil / connexion à la Taverne"
               style={{ padding: "8px 12px" }}
@@ -451,7 +598,16 @@ export default function App() {
                 onVoirMuldo={eleveMuldo.voirMuldo}
               />
               <GraphiquesPanel cheptel={eleveMuldo.cheptel} journal={eleveMuldo.journal} instantanes={eleveMuldo.instantanes} />
-              <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} />
+              <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} userId={compte.session?.user?.id} />
+              <PartagePublicPanel
+                session={compte.session}
+                pseudo={compte.profil?.pseudo}
+                cheptelMuldo={eleveMuldo.cheptel}
+                cheptelDragodinde={eleveDragodinde.cheptel}
+                cheptelVolkorne={eleveVolkorne.cheptel}
+                showToast={showToast}
+                onPartagerTaverne={partagerDansTaverne}
+              />
               <MemoElevagePanel />
               <CorbeillePanel corbeille={eleveMuldo.corbeille} onRestaurer={eleveMuldo.restaurerMuldo} onPurger={eleveMuldo.purgerCorbeilleEntree} onVider={eleveMuldo.viderCorbeille} dureeJours={CORBEILLE_DUREE_JOURS} />
               <SauvegardePanel showToast={showToast} />
@@ -459,22 +615,32 @@ export default function App() {
           )}
 
           {page === "taverne" && (
-            <TavernePage compte={compte} onOuvrirProfil={() => setProfilOuvert(true)} />
+            <TavernePage
+              compte={compte}
+              onOuvrirProfil={() => setProfilOuvert(true)}
+              ouvrirClassementInitial={demandeClassementTaverne}
+              onClassementInitialConsomme={() => setDemandeClassementTaverne(false)}
+              brouillonInitial={brouillonTaverne}
+              onBrouillonInitialConsomme={() => setBrouillonTaverne("")}
+            />
           )}
 
           {page === "succes" && (
             <>
-              <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-                {[["muldo", "🐴", "Muldo"], ["dragodinde", "🐲", "Dragodinde"], ["volkorne", "🐎", "Volkorne"]].map(([key, icon, label]) => (
-                  <button
-                    key={key}
-                    className="btn btn-ghost"
-                    style={succesCreature === key ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
-                    onClick={() => setSuccesCreature(key)}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[["muldo", "🐴", "Muldo"], ["dragodinde", "🐲", "Dragodinde"], ["volkorne", "🐎", "Volkorne"]].map(([key, icon, label]) => (
+                    <button
+                      key={key}
+                      className="btn btn-ghost"
+                      style={succesCreature === key ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+                      onClick={() => setSuccesCreature(key)}
+                    >
+                      {icon} {label}
+                    </button>
+                  ))}
+                </div>
+                <button className="btn btn-ghost" onClick={voirClassementDepuisSucces}>🏆 Voir le classement</button>
               </div>
               {succesCreature === "muldo" && (
                 <SuccesDofusPage
@@ -486,12 +652,15 @@ export default function App() {
                   onValidateGeneration={eleveMuldo.validerGenerationHistorique}
                   onValidateAll={eleveMuldo.validerToutHistorique}
                   onResetHistory={eleveMuldo.reinitialiserHistoriqueManuel}
+                  journal={eleveMuldo.journal}
                 />
               )}
               {succesCreature === "dragodinde" && <DragodindeSuccesPage {...eleveDragodinde.succesProps} />}
               {succesCreature === "volkorne" && <VolkorneSuccesPage {...eleveVolkorne.succesProps} />}
             </>
           )}
+
+          {page === "guide" && <GuidePage />}
 
           {page === "muldo" && (
             <>
@@ -543,6 +712,7 @@ export default function App() {
                   lieuCapture="au Bassin des Muldos (Baie de Sufokia)"
                   nomObjectifLabel="Muldo objectif"
                   nomEntitePluriel="Muldos"
+                  onPartagerTaverne={partagerDansTaverne}
                 />
               )}
 
@@ -636,7 +806,7 @@ export default function App() {
                 </>
               )}
               {sousPage === "synchro" && <DragodindeSynchronisationPage {...eleveDragodinde.syncProps} showToast={showToast} />}
-              {sousPage === "gps" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} {...eleveDragodinde.naissancesProps} />}
+              {sousPage === "gps" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} {...eleveDragodinde.naissancesProps} onPartagerTaverne={partagerDansTaverne} />}
               {sousPage === "clonage" && <DragodindeClonagePage {...eleveDragodinde.clonageProps} />}
             </>
           )}
@@ -653,7 +823,7 @@ export default function App() {
                 </>
               )}
               {sousPage === "synchro" && <VolkorneSynchronisationPage {...eleveVolkorne.syncProps} showToast={showToast} />}
-              {sousPage === "gps" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} {...eleveVolkorne.naissancesProps} />}
+              {sousPage === "gps" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} {...eleveVolkorne.naissancesProps} onPartagerTaverne={partagerDansTaverne} />}
               {sousPage === "clonage" && <VolkorneClonagePage {...eleveVolkorne.clonageProps} />}
             </>
           )}
@@ -661,6 +831,8 @@ export default function App() {
       </div>
 
       {eleveMuldo.showNew && <NewMuldoModal cheptel={eleveMuldo.cheptel} onClose={() => eleveMuldo.setShowNew(false)} onCreate={eleveMuldo.addMuldo} />}
+
+      <OnboardingOverlay open={onboardingGpsOuvert} onClose={fermerOnboardingGps} />
 
       {profilOuvert && (
         <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} />
@@ -688,6 +860,12 @@ export default function App() {
         <br />
         Projet non affilié à Ankama. DOFUS et tous les éléments associés sont la propriété d'Ankama Games.
         Aucun contenu ni visuel du jeu n'est utilisé par cet outil.
+        {LIEN_DISCORD && (
+          <>
+            <br />
+            <a href={LIEN_DISCORD} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>💬 Rejoindre la communauté sur Discord</a>
+          </>
+        )}
       </footer>
 
       {toast && (
@@ -735,6 +913,7 @@ function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discover
     ["volkorne", "🐎", "Volkorne"],
     ["taverne", "🍻", "Taverne"],
     ["succes", "🏆", "Succès"],
+    ["guide", "📖", "Guide"],
   ];
 
   return (
@@ -778,7 +957,7 @@ const CREATURES_ESTIMATION = [
   { cle: "volkorne", label: "Volkorne", icone: "🐎", nomHdv: "Volkorne", labelExtraction: "Corne de Volkorne", storageKey: STORAGE_PRIX_KAMAS_VOLKORNE, generationDeCouleurFn: generationDeCouleurVolkorne },
 ];
 
-function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolkorne }) {
+function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolkorne, userId }) {
   const [actif, setActif] = useState("muldo");
   const cheptelParCreature = { muldo: cheptelMuldo, dragodinde: cheptelDragodinde, volkorne: cheptelVolkorne };
   const config = CREATURES_ESTIMATION.find((c) => c.cle === actif);
@@ -807,7 +986,160 @@ function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolk
         labelExtraction={config.labelExtraction}
         icone={config.icone}
         badge={config.badge}
+        creature={config.cle}
+        userId={userId}
       />
+    </div>
+  );
+}
+
+// Sous-ensemble volontairement restreint publié dans cheptels_publics : pas de
+// notes privées, pas de dates, pas de jauges (amour/endurance/maturité/sérénité).
+function extraireCheptelPublic(cheptel) {
+  return (cheptel || []).map((m) => ({ couleur: m.couleur, sexe: m.sexe, generation: m.generation, statut: m.statut }));
+}
+
+const CREATURES_PARTAGE = [
+  { cle: "muldo", label: "Muldo", icone: "🐴" },
+  { cle: "dragodinde", label: "Dragodinde", icone: "🐲" },
+  { cle: "volkorne", label: "Volkorne", icone: "🐎" },
+];
+
+function PartagePublicPanel({ session, pseudo, cheptelMuldo, cheptelDragodinde, cheptelVolkorne, showToast, onPartagerTaverne }) {
+  const cheptelParCreature = { muldo: cheptelMuldo, dragodinde: cheptelDragodinde, volkorne: cheptelVolkorne };
+  const [actif, setActif] = useState("muldo");
+  const [statuts, setStatuts] = useState({}); // creature -> { maj_le } | null (jamais chargé) | "absent"
+  const [enCours, setEnCours] = useState(false);
+
+  useEffect(() => {
+    if (!supabase || !session?.user) return;
+    supabase.from("cheptels_publics").select("creature, maj_le").eq("utilisateur", session.user.id)
+      .then(({ data }) => {
+        const carte = { muldo: "absent", dragodinde: "absent", volkorne: "absent" };
+        (data || []).forEach((l) => { carte[l.creature] = l.maj_le; });
+        setStatuts(carte);
+      });
+  }, [session?.user?.id]);
+
+  if (!supabase || !session?.user) return null;
+
+  const lienPublic = pseudo ? `${window.location.origin}/?voir=${encodeURIComponent(pseudo)}` : null;
+
+  const publier = async (creature) => {
+    setEnCours(true);
+    const contenu = extraireCheptelPublic(cheptelParCreature[creature]);
+    await supabase.from("cheptels_publics").upsert(
+      { utilisateur: session.user.id, creature, contenu, maj_le: new Date().toISOString() },
+      { onConflict: "utilisateur,creature" }
+    );
+    setStatuts((prev) => ({ ...prev, [creature]: new Date().toISOString() }));
+    setEnCours(false);
+    showToast?.("Cheptel publié — visible via ton lien public.");
+  };
+
+  const depublier = async (creature) => {
+    setEnCours(true);
+    await supabase.from("cheptels_publics").delete().eq("utilisateur", session.user.id).eq("creature", creature);
+    setStatuts((prev) => ({ ...prev, [creature]: "absent" }));
+    setEnCours(false);
+  };
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <h2 style={{ marginTop: 0 }}>🔗 Cheptel public</h2>
+      <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
+        Publie un instantané figé de ton cheptel (couleur/sexe/génération/statut uniquement, pas
+        tes notes ni tes jauges) pour le montrer à ta guilde via un lien. Republier met à jour
+        l'instantané ; rien ne se synchronise automatiquement.
+      </div>
+      {lienPublic && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <code style={{ fontSize: 12, color: "var(--gold2)", wordBreak: "break-all" }}>{lienPublic}</code>
+          <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={async () => { if (await copierPressePapiers(lienPublic)) showToast?.("Lien copié !"); }}>Copier le lien</button>
+          <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => onPartagerTaverne?.(`Découvrez mon cheptel : ${lienPublic}`)}>🍻 Partager dans la Taverne</button>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {CREATURES_PARTAGE.map((c) => (
+          <button key={c.cle} type="button" className="btn btn-ghost" style={actif === c.cle ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined} onClick={() => setActif(c.cle)}>
+            {c.icone} {c.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>
+          {statuts[actif] === "absent" || !statuts[actif]
+            ? "Pas encore publié."
+            : `Publié le ${new Date(statuts[actif]).toLocaleString("fr-FR")}.`}
+        </span>
+        <button className="btn btn-coral" disabled={enCours} onClick={() => publier(actif)}>Publier mon cheptel {CREATURES_PARTAGE.find((c) => c.cle === actif)?.label}</button>
+        {statuts[actif] && statuts[actif] !== "absent" && (
+          <button className="btn btn-ghost" disabled={enCours} onClick={() => depublier(actif)}>Dépublier</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CheptelPublicPage({ pseudo }) {
+  const [etat, setEtat] = useState("chargement"); // chargement | introuvable | ok
+  const [cheptels, setCheptels] = useState({});
+
+  useEffect(() => {
+    document.title = `Cheptel de ${pseudo} — Registre des Abysses`;
+  }, [pseudo]);
+
+  useEffect(() => {
+    if (!supabase) { setEtat("introuvable"); return; }
+    (async () => {
+      const { data: profilTrouve } = await supabase.from("profils").select("id, pseudo").eq("pseudo", pseudo).maybeSingle();
+      if (!profilTrouve) { setEtat("introuvable"); return; }
+      const { data } = await supabase.from("cheptels_publics").select("creature, contenu, maj_le").eq("utilisateur", profilTrouve.id);
+      const carte = {};
+      (data || []).forEach((l) => { carte[l.creature] = l; });
+      setCheptels(carte);
+      setEtat("ok");
+    })();
+  }, [pseudo]);
+
+  return (
+    <div className="app-shell" style={{ padding: "24px 28px" }}>
+      <style>{`
+        :root {
+          --bg: #17130f; --panel: #2b241d; --panel2: #352b22; --line: #5b4733;
+          --gold: #d6a64a; --gold2: #f0cf72; --accent: #c97935; --text: #f4ead7; --muted: #a9967c;
+          --font-display: 'Fraunces', Georgia, serif; --font-ui: 'Inter', sans-serif;
+        }
+        body { margin: 0; background: #0c0a08; }
+      `}</style>
+      <h1 style={{ fontFamily: "var(--font-display)", color: "var(--gold2)" }}>Cheptel public de {pseudo}</h1>
+      {etat === "chargement" && <div style={{ color: "var(--muted)" }}>Chargement…</div>}
+      {etat === "introuvable" && <div style={{ color: "var(--muted)" }}>Éleveur introuvable, ou fonctionnalité non disponible.</div>}
+      {etat === "ok" && CREATURES_PARTAGE.every((c) => !cheptels[c.cle]) && (
+        <div style={{ color: "var(--muted)" }}>Cet éleveur n'a encore rien publié.</div>
+      )}
+      {etat === "ok" && CREATURES_PARTAGE.map((c) => cheptels[c.cle] && (
+        <div className="panel-card" key={c.cle} style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+            <h2 style={{ margin: 0 }}>{c.icone} {c.label}</h2>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>publié le {new Date(cheptels[c.cle].maj_le).toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="muldo-grid" style={{ marginTop: 12 }}>
+            {(cheptels[c.cle].contenu || []).map((m, i) => (
+              <div className="muldo-card" key={i} style={{ cursor: "default" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <b>{m.sexe === "F" ? "♀" : "♂"} {m.couleur}</b>
+                  <span className="pill">G{m.generation}</span>
+                </div>
+                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{m.statut}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div style={{ marginTop: 24, textAlign: "center" }}>
+        <a href="/" style={{ color: "var(--gold)" }}>← Retour au Registre des Abysses</a>
+      </div>
     </div>
   );
 }
@@ -1001,7 +1333,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(680px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 18, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 22 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(680px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 18, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 22 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <h2 style={{ margin: 0 }}>👤 Mon profil</h2>
           <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
@@ -1143,7 +1475,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose }) {
 
 const STORAGE_LU_SUJETS = "taverne-lu-sujets-v1";
 
-function TavernePage({ compte, onOuvrirProfil }) {
+function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClassementInitialConsomme, brouillonInitial, onBrouillonInitialConsomme }) {
   const { session } = compte;
   const [profilsParId, setProfilsParId] = useState({});
   const [sujets, setSujets] = useState([]);
@@ -1206,7 +1538,7 @@ function TavernePage({ compte, onOuvrirProfil }) {
   const chargerClassement = async () => {
     if (!supabase) return;
     const { data } = await supabase.from("profils")
-      .select("id, pseudo, style_ailes, niveau_ailes, succes_generation_muldo, couleurs_decouvertes_muldo, description, cree_le")
+      .select("id, pseudo, style_ailes, niveau_ailes, succes_generation_muldo, couleurs_decouvertes_muldo, succes_generation_dragodinde, couleurs_decouvertes_dragodinde, succes_generation_volkorne, couleurs_decouvertes_volkorne, description, cree_le")
       .order("succes_generation_muldo", { ascending: false })
       .order("couleurs_decouvertes_muldo", { ascending: false })
       .limit(20);
@@ -1215,6 +1547,27 @@ function TavernePage({ compte, onOuvrirProfil }) {
     (data || []).forEach((p) => { carte[p.id] = p; });
     setProfilsParId((prev) => ({ ...prev, ...carte }));
   };
+
+  // Permet d'ouvrir le classement depuis une autre page (Succès) sans dupliquer
+  // l'état classementOuvert/classement : on consomme le drapeau puis on prévient
+  // App() pour qu'il le réinitialise (sinon rouvrir la Taverne rouvrirait aussi
+  // systématiquement le classement).
+  useEffect(() => {
+    if (!ouvrirClassementInitial) return;
+    setClassementOuvert(true);
+    chargerClassement();
+    onClassementInitialConsomme?.();
+  }, [ouvrirClassementInitial]);
+
+  // Pré-remplit le Comptoir général avec un brouillon venant d'ailleurs (ex.
+  // partage d'un plan GPS ou d'un cheptel publié) — même logique de
+  // consommation à sens unique que le classement ci-dessus.
+  useEffect(() => {
+    if (!brouillonInitial) return;
+    setVue({ type: "sujet", id: null, titre: "🍺 Comptoir général", auteur: null });
+    setSaisie(brouillonInitial);
+    onBrouillonInitialConsomme?.();
+  }, [brouillonInitial]);
   const finFil = React.useRef(null);
   const dmCibleRef = React.useRef(dmCible);
   useEffect(() => { dmCibleRef.current = dmCible; }, [dmCible]);
@@ -1627,7 +1980,7 @@ function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePr
     : profil.niveau_ailes;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(360px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(360px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={32} />
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕</button>
@@ -1651,13 +2004,14 @@ function ClassementModal({ classement, onOuvrirProfil, onClose }) {
   const MEDAILLES = ["🥇", "🥈", "🥉"];
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(520px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(520px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <h3 style={{ margin: 0 }}>🏆 Classement des éleveurs</h3>
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
         </div>
         <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
-          Classé par générations muldo validées (page Succès), puis par couleurs découvertes.
+          Classé par générations muldo validées (page Succès), puis par couleurs découvertes —
+          progression Dragodinde/Volkorne affichée à titre indicatif.
         </div>
         {classement.length === 0 && (
           <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>Personne au classement pour l'instant.</div>
@@ -1669,15 +2023,16 @@ function ClassementModal({ classement, onOuvrirProfil, onClose }) {
               key={p.id}
               className="row-item"
               onClick={() => onOuvrirProfil(p.id)}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 8px", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", borderRadius: 8 }}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 8px", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", borderRadius: 8, flexWrap: "wrap" }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 <span style={{ width: 26, textAlign: "center", fontWeight: 800, color: "var(--gold2)" }}>{MEDAILLES[i] || i + 1}</span>
                 <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={20} />
               </div>
               <div style={{ display: "flex", gap: 14, color: "var(--muted)", fontSize: 12, flex: "0 0 auto" }}>
-                <span>G<b style={{ color: "var(--text)" }}>{p.succes_generation_muldo || 0}</b></span>
-                <span><b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_muldo || 0}</b> couleurs</span>
+                <span title="Muldo">🐴 G<b style={{ color: "var(--text)" }}>{p.succes_generation_muldo || 0}</b> · <b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_muldo || 0}</b></span>
+                <span title="Dragodinde">🐲 G<b style={{ color: "var(--text)" }}>{p.succes_generation_dragodinde || 0}</b> · <b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_dragodinde || 0}</b></span>
+                <span title="Volkorne">🐎 G<b style={{ color: "var(--text)" }}>{p.succes_generation_volkorne || 0}</b> · <b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_volkorne || 0}</b></span>
               </div>
             </div>
           );
@@ -1690,7 +2045,7 @@ function ClassementModal({ classement, onOuvrirProfil, onClose }) {
 function BoiteReceptionModal({ conversations, profilsParId, onOuvrir, onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <h3 style={{ margin: 0 }}>📬 Messages privés</h3>
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
@@ -1729,7 +2084,7 @@ function MessagesPrivesModal({ session, messages, profilCible, saisie, setSaisie
   const niveauEffectif = profilCible ? (profilCible.style_ailes === "muldo" ? tierAilesMuldo(profilCible.niveau_ailes, profilCible.succes_generation_muldo) : profilCible.niveau_ailes) : 0;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", maxHeight: "80vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", maxHeight: "80vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12, cursor: profilCible ? "pointer" : "default" }} onClick={() => profilCible && onOuvrirProfil()}>
             {profilCible ? <PseudoAvecAiles pseudo={profilCible.pseudo} soutien={profilCible.niveau_ailes > 0} styleAiles={profilCible.style_ailes} niveau={niveauEffectif} taille={24} /> : "Éleveur"}

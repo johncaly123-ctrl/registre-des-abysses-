@@ -1,0 +1,89 @@
+import React from "react";
+
+// Page de contenu statique (guide/blog) : pas de CMS, du texte en dur, dans le
+// même langage visuel que le reste de l'app (.panel-card + variables CSS).
+// Objectif : donner une raison légitime à d'autres sites de faire un lien vers
+// le Registre des Abysses, et un contenu indexable par les moteurs de recherche.
+
+function Section({ titre, children }) {
+  return (
+    <div className="panel-card" style={{ marginBottom: 16 }}>
+      <h2 style={{ marginTop: 0, color: "var(--gold)" }}>{titre}</h2>
+      <div style={{ color: "var(--text)", fontSize: 14, lineHeight: 1.7 }}>{children}</div>
+    </div>
+  );
+}
+
+export function GuidePage() {
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ margin: 0 }}>Guide de l'éleveur</h1>
+        <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>
+          Les bases pour démarrer un élevage de muldos, dragodindes ou volkornes — et tirer parti
+          des outils du Registre des Abysses.
+        </div>
+      </div>
+
+      <Section titre="Comprendre la génétique des couleurs">
+        <p>
+          Chaque créature possède une couleur héritée d'un système de générations : croiser deux
+          couleurs d'une même branche produit une couleur de génération supérieure selon des
+          recettes fixes (parfois plusieurs couples différents mènent à la même couleur cible).
+          Certaines couleurs de génération élevée ne s'obtiennent que via des <b>recettes spéciales</b>{" "}
+          (combinaisons précises, pas seulement "génération + 1").
+        </p>
+        <p>
+          Le Registre affiche pour chaque couleur la ou les recettes qui y mènent, et calcule le
+          chemin le plus court (le moins de croisements) pour atteindre un objectif depuis votre
+          cheptel actuel.
+        </p>
+      </Section>
+
+      <Section titre="Utiliser le GPS d'accouplements">
+        <p>
+          Le GPS optimise l'organisation d'une session d'accouplements : il propose un objectif de
+          couleur ou de génération, puis calcule l'appariement mâle/femelle qui maximise le nombre
+          de couples utiles en une seule session (plutôt que de choisir les paires au hasard).
+        </p>
+        <p>
+          Conseil : lancez une synchronisation (capture d'écran de l'enclos) avant une session de
+          GPS pour que le plan reflète exactement votre cheptel du moment.
+        </p>
+      </Section>
+
+      <Section titre="Synchroniser son cheptel par capture d'écran">
+        <p>
+          La page Synchronisation lit une capture d'écran de votre enclos en jeu (reconnaissance de
+          texte) et propose une liste de créatures à fusionner avec votre cheptel existant. Les noms
+          de couleurs mal reconnus sont automatiquement rapprochés de la liste officielle — vérifiez
+          quand même les correspondances proposées avant de valider, l'OCR n'est jamais parfait à 100 %.
+        </p>
+      </Section>
+
+      <Section titre="Clonage : sécuriser une lignée">
+        <p>
+          Le clonage détruit deux créatures de même génération pour en produire une nouvelle,
+          fertile, de l'une des deux couleurs (et sexes) d'origine — la généalogie est conservée
+          mais les capacités et jauges repartent à zéro. Utile pour dupliquer un pivot rare avant de
+          l'extraire, sans perdre la couleur.
+        </p>
+      </Section>
+
+      <Section titre="Estimer la valeur de son cheptel">
+        <p>
+          La table d'estimation calcule une valeur totale à partir d'un prix par couleur, que vous
+          pouvez renseigner vous-même ou (selon la couleur) comparer à un prix moyen communautaire
+          par serveur, quand suffisamment de joueurs l'ont renseigné.
+        </p>
+      </Section>
+
+      <Section titre="Rejoindre la communauté">
+        <p>
+          La Taverne est un espace de discussion intégré à l'app (comptes, messages, classement des
+          éleveurs) — aucune donnée d'élevage n'y est publiée sans action volontaire de votre part.
+        </p>
+      </Section>
+    </div>
+  );
+}

@@ -2123,12 +2123,23 @@ export function SuccesDofusPage({
   onValidateGeneration,
   onValidateAll,
   onResetHistory,
+  journal,
 }) {
   const present = new Set(cheptel.map((m) => m.couleur));
   const seen = (c) => Boolean(historiqueCouleurs?.[c]) || present.has(c);
   const allColors = Object.values(GENERATIONS_MULDO).flat();
   const totalSeen = allColors.filter(seen).length;
   const totalPct = allColors.length ? Math.round((totalSeen / allColors.length) * 100) : 0;
+  const couleursRares = [...(GENERATIONS_MULDO[9] || []), ...(GENERATIONS_MULDO[10] || [])];
+  const jalons = [
+    { label: "Première naissance", atteint: (journal || []).some((j) => j.type !== "clonage") },
+    { label: "Premier clonage", atteint: (journal || []).some((j) => j.type === "clonage") },
+    { label: "Couleur rare (G9-G10)", atteint: couleursRares.some(seen) },
+    { label: "25% du pokédex", atteint: totalPct >= 25 },
+    { label: "50% du pokédex", atteint: totalPct >= 50 },
+    { label: "75% du pokédex", atteint: totalPct >= 75 },
+    { label: "Pokédex complet", atteint: totalPct >= 100 },
+  ];
 
   return (
     <div>
@@ -2141,6 +2152,17 @@ export function SuccesDofusPage({
         <div style={{ textAlign: "right" }}>
           <div style={{ color: "var(--gold2)", fontSize: 30, fontWeight: 950 }}>{totalSeen}/{allColors.length}</div>
           <div style={{ color: "var(--muted)", fontSize: 12 }}>{totalPct}% complété</div>
+        </div>
+      </div>
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <b>Jalons</b>
+        <div className="success-grid" style={{ marginTop: 10 }}>
+          {jalons.map((j) => (
+            <div key={j.label} className={`success-chip ${j.atteint ? "success-ok" : "success-miss"}`}>
+              {j.atteint ? "🏅" : "⬜"} {j.label}
+            </div>
+          ))}
         </div>
       </div>
 

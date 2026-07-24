@@ -197,3 +197,83 @@ drop trigger if exists on_nouveau_message_prive on messages_prives;
 create trigger on_nouveau_message_prive
 after insert on messages_prives
 for each row execute function public.notifier_nouveau_message_prive();
+
+-- v12 : classement des éleveurs étendu aux 3 créatures (dragodinde, volkorne)
+-- — mêmes colonnes auto-déclaratives que succes_generation_muldo (v6) et
+-- couleurs_decouvertes_muldo (v9), même justification.
+alter table profils add column if not exists succes_generation_dragodinde int not null default 0;
+do $$ begin
+  alter table profils add constraint succes_generation_dragodinde_bornes check (succes_generation_dragodinde between 0 and 10);
+exception when duplicate_object then null; end $$;
+alter table profils add column if not exists couleurs_decouvertes_dragodinde int not null default 0;
+do $$ begin
+  alter table profils add constraint couleurs_decouvertes_dragodinde_bornes check (couleurs_decouvertes_dragodinde between 0 and 999);
+exception when duplicate_object then null; end $$;
+
+alter table profils add column if not exists succes_generation_volkorne int not null default 0;
+do $$ begin
+  alter table profils add constraint succes_generation_volkorne_bornes check (succes_generation_volkorne between 0 and 10);
+exception when duplicate_object then null; end $$;
+alter table profils add column if not exists couleurs_decouvertes_volkorne int not null default 0;
+do $$ begin
+  alter table profils add constraint couleurs_decouvertes_volkorne_bornes check (couleurs_decouvertes_volkorne between 0 and 999);
+exception when duplicate_object then null; end $$;
+
+-- v13 : prix communautaires par serveur, pour l'estimation de la valeur du
+-- cheptel (page Dashboard). Chaque soumission est individuelle ; l'app agrège
+-- côté SQL par médiane (résiste mieux qu'une moyenne à une soumission
+-- aberrante/troll) via la vue prix_communautaires_medianes.
+create table if not exists prix_communautaires (
+  id bigint generated always as identity primary key,
+  creature text not null check (creature in ('muldo','dragodinde','volkorne')),
+  couleur text not null check (char_length(couleur) between 1 and 60),
+  serveur text not null check (char_length(serveur) between 1 and 40),
+  prix numeric not null check (prix >= 0 and prix <= 1000000),
+  auteur uuid not null references profils(id) on delete cascade,
+  cree_le timestamptz not null default now()
+);
+alter table prix_communautaires enable row level security;
+drop policy if exists "prix communautaires visibles par tous" on prix_communautaires;
+create policy "prix communautaires visibles par tous" on prix_communautaires for select using (true);
+drop policy if exists "soumettre un prix connecte" on prix_communautaires;
+create policy "soumettre un prix connecte" on prix_communautaires for insert with check (auth.uid() = auteur);
+drop policy if exists "modifier son propre prix" on prix_communautaires;
+create policy "modifier son propre prix" on prix_communautaires for update using (auth.uid() = auteur) with check (auth.uid() = auteur);
+drop policy if exists "supprimer son propre prix" on prix_communautaires;
+create policy "supprimer son propre prix" on prix_communautaires for delete using (auth.uid() = auteur);
+-- Une seule soumission active par éleveur/couleur/serveur : une nouvelle
+-- soumission remplace la précédente plutôt que de s'accumuler.
+do $$ begin
+  alter table prix_communautaires add constraint prix_communautaires_unique unique (creature, couleur, serveur, auteur);
+exception when duplicate_object then null; end $$;
+
+create or replace view prix_communautaires_medianes as
+select
+  creature,
+  couleur,
+  serveur,
+  percentile_cont(0.5) within group (order by prix) as prix_median,
+  count(*) as nb_soumissions
+from prix_communautaires
+group by creature, couleur, serveur;
+
+-- v14 : cheptel public partageable (instantané publié volontairement, pas de
+-- miroir continu — le joueur choisit explicitement quand publier). contenu
+-- est un sous-ensemble volontairement restreint (couleur/sexe/génération/
+-- statut) : pas de notes privées, pas de dates, pas de jauges.
+create table if not exists cheptels_publics (
+  utilisateur uuid not null references profils(id) on delete cascade,
+  creature text not null check (creature in ('muldo','dragodinde','volkorne')),
+  contenu jsonb not null,
+  maj_le timestamptz not null default now(),
+  primary key (utilisateur, creature)
+);
+alter table cheptels_publics enable row level security;
+drop policy if exists "cheptels publics visibles par tous" on cheptels_publics;
+create policy "cheptels publics visibles par tous" on cheptels_publics for select using (true);
+drop policy if exists "publier son propre cheptel" on cheptels_publics;
+create policy "publier son propre cheptel" on cheptels_publics for insert with check (auth.uid() = utilisateur);
+drop policy if exists "mettre a jour son propre cheptel publie" on cheptels_publics;
+create policy "mettre a jour son propre cheptel publie" on cheptels_publics for update using (auth.uid() = utilisateur) with check (auth.uid() = utilisateur);
+drop policy if exists "depublier son propre cheptel" on cheptels_publics;
+create policy "depublier son propre cheptel" on cheptels_publics for delete using (auth.uid() = utilisateur);
