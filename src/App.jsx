@@ -984,7 +984,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
   // Remise à zéro après un suivi de clonage/session mal tenu : les stériles
   // partent à la corbeille (jamais de suppression définitive directe, comme
   // pour deleteMuldo) et tout le reste repasse Fertile, prêt à s'accoupler.
-  const nettoyerSterilesPuisDemarrerSession = () => {
+  const nettoyerSterilesPuisDemarrerSession = (forcerJauges = false) => {
     const steriles = cheptel.filter((m) => m.sterile === true || m.statut === "Stérile");
     const restants = cheptel.filter((m) => !(m.sterile === true || m.statut === "Stérile"));
 
@@ -1007,13 +1007,15 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
       reproDone: 0,
       reproRestantes: 1,
       reproductionsRestantes: 1,
+      ...(forcerJauges ? { amour: 100, endurance: 100, maturite: 100 } : {}),
     })));
 
     reinitialiserSessionGps();
+    const suffixeJauges = forcerJauges ? " (jauges amour/endurance/maturité forcées à 100 — donnée fictive, à corriger si besoin)" : "";
     showToast(
       steriles.length
-        ? `${steriles.length} muldo(s) stérile(s) mis à la corbeille, ${restants.length} repassé(s) Fertile — nouvelle session lancée.`
-        : `${restants.length} muldo(s) repassé(s) Fertile — nouvelle session lancée.`
+        ? `${steriles.length} muldo(s) stérile(s) mis à la corbeille, ${restants.length} repassé(s) Fertile${suffixeJauges} — nouvelle session lancée.`
+        : `${restants.length} muldo(s) repassé(s) Fertile${suffixeJauges} — nouvelle session lancée.`
     );
   };
 
@@ -5313,6 +5315,7 @@ function GpsDofusPage({
   const toggleEtapes = (key) => {
     setEtapesOuvertes((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+  const [forcerJaugesNettoyage, setForcerJaugesNettoyage] = useState(false);
 
 
   const pct = session.totalFertiles
@@ -5654,11 +5657,19 @@ function GpsDofusPage({
             </button>
             <button
               className="btn btn-ghost"
-              onClick={onNettoyerSterilesPuisDemarrer}
+              onClick={() => onNettoyerSterilesPuisDemarrer(forcerJaugesNettoyage)}
               title="Met tous les muldos Stérile à la corbeille (récupérable) et repasse tout le reste en Fertile — pratique après un suivi de clonage mal tenu"
             >
               🧹 Nettoyer stériles → tout fertile
             </button>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)" }}>
+              <input
+                type="checkbox"
+                checked={forcerJaugesNettoyage}
+                onChange={(e) => setForcerJaugesNettoyage(e.target.checked)}
+              />
+              forcer jauges à 100 (fictif)
+            </label>
           </div>
         </div>
       </div>
