@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { chargerJSON, sauvegarderJSON, creerEcritureDebattue, flushToutesEcrituresDebattues } from "./stockage.js";
+import { creerEcritureDebattue, flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel, BebesARenommerPanel, copierPressePapiers, exporterFicheImage, BoutonFiche, GpsDofusPage } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
@@ -16,28 +16,22 @@ import {
   CLES_SAUVEGARDE_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
 } from "./Volkorne.jsx";
 import {
-  COLORS, COULEURS_MULDO, GENERATION_10_MULDO, OBJECTIFS_COULEURS, CAPACITES_MULDO,
-  capacitesMuldo, normaliserMuldo, FATIGUE_OBSOLETE, STOCK_INITIAL_COULEURS,
-  RECETTES_SPECIALES_MULDO, RECETTES_COULEURS, recettesPourCouleur, recettesBicoloreAuto,
-  GENERATIONS_MULDO, couleursGenerationJusqua, plierCouleur, indexCouleursCanoniques,
-  canonicaliserCouleur, distanceLevenshtein, toleranceOCR, correspondanceFloue,
-  clesMonocoloresPliees, couleurEstCanonique, stockCouleurDisponible,
-  meilleureRecettePourCouleur, construireEtapesPourCouleur, generationDeCouleur,
-  CHEPTEL_INITIAL_AUTO, sexeMuldo, reproRestantesMuldo, muldoReproductible,
-  couleurPresenteCheptel, chercherCouplePourRecette, construirePlanPourCouleur,
-  analyserGenerationCible, cleCoupleCouleurs, toutesLesRecettesProgression,
+  COLORS, COULEURS_MULDO, CAPACITES_MULDO,
+  capacitesMuldo, normaliserMuldo,
+  GENERATIONS_MULDO, couleursGenerationJusqua, plierCouleur,
+  canonicaliserCouleur,
+  couleurEstCanonique,
+  generationDeCouleur,
+  CHEPTEL_INITIAL_AUTO, sexeMuldo, muldoReproductible,
+  analyserGenerationCible, cleCoupleCouleurs,
   RESULTATS_PAR_COUPLE, couleursNaissancePossibles, genererNomCourt, couleursAncetres,
-  distancesVersObjectif, construireCheminVersObjectif, distancesEtParentsVersObjectif,
-  construireArbreCouples, scoreCoupleObjectif, affectationMaximale,
+  distancesEtParentsVersObjectif,
   optimiserSessionAccouplements, progressionParGeneration, plusHauteGenerationValidee,
-  tierAilesMuldo, choisirObjectifGpsAutomatique, ancestorSet, collisionScore,
-  collisionLabel, readinessScore, getNextAction, isBreedReady, generationGoalScore,
+  tierAilesMuldo, choisirObjectifGpsAutomatique, collisionScore,
+  collisionLabel, readinessScore, getNextAction, generationGoalScore,
   geneticPartners,
 } from "./muldoGenetique.js";
-import {
-  normaliserTexteOCR, extraireNombreDansLigne, analyserTexteCaptureMuldo,
-  stockMF, analyseRecettesPourCible, actionsAvecCouleur,
-} from "./muldoOCR.js";
+import { analyserTexteCaptureMuldo } from "./muldoOCR.js";
 
 
 const STATUTS = ["Fertile", "Féconde", "Stérile", "Sénile"];
@@ -74,13 +68,11 @@ export default function App() {
   const [filter, setFilter] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [toast, setToast] = useState(null);
-  const [couleurCible, setCouleurCible] = useState("Prune");
   const [fusionA, setFusionA] = useState("");
   const [fusionB, setFusionB] = useState("");
-  const [stocksCouleurs, setStocksCouleurs] = useState(STOCK_INITIAL_COULEURS);
   const [captureText, setCaptureText] = useState("");
   const [capturePreview, setCapturePreview] = useState("");
-  const [objectifGeneration, setObjectifGeneration] = useState(6);
+  const [objectifGeneration] = useState(6);
   const [objectifGps, setObjectifGps] = useState("Prune");
   const [modeGps, setModeGps] = useState("couleur");
   const [generationGps, setGenerationGps] = useState(7);
@@ -272,9 +264,6 @@ export default function App() {
   const voirMuldo = (id) => setFicheRapideId(id);
   const ficheRapide = ficheRapideId ? byId[ficheRapideId] : null;
 
-  const analyseCible = useMemo(() => analyseRecettesPourCible(couleurCible, cheptel), [couleurCible, cheptel]);
-  const actionsSelection = useMemo(() => selected ? actionsAvecCouleur(selected.couleur, cheptel) : [], [selected, cheptel]);
-
   const importCapture = useMemo(() => analyserTexteCaptureMuldo(captureText), [captureText]);
 
   const importerCaptureDansCheptel = () => {
@@ -322,31 +311,10 @@ export default function App() {
     });
 
     setCheptel((prev) => prev.concat(nouveaux));
-    setStocksCouleurs((prev) => {
-      const next = { ...prev };
-      importCapture.forEach((ligne) => {
-        next[ligne.couleur] = Number(next[ligne.couleur] || 0) + ligne.total;
-      });
-      return next;
-    });
 
     setToast({ type: "success", msg: `${nouveaux.length} muldo(s) importé(s) depuis la capture.` });
   };
 
-
-  const stockComplet = useMemo(() => {
-    const comptageCheptel = cheptel.reduce((acc, m) => {
-      acc[m.couleur] = (acc[m.couleur] || 0) + 1;
-      return acc;
-    }, {});
-
-    return Object.fromEntries(
-      COULEURS_MULDO.map((couleur) => [
-        couleur,
-        Math.max(Number(stocksCouleurs[couleur] || 0), Number(comptageCheptel[couleur] || 0)),
-      ])
-    );
-  }, [cheptel, stocksCouleurs]);
 
 
   const planGeneration = useMemo(() => analyserGenerationCible(objectifGeneration, cheptel, byId, historiqueCouleurs), [objectifGeneration, cheptel, byId, historiqueCouleurs]);
@@ -595,42 +563,6 @@ export default function App() {
     modePurification,
     sauvegarderSuiviGps,
   ]);
-
-  const objectifsCouleurs = useMemo(() => {
-    return OBJECTIFS_COULEURS.map((couleur) => {
-      const recettes = RECETTES_COULEURS[couleur] || [];
-      const possedes = stockComplet[couleur] || 0;
-
-      const recettesAnalysees = recettes.map((recette) => {
-        const dispoParents = recette.map((p) => ({
-          couleur: p,
-          stock: stockComplet[p] || 0,
-        }));
-
-        return {
-          parents: recette,
-          dispoParents,
-          faisable: dispoParents.every((p) => p.stock > 0),
-        };
-      });
-
-      const faisable = recettesAnalysees.some((r) => r.faisable);
-
-      return {
-        couleur,
-        possedes,
-        recettes: recettesAnalysees,
-        faisable,
-        status: possedes > 0 ? "obtenu" : faisable ? "possible" : "bloque",
-      };
-    });
-  }, [stockComplet]);
-
-  const prochainObjectif = useMemo(() => {
-    return objectifsCouleurs.find((o) => o.status === "possible")
-      || objectifsCouleurs.find((o) => o.status === "bloque")
-      || null;
-  }, [objectifsCouleurs]);
 
   const enregistrerHistoriqueCouleurs = useCallback((nextHistory) => {
     setHistoriqueCouleurs(nextHistory);
@@ -1101,7 +1033,6 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
 
   const readyCount = actionsDuJour.pret.length;
   const fertileCount = cheptel.filter((m) => muldoReproductible(m)).length;
-  const sterileCount = cheptel.length - fertileCount;
   const discoveredTotal = Object.values(historiqueCouleurs || {}).filter(Boolean).length;
 
   if (loading) {
@@ -1756,260 +1687,6 @@ function ImportCapturePanel({ captureText, setCaptureText, capturePreview, setCa
 }
 
 
-function AssistantCroisementsPanel({ couleurCible, setCouleurCible, analyseCible, selected, actionsSelection }) {
-  const objectifs = OBJECTIFS_COULEURS;
-
-  return (
-    <div style={{ padding: 16, borderBottom: `1px solid ${COLORS.line}`, background: COLORS.panel }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: COLORS.glow, marginBottom: 10, fontFamily: "Inter, sans-serif", fontWeight: 700 }}>
-        Assistant croisements
-      </div>
-
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ display: "block", fontSize: 11, color: COLORS.muted, marginBottom: 5, fontFamily: "Inter, sans-serif" }}>
-          Je veux obtenir
-        </label>
-        <select className="field" value={couleurCible} onChange={(e) => setCouleurCible(e.target.value)}>
-          {objectifs.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-        {analyseCible.length === 0 && (
-          <div style={{ fontSize: 12, color: COLORS.muted, fontFamily: "Inter, sans-serif" }}>
-            Recettes pas encore renseignées pour cette couleur.
-          </div>
-        )}
-
-        {analyseCible.slice(0, 6).map((r, idx) => (
-          <div key={`${r.parentA}-${r.parentB}-${idx}`} style={{ padding: 8, borderRadius: 8, background: COLORS.panelAlt, border: `1px solid ${r.possible ? COLORS.glow : COLORS.line}` }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: r.possible ? COLORS.glow : r.partiel ? COLORS.gold : COLORS.text, fontFamily: "Inter, sans-serif" }}>
-              {r.possible ? "✅ Possible" : r.partiel ? "⚠️ Partiel" : "❌ Impossible"}
-            </div>
-            <div style={{ fontSize: 11.5, color: COLORS.text, fontFamily: "Inter, sans-serif", marginTop: 3 }}>
-              {r.parentA} × {r.parentB}
-            </div>
-            <div style={{ fontSize: 10.5, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 3 }}>
-              {r.parentA}: ♂ {r.stockA.male} / ♀ {r.stockA.femelle} — {r.parentB}: ♂ {r.stockB.male} / ♀ {r.stockB.femelle}
-            </div>
-            <div style={{ fontSize: 10.5, color: r.possible ? COLORS.glow : COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 3 }}>
-              Couples possibles : {r.couples}
-              {r.manque.length > 0 ? ` — Manque : ${r.manque.join(", ")}` : ""}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ borderTop: `1px solid ${COLORS.line}`, paddingTop: 10 }}>
-        <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6, fontFamily: "Inter, sans-serif" }}>
-          Que faire avec la monture sélectionnée ?
-        </div>
-
-        {!selected && (
-          <div style={{ fontSize: 12, color: COLORS.muted, fontFamily: "Inter, sans-serif" }}>
-            Sélectionne une monture dans le registre.
-          </div>
-        )}
-
-        {selected && actionsSelection.length === 0 && (
-          <div style={{ fontSize: 12, color: COLORS.muted, fontFamily: "Inter, sans-serif" }}>
-            {selected.couleur} n'est pas encore utilisée dans les recettes renseignées.
-          </div>
-        )}
-
-        {selected && actionsSelection.slice(0, 6).map((a, idx) => (
-          <div key={`${a.cible}-${a.partenaire}-${idx}`} style={{ fontSize: 11.5, color: a.disponible ? COLORS.glow : COLORS.muted, fontFamily: "Inter, sans-serif", marginBottom: 4 }}>
-            {a.disponible ? "✅" : "❌"} Viser {a.cible} avec {a.partenaire}
-            <span style={{ color: COLORS.muted }}> — stock partenaire : ♂ {a.stockPartenaire.male} / ♀ {a.stockPartenaire.femelle}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-
-function PlanificateurGenerationPanel({ objectifGeneration, setObjectifGeneration, plan, stockComplet, historiqueCouleurs }) {
-  const action = plan.actionImmediate;
-  const decouvertesTotal = Object.values(historiqueCouleurs || {}).filter(Boolean).length;
-
-  return (
-    <div style={{ padding: 16, borderBottom: `1px solid ${COLORS.line}`, background: COLORS.panel }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: COLORS.gold, marginBottom: 10, fontFamily: "Inter, sans-serif", fontWeight: 700 }}>
-        GPS génération V2
-      </div>
-
-      <label style={{ display: "block", fontSize: 11, color: COLORS.muted, marginBottom: 5, fontFamily: "Inter, sans-serif" }}>
-        Je veux compléter jusqu'à la génération
-      </label>
-      <select className="field" value={objectifGeneration} onChange={(e) => setObjectifGeneration(Number(e.target.value))}>
-        {[1,2,3,4,5,6,7,8,9,10].map((g) => <option key={g} value={g}>Génération {g}</option>)}
-      </select>
-
-      <div style={{ marginTop: 10, padding: 10, background: COLORS.panelAlt, borderRadius: 8, border: `1px solid ${COLORS.line}` }}>
-        <div style={{ fontSize: 12, fontFamily: "Inter, sans-serif", fontWeight: 800, color: COLORS.glow }}>
-          Présentes : {plan.possedees.length} / {plan.objectif.length}
-        </div>
-        <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 4 }}>
-          Succès historique : {plan.decouvertes.length} / {plan.objectif.length} jusqu'à G{objectifGeneration} · {decouvertesTotal} couleur(s) déjà vues au total
-        </div>
-        <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 4 }}>
-          Jamais obtenues : {plan.jamaisDecouvertes.length > 0 ? plan.jamaisDecouvertes.slice(0, 6).join(", ") : "aucune"}{plan.jamaisDecouvertes.length > 6 ? "…" : ""}
-        </div>
-      </div>
-
-      {action ? (
-        <div style={{ marginTop: 10, padding: 10, background: COLORS.panelAlt, borderRadius: 8, border: `1px solid ${action.nouvelleCouleur ? COLORS.glow : COLORS.gold}` }}>
-          <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif" }}>Action à faire maintenant</div>
-          <div style={{ fontSize: 13, color: action.nouvelleCouleur ? COLORS.glow : COLORS.gold, fontFamily: "Inter, sans-serif", fontWeight: 800, marginTop: 3 }}>
-            {action.nouvelleCouleur ? "⭐ Nouvelle couleur : " : "🧬 Créer "}
-            {action.couleur} <span style={{ color: COLORS.muted }}>G{action.generation}</span>
-          </div>
-
-          {action.couple && (
-            <div style={{ fontSize: 11, color: COLORS.text, fontFamily: "Inter, sans-serif", marginTop: 5, lineHeight: 1.45 }}>
-              Parents : ♂ <b>{action.couple.male.nom}</b> ({action.couple.male.couleur}) × ♀ <b>{action.couple.femelle.nom}</b> ({action.couple.femelle.couleur})
-              <br />
-              Recette : {action.recette.join(" × ")}
-            </div>
-          )}
-
-          <div style={{ fontSize: 10.5, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 6 }}>
-            Le GPS cherche d'abord un croisement proche de G{objectifGeneration}. S'il est bloqué, il descend G{objectifGeneration - 1}, G{objectifGeneration - 2}, etc.
-          </div>
-        </div>
-      ) : (
-        <div style={{ marginTop: 10, padding: 10, background: COLORS.panelAlt, borderRadius: 8, border: `1px solid ${COLORS.danger}` }}>
-          <div style={{ fontSize: 13, color: COLORS.danger, fontFamily: "Inter, sans-serif", fontWeight: 800 }}>
-            Aucun croisement faisable trouvé
-          </div>
-          <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 4 }}>
-            Il te manque probablement les parents de base, ou les sexes/reproductions restantes ne permettent pas encore un couple.
-          </div>
-        </div>
-      )}
-
-      {plan.etapes.length > 0 && (
-        <div style={{ marginTop: 10, maxHeight: 145, overflow: "auto", paddingRight: 4 }}>
-          <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginBottom: 5 }}>Plan proche de l'objectif</div>
-          {plan.etapes.slice(0, 12).map((e, idx) => (
-            <div key={`${e.couleur}-${idx}`} style={{ fontSize: 11.5, color: e.nouvelleCouleur ? COLORS.glow : COLORS.text, fontFamily: "Inter, sans-serif", marginBottom: 5 }}>
-              {idx + 1}. {e.nouvelleCouleur ? "⭐" : "🧬"} <b>{e.couleur}</b>
-              <span style={{ color: COLORS.muted }}> — {e.recette.join(" × ")}</span>
-            </div>
-          ))}
-          {plan.etapes.length > 12 && <div style={{ fontSize: 11, color: COLORS.muted }}>+ {plan.etapes.length - 12} étape(s)</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ObjectifsCouleursPanel({ stockComplet, stocksCouleurs, setStocksCouleurs, objectifs, prochainObjectif }) {
-  const updateStock = (couleur, value) => {
-    setStocksCouleurs((prev) => ({
-      ...prev,
-      [couleur]: Math.max(0, Number(value) || 0),
-    }));
-  };
-
-  return (
-    <div style={{ padding: 16, borderBottom: `1px solid ${COLORS.line}`, background: COLORS.panel }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: COLORS.glow, marginBottom: 10, fontFamily: "Inter, sans-serif", fontWeight: 700 }}>
-        Objectifs couleurs
-      </div>
-
-      {prochainObjectif && (
-        <div style={{ marginBottom: 12, padding: 10, background: COLORS.panelAlt, borderRadius: 8, border: `1px solid ${prochainObjectif.status === "possible" ? COLORS.glow : COLORS.gold}` }}>
-          <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif" }}>Prochaine cible</div>
-          <div style={{ fontSize: 16, fontFamily: "Inter, sans-serif", fontWeight: 800, color: prochainObjectif.status === "possible" ? COLORS.glow : COLORS.gold }}>
-            {prochainObjectif.couleur}
-          </div>
-          <div style={{ fontSize: 11.5, color: COLORS.text, fontFamily: "Inter, sans-serif", marginTop: 4 }}>
-            Recette possible : {
-              prochainObjectif.recettes?.find((r) => r.faisable)
-                ? prochainObjectif.recettes.find((r) => r.faisable).dispoParents.map((p) => `${p.couleur} (${p.stock})`).join(" × ")
-                : "aucune avec ton stock actuel"
-            }
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-        {objectifs.map((objectif) => (
-          <div key={objectif.couleur} style={{ padding: 8, background: COLORS.panelAlt, borderRadius: 7, border: `1px solid ${COLORS.line}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontFamily: "Inter, sans-serif", fontWeight: 700 }}>
-              <span>{objectif.possedes > 0 ? "✓" : objectif.faisable ? "🟢" : "❌"} {objectif.couleur}</span>
-              <span style={{ color: objectif.possedes > 0 ? COLORS.glow : objectif.faisable ? COLORS.glow : COLORS.danger }}>
-                {objectif.possedes}
-              </span>
-            </div>
-            {objectif.possedes === 0 && objectif.recettes?.length > 0 && (
-              <div style={{ fontSize: 10.5, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 4 }}>
-                {objectif.recettes.slice(0, 2).map((r, idx) => (
-                  <div key={idx} style={{ color: r.faisable ? COLORS.glow : COLORS.muted }}>
-                    {r.faisable ? "Possible : " : "Manque : "}
-                    {r.dispoParents.map((p) => `${p.couleur} (${p.stock})`).join(" × ")}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 52px", gap: 6, maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
-        {COULEURS_MULDO.map((couleur) => {
-          const n = stockComplet[couleur] || 0;
-          const isTarget = OBJECTIFS_COULEURS.includes(couleur);
-          const danger = n === 0 && isTarget;
-
-          return (
-            <React.Fragment key={couleur}>
-              <div style={{ fontSize: 12, color: danger ? COLORS.danger : n <= 2 ? COLORS.gold : COLORS.text, fontFamily: "Inter, sans-serif", display: "flex", alignItems: "center" }}>
-                {danger ? "❌ " : n > 0 ? "✓ " : "• "}{couleur}
-              </div>
-              <input
-                className="field"
-                type="number"
-                min={0}
-                value={stocksCouleurs[couleur] ?? 0}
-                onChange={(e) => updateStock(couleur, e.target.value)}
-                style={{ padding: "4px 6px", fontSize: 11, height: 25 }}
-              />
-            </React.Fragment>
-          );
-        })}
-      </div>
-
-      <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif" }}>
-        Mets à jour les compteurs depuis les filtres Dofus. Les couleurs à 0 restent tes cibles.
-      </div>
-    </div>
-  );
-}
-
-function ActionGroup({ title, items, onSelect }) {
-  if (!items || items.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginBottom: 5 }}>{title} · {items.length}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {items.slice(0, 5).map(({ muldo, action }) => (
-          <button key={muldo.id} className="btn btn-ghost" onClick={() => onSelect(muldo.id)} style={{ justifyContent: "space-between", padding: "7px 9px", fontSize: 11 }}>
-            <span>{muldo.sexe === "F" ? "♀" : "♂"} {muldo.nom}</span>
-            <span style={{ color: action.color }}>{action.objet}</span>
-          </button>
-        ))}
-        {items.length > 5 && (
-          <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", paddingLeft: 4 }}>+ {items.length - 5} autre(s)</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ActionCard({ muldo }) {
   const action = getNextAction(muldo);
   return (
@@ -2344,25 +2021,6 @@ function NewMuldoModal({ cheptel, onClose, onCreate }) {
 }
 
 
-function DashboardPanel({cheptel,plan,historiqueCouleurs}){
- const fertiles=cheptel.filter(m=>m.statut!=="Stérile").length;
- const dec=Object.keys(historiqueCouleurs||{}).length;
- return <div>
- <h1>🏠 Tableau de bord</h1>
- <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(150px,1fr))",gap:12}}>
- <div style={{background:"#2b2722",padding:16,borderRadius:10}}><b>Cheptel</b><div>{cheptel.length}</div></div>
- <div style={{background:"#2b2722",padding:16,borderRadius:10}}><b>Fertiles</b><div>{fertiles}</div></div>
- <div style={{background:"#2b2722",padding:16,borderRadius:10}}><b>Découvertes</b><div>{dec}</div></div>
- <div style={{background:"#2b2722",padding:16,borderRadius:10}}><b>Objectif</b><div>G{plan.generation}</div></div>
- </div>
- {plan.actionImmediate && <div style={{marginTop:20,background:"#2b2722",padding:20,borderRadius:10}}>
- <h2>🎯 Action recommandée</h2>
- <div>{plan.actionImmediate.couleur}</div>
- </div>}
- </div>
-}
-
-
 // Barre d'onglets affichée en entrant dans une section créature (Muldo,
 // Dragodinde, Volkorne) — permet de passer de Cheptel à Synchro/GPS/Clonage
 // sans repasser par le menu latéral.
@@ -2538,27 +2196,6 @@ function BigGpsCard({ plan }) {
           Aucune action immédiate trouvée. Vérifie le stock ou augmente l'objectif.
         </div>
       )}
-    </div>
-  );
-}
-
-function GpsSessionControls({ objectif, setObjectif, purification, setPurification, session }) {
-  return (
-    <div style={{ padding: 16, borderBottom: "1px solid var(--line)" }}>
-      <div className="sidebar-title" style={{ marginLeft: 0 }}>Optimiseur global</div>
-      <label style={{ display: "block", fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Objectif final</label>
-      <select className="field" value={objectif} onChange={(e) => setObjectif(e.target.value)}>
-        {COULEURS_MULDO.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
-      <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, fontSize: 12, color: "var(--muted)" }}>
-        <input type="checkbox" checked={purification} onChange={(e) => setPurification(e.target.checked)} />
-        Autoriser les croisements de même couleur (purification)
-      </label>
-      <div className="side-metric">
-        <b style={{ color: "var(--gold2)" }}>{session.couples.length} couples</b><br />
-        {session.utilises} / {session.totalFertiles} Muldos utilisées<br />
-        {session.restants.length} sans partenaire
-      </div>
     </div>
   );
 }
@@ -4199,21 +3836,6 @@ function AileNiveau({ style = "muldo", miroir = false, taille = 22, niveau = 1 }
   return <AileSvg style={style} miroir={miroir} taille={taille} niveau={n} />;
 }
 
-// Vrai si des visuels d'ailes en paires sont installés (public/ailes/*.png).
-let AILES_IMAGES_DISPO = null;
-function ailesImagesDisponibles() {
-  if (AILES_IMAGES_DISPO === null) {
-    AILES_IMAGES_DISPO = false;
-    const test = new Image();
-    test.onload = () => { AILES_IMAGES_DISPO = true; };
-    test.src = "ailes/muldo-1.png";
-  }
-  return AILES_IMAGES_DISPO;
-}
-
-// Une aile isolée pour encadrer un pseudo. Si un fichier dédié existe
-// (muldo-5-gauche.png / -droite.png) il est utilisé tel quel ; sinon on
-// recadre à la volée une moitié de la paire complète ; sinon repli SVG.
 function DemiAile({ style = "muldo", cote = "gauche", taille = 20, niveau = 1 }) {
   const [etat, setEtat] = useState("dedie"); // dedie -> moitie -> svg
   const n = Math.max(1, Math.min(5, Number(niveau) || 1));
@@ -4966,7 +4588,6 @@ function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, onVoirM
   const [typeScan, setTypeScan] = useState("femelles");
   const [texte, setTexte] = useState("");
   const [preview, setPreview] = useState("");
-  const [previews, setPreviews] = useState([]);
   const [ocrEnCours, setOcrEnCours] = useState(false);
   const [scans, setScans] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_SYNC_KEY) || "{}"); }
@@ -5210,7 +4831,6 @@ function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, onVoirM
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
 
-    setPreviews(files.map(f => URL.createObjectURL(f)));
     setPreview(URL.createObjectURL(files[0]));
 
     await lireOCR(files);
