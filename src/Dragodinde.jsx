@@ -46,17 +46,19 @@ function construireGenerationsDragodinde() {
 export const GENERATIONS_DRAGODINDE = construireGenerationsDragodinde();
 export const COULEURS_DRAGODINDE = Object.values(GENERATIONS_DRAGODINDE).flat();
 
-// Recettes bicolore+bicolore → monocolore spécial, confirmées (dofuspourlesnoobs.com).
-// Ivoire/Turquoise (gén.7) et Émeraude/Prune (gén.9) : recette exacte non
-// confirmée à ce stade — volontairement absente plutôt que fausse. Le plan GPS
-// ne proposera pas d'étape automatique vers ces couleurs tant qu'elle ne sera
-// pas vérifiée sur dofusdb.fr (le reste de l'appli — Cheptel, Succès,
-// généalogie, clonage — fonctionne normalement pour elles).
+// Recettes bicolore+bicolore → monocolore spécial. Gén.3/5 confirmées
+// (dofuspourlesnoobs.com) ; gén.7/9 (Ivoire/Turquoise/Émeraude/Prune)
+// ajoutées le 2026-07-24 à partir de captures d'écran de l'arbre de
+// croisement complet fournies par l'utilisateur.
 const RECETTES_SPECIALES_DRAGODINDE = {
   "Ébène": [["Amande et Dorée", "Dorée et Rousse"]],
   "Indigo": [["Amande et Dorée", "Amande et Rousse"]],
   "Pourpre": [["Ébène et Indigo", "Amande et Rousse"]],
   "Orchidée": [["Ébène et Indigo", "Dorée et Rousse"]],
+  "Ivoire": [["Pourpre et Orchidée", "Indigo et Pourpre"]],
+  "Turquoise": [["Pourpre et Orchidée", "Ébène et Orchidée"]],
+  "Émeraude": [["Ivoire et Turquoise", "Pourpre et Ivoire"]],
+  "Prune": [["Ivoire et Turquoise", "Orchidée et Turquoise"]],
 };
 
 function recettesPourCouleurDragodinde(couleur) {
