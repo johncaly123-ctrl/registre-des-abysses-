@@ -3,8 +3,9 @@
 // par créature — voir geneticsUtils.js). Chaque composant reçoit les bouts
 // spécifiques à la créature appelante en props (BadgeComponent,
 // generationDeCouleurFn, plierCouleurFn, couleursToutes...).
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Trash2, ChevronRight } from "lucide-react";
+import { COLORS } from "./muldoGenetique.js";
 
 export async function copierPressePapiers(texte) {
   try {
@@ -1426,6 +1427,202 @@ export function GpsDofusPage({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Petits helpers UI génériques (partagés entre les 3 créatures) ----------
+export function LabeledSelect({ label, value, options, onChange }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 4, fontFamily: "Inter, sans-serif" }}>{label}</div>
+      <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </div>
+  );
+}
+
+export function StatCard({ value, label, emoji }) {
+  return (
+    <div className="stat-card">
+      <div style={{ fontSize: 22, marginBottom: 12 }}>{emoji}</div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+    </div>
+  );
+}
+
+export function formatKamas(n) {
+  return `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(n) || 0))} k`;
+}
+
+// Estimation de la valeur du cheptel. Dofus n'expose pas d'API HDV : les prix
+// sont saisis à la main par couleur (une fois), persistés, et le total suit
+// automatiquement l'évolution du cheptel. Les stériles sont comptés avec une
+// décote réglable (leur valeur réelle est surtout le recyclage).
+export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge }) {
+  const [config, setConfig] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey));
+      if (saved && typeof saved === "object") {
+        return {
+          prix: saved.prix || {},
+          decoteSterile: Number.isFinite(saved.decoteSterile) ? saved.decoteSterile : 20,
+          prixAmbre: Number.isFinite(saved.prixAmbre) ? saved.prixAmbre : 20000,
+        };
+      }
+    } catch (e) {
+      console.error("Grille de prix illisible", e);
+    }
+    return { prix: {}, decoteSterile: 20, prixAmbre: 20000 };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(config));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [config, storageKey]);
+
+  const lignes = useMemo(() => {
+    const parCouleur = new Map();
+    (cheptel || []).forEach((m) => {
+      const c = m.couleur;
+      if (!parCouleur.has(c)) parCouleur.set(c, { couleur: c, fertiles: 0, steriles: 0, seniles: 0 });
+      const ligne = parCouleur.get(c);
+      if (m.senile) ligne.seniles += 1;
+      else if (m.sterile) ligne.steriles += 1;
+      else ligne.fertiles += 1;
+    });
+    return [...parCouleur.values()]
+      .map((l) => {
+        const prixUnitaire = Number(config.prix[l.couleur]) || 0;
+        const sousTotal = l.fertiles * prixUnitaire
+          + (l.steriles + l.seniles) * prixUnitaire * (config.decoteSterile / 100);
+        const generation = generationDeCouleurFn(l.couleur);
+        // Extraction : rendement = numéro de génération en ressources (dès la gen 2).
+        // Exception : un individu SÉNILE ne rend qu'une seule ressource.
+        const valeurExtraction = generation >= 2
+          ? ((l.fertiles + l.steriles) * generation + l.seniles * 1) * (Number(config.prixAmbre) || 0)
+          : 0;
+        return { ...l, prixUnitaire, sousTotal, generation, valeurExtraction };
+      })
+      .sort((a, b) => (a.generation - b.generation) || a.couleur.localeCompare(b.couleur, "fr"));
+  }, [cheptel, config, generationDeCouleurFn]);
+
+  const total = lignes.reduce((n, l) => n + l.sousTotal, 0);
+  const totalExtraction = lignes.reduce((n, l) => n + l.valeurExtraction, 0);
+  const totalOptimal = lignes.reduce((n, l) => n + Math.max(l.sousTotal, l.valeurExtraction), 0);
+  const sansPrix = lignes.filter((l) => !l.prixUnitaire).length;
+
+  // Clic sur une couleur → copie "<Créature> <Couleur>" (nom exact à l'HDV créatures).
+  const [copie, setCopie] = useState(null);
+  const copierNomHdv = async (couleur) => {
+    if (await copierPressePapiers(`${nomHdv} ${couleur}`)) {
+      setCopie(couleur);
+      setTimeout(() => setCopie((c) => (c === couleur ? null : c)), 1500);
+    }
+  };
+
+  const setPrixCouleur = (couleur, valeur) => {
+    setConfig((prev) => ({
+      ...prev,
+      prix: { ...prev.prix, [couleur]: valeur === "" ? "" : Math.max(0, Number(valeur) || 0) },
+    }));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0 }}>{icone} Valeur estimée — {nomHdv}</h2>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ color: "var(--gold)", fontSize: 22, fontWeight: 900 }}>{formatKamas(total)}</div>
+          <div style={{ color: "var(--muted)", fontSize: 11 }}>
+            extraction : {formatKamas(totalExtraction)} · optimum (meilleur des deux par ligne) : {formatKamas(totalOptimal)}
+          </div>
+        </div>
+      </div>
+      <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
+        Saisis le prix HDV unitaire par couleur (persisté sur ce navigateur) — pas d'API officielle, donc
+        mise à jour manuelle. Clique sur une couleur pour copier son nom complet et le coller dans la
+        recherche de l'HDV créatures.{" "}
+        {sansPrix > 0 && <span style={{ color: "#e8896a" }}>{sansPrix} couleur(s) sans prix : elles comptent pour 0.</span>}
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: "var(--muted)" }}>
+        Valeur d'un stérile :
+        <input
+          type="number"
+          className="field"
+          min={0}
+          max={100}
+          value={config.decoteSterile}
+          onChange={(e) => setConfig((prev) => ({ ...prev, decoteSterile: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))}
+          style={{ width: 70 }}
+        />
+        % du prix d'un fertile
+        <span style={{ margin: "0 6px", color: "var(--text-faint, var(--muted))" }}>·</span>
+        Prix de « {labelExtraction} » :
+        <input
+          type="number"
+          className="field"
+          min={0}
+          value={config.prixAmbre}
+          onChange={(e) => setConfig((prev) => ({ ...prev, prixAmbre: Math.max(0, Number(e.target.value) || 0) }))}
+          style={{ width: 90 }}
+        />
+        k (extraction : génération × quantité, dès la gen 2)
+      </label>
+
+      <div style={{ marginTop: 12, overflowX: "auto" }}>
+        <div style={{ minWidth: 640, display: "grid", gridTemplateColumns: "minmax(150px, 1fr) 60px 60px 130px 120px 120px", gap: 8, fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.6, paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+          <span>Couleur</span><span>Fert.</span><span>Stér.</span><span>Prix unitaire</span><span style={{ textAlign: "right" }}>Sous-total HDV</span><span style={{ textAlign: "right" }}>Extraction</span>
+        </div>
+        {lignes.map((l) => (
+          <div key={l.couleur} style={{ minWidth: 640, display: "grid", gridTemplateColumns: "minmax(150px, 1fr) 60px 60px 130px 120px 120px", gap: 8, alignItems: "center", padding: "5px 0", fontSize: 13, borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+            <span>
+              <button
+                type="button"
+                onClick={() => copierNomHdv(l.couleur)}
+                title={`Copier « ${nomHdv} ${l.couleur} » pour la recherche HDV`}
+                style={{ background: "none", border: "none", padding: 0, color: "inherit", font: "inherit", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
+              >
+                {Badge ? <Badge couleur={l.couleur} taille={18} /> : icone}{" "}{l.couleur}
+              </button>{" "}
+              <span style={{ color: "var(--muted)", fontSize: 11 }}>G{l.generation}</span>
+              {copie === l.couleur && (
+                <span style={{ color: "var(--gold)", fontSize: 11, marginLeft: 6 }}>✓ copié</span>
+              )}
+            </span>
+            <span>{l.fertiles}</span>
+            <span style={{ color: "var(--muted)" }}>{l.steriles}</span>
+            <input
+              type="number"
+              className="field"
+              min={0}
+              placeholder="prix en k"
+              value={config.prix[l.couleur] ?? ""}
+              onChange={(e) => setPrixCouleur(l.couleur, e.target.value)}
+              style={{ width: "100%", padding: "4px 8px" }}
+            />
+            <span style={{ textAlign: "right", color: l.sousTotal ? "var(--text)" : "var(--muted)" }}>{formatKamas(l.sousTotal)}</span>
+            <span
+              title={l.generation >= 2
+                ? `${l.fertiles + l.steriles} individu(s) × ${l.generation} ${labelExtraction}(s) × ${formatKamas(config.prixAmbre)}${l.valeurExtraction > l.sousTotal ? " — l'extraction rapporte plus que la vente HDV" : ""}`
+                : "Génération 1 : extraction impossible"}
+              style={{
+                textAlign: "right",
+                color: l.valeurExtraction > l.sousTotal && l.valeurExtraction > 0 ? "var(--gold)" : "var(--muted)",
+                fontWeight: l.valeurExtraction > l.sousTotal && l.valeurExtraction > 0 ? 700 : 400,
+              }}
+            >
+              {l.generation >= 2 ? formatKamas(l.valeurExtraction) : "—"}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
