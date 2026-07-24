@@ -4,7 +4,7 @@
 // spécifiques à la créature appelante en props (BadgeComponent,
 // generationDeCouleurFn, plierCouleurFn, couleursToutes...).
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, ChevronRight } from "lucide-react";
 
 export async function copierPressePapiers(texte) {
   try {
@@ -654,6 +654,778 @@ export function NaissancesEnAttentePanel({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------- Bouton "Fiche" (ouvre la fiche détail d'une monture) ----------
+export function BoutonFiche({ id, onVoir, label }) {
+  if (!onVoir || !id) return null;
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost"
+      title={`Ouvrir la fiche${label ? " de " + label : ""}`}
+      style={{ padding: "2px 7px", fontSize: 11, lineHeight: 1.4 }}
+      onClick={() => onVoir(id)}
+    >
+      🔍 Fiche
+    </button>
+  );
+}
+
+// ---------- Page GPS (objectif intelligent + session + plan d'accouplement) ----------
+// Générique : reçoit tout ce qui dépend de la créature (couleurs, badge,
+// fonctions de génération/canonicalisation, table des générations, libellés)
+// en props. Copié fidèlement depuis App.jsx (muldo) — voir le plan de parité
+// GPS pour le détail des risques (suivi de session à ne pas réinventer).
+export function GpsDofusPage({
+  session,
+  mode,
+  setMode,
+  objectif,
+  objectifCouleur,
+  setObjectifCouleur,
+  generationCible,
+  setGenerationCible,
+  generationMin,
+  setGenerationMin,
+  generationMax,
+  setGenerationMax,
+  choixObjectif,
+  progressionGenerations,
+  purification,
+  setPurification,
+  optimakina,
+  setOptimakina,
+  niveauMinimumSession,
+  setNiveauMinimumSession,
+  suivi,
+  naissances,
+  journal,
+  onConfirmerNaissance,
+  onSupprimerNaissance,
+  onRealiserUn,
+  onTerminerGroupe,
+  onAnnuler,
+  onReinitialiser,
+  onDemarrerNouvelleSession,
+  onNettoyerSterilesPuisDemarrer,
+  onVoirMuldo,
+  BadgeComponent,
+  generationDeCouleurFn,
+  plierCouleurFn,
+  couleursToutes,
+  generationsTable,
+  sexeFn,
+  couleurEstCanoniqueFn,
+  resultatsParCouple,
+  cleCoupleCouleursFn,
+  lieuCapture,
+  nomObjectifLabel = "Muldo objectif",
+  nomEntitePluriel = "Muldos",
+  supporteReproducteur = true,
+}) {
+  const [etapesOuvertes, setEtapesOuvertes] = useState({});
+  const toggleEtapes = (key) => {
+    setEtapesOuvertes((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  const [forcerJaugesNettoyage, setForcerJaugesNettoyage] = useState(false);
+
+  const pct = session.totalFertiles
+    ? Math.round(session.utilises / session.totalFertiles * 100)
+    : 0;
+  const realises = (suivi?.historique || []).length;
+  const totalInitial = Math.max(
+    Number(suivi?.totalInitial || 0),
+    realises + session.couples.length
+  );
+  const progression = totalInitial
+    ? Math.round(realises / totalInitial * 100)
+    : 0;
+
+  const generationsAffichees = (progressionGenerations || []).filter((g) => {
+    if (mode === "generation") return g.generation === Number(generationCible);
+    if (mode === "collection") {
+      const min = Math.min(Number(generationMin), Number(generationMax));
+      const max = Math.max(Number(generationMin), Number(generationMax));
+      return g.generation >= min && g.generation <= max;
+    }
+    return g.generation >= 2;
+  });
+
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{
+          color: "var(--gold)",
+          fontSize: 12,
+          fontWeight: 950,
+          letterSpacing: 1.6,
+          textTransform: "uppercase",
+        }}>
+          GPS session complète
+        </div>
+        <h1 style={{ margin: "6px 0 0", fontSize: 34 }}>
+          Objectif intelligent
+        </h1>
+        <div style={{ color: "var(--muted)", marginTop: 7 }}>
+          Le plan est recalculé après chaque accouplement réalisé.
+        </div>
+      </div>
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 10,
+          marginBottom: 16,
+        }}>
+          {[
+            ["succes", "Succès 🏆", "Compléter les générations dans l'ordre"],
+            ["couleur", "Une couleur", `Produire un ${nomObjectifLabel.split(" ")[0]} précis`],
+            ["generation", "Une génération", "Compléter une génération choisie"],
+            ["collection", "Collection", "Compléter une plage de générations"],
+          ].map(([value, titre, detail]) => (
+            <button
+              key={value}
+              className={`btn ${mode === value ? "btn-coral" : "btn-ghost"}`}
+              style={{
+                minHeight: 74,
+                flexDirection: "column",
+                alignItems: "flex-start",
+                textAlign: "left",
+              }}
+              onClick={() => setMode(value)}
+            >
+              <span>{titre}</span>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 600,
+                opacity: .78,
+              }}>
+                {detail}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {mode === "couleur" && (
+          <div>
+            <label style={{
+              display: "block",
+              fontSize: 11,
+              color: "var(--muted)",
+              marginBottom: 6,
+            }}>
+              {nomObjectifLabel}
+            </label>
+            <select
+              className="field"
+              value={objectifCouleur}
+              onChange={(e) => setObjectifCouleur(e.target.value)}
+            >
+              {couleursToutes.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {mode === "generation" && (
+          <div>
+            <label style={{
+              display: "block",
+              fontSize: 11,
+              color: "var(--muted)",
+              marginBottom: 6,
+            }}>
+              Génération à compléter
+            </label>
+            <select
+              className="field"
+              value={generationCible}
+              onChange={(e) => setGenerationCible(Number(e.target.value))}
+            >
+              {Object.keys(generationsTable).map((g) => (
+                <option key={g} value={g}>Génération {g}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {mode === "collection" && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            alignItems: "end",
+            gap: 12,
+          }}>
+            <div>
+              <label style={{
+                display: "block",
+                fontSize: 11,
+                color: "var(--muted)",
+                marginBottom: 6,
+              }}>
+                Génération de départ
+              </label>
+              <select
+                className="field"
+                value={generationMin}
+                onChange={(e) => setGenerationMin(Number(e.target.value))}
+              >
+                {Object.keys(generationsTable).map((g) => (
+                  <option key={g} value={g}>Génération {g}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{
+              color: "var(--gold2)",
+              fontWeight: 950,
+              paddingBottom: 10,
+            }}>
+              →
+            </div>
+            <div>
+              <label style={{
+                display: "block",
+                fontSize: 11,
+                color: "var(--muted)",
+                marginBottom: 6,
+              }}>
+                Génération finale
+              </label>
+              <select
+                className="field"
+                value={generationMax}
+                onChange={(e) => setGenerationMax(Number(e.target.value))}
+              >
+                {Object.keys(generationsTable).map((g) => (
+                  <option key={g} value={g}>Génération {g}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div style={{
+          marginTop: 16,
+          padding: 14,
+          borderRadius: 14,
+          border: "1px solid var(--gold)",
+          background: "rgba(214,166,74,.08)",
+        }}>
+          <div style={{
+            color: "var(--muted)",
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 1,
+          }}>
+            Objectif actuellement choisi par le GPS
+          </div>
+          <div style={{
+            fontSize: 25,
+            fontWeight: 950,
+            color: "var(--gold2)",
+            marginTop: 4,
+          }}>
+            {objectif}
+          </div>
+          <div style={{
+            color: "var(--muted)",
+            fontSize: 12,
+            marginTop: 5,
+          }}>
+            {choixObjectif?.raison}
+          </div>
+          {choixObjectif?.complete && (
+            <div style={{
+              color: "var(--green)",
+              fontWeight: 900,
+              marginTop: 8,
+            }}>
+              ✓ Objectif de collection déjà complété
+            </div>
+          )}
+        </div>
+      </div>
+
+      {mode !== "couleur" && (
+        <div className="panel-card" style={{ marginBottom: 16 }}>
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 12,
+          }}>
+            <b>Progression des générations</b>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>
+              Une couleur déjà possédée ou validée compte comme découverte.
+            </span>
+          </div>
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+            gap: 10,
+          }}>
+            {generationsAffichees.map((g) => (
+              <div
+                key={g.generation}
+                style={{
+                  padding: 12,
+                  borderRadius: 13,
+                  border: "1px solid var(--line)",
+                  background: g.pct === 100
+                    ? "rgba(104,193,111,.09)"
+                    : "rgba(0,0,0,.13)",
+                }}
+              >
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginBottom: 8,
+                }}>
+                  <b>Génération {g.generation}</b>
+                  <b style={{
+                    color: g.pct === 100
+                      ? "var(--green)"
+                      : "var(--gold2)",
+                  }}>
+                    {g.decouvertes}/{g.total}
+                  </b>
+                </div>
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${g.pct}%` }}
+                  />
+                </div>
+                {g.manquantes.length > 0 && (
+                  <div style={{
+                    color: "var(--muted)",
+                    fontSize: 10,
+                    marginTop: 7,
+                    lineHeight: 1.45,
+                  }}>
+                    Manque : {g.manquantes.slice(0, 3).join(", ")}
+                    {g.manquantes.length > 3 ? ` +${g.manquantes.length - 3}` : ""}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 16,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}>
+          <div style={{ minWidth: 260, flex: 1 }}>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 8,
+            }}>
+              <b>Progression de la session</b>
+              <b style={{ color: "var(--gold2)" }}>
+                {realises} / {totalInitial} réalisés · {progression}%
+              </b>
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{ width: `${progression}%` }}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-ghost"
+              onClick={onAnnuler}
+              disabled={realises === 0}
+            >
+              +1 / Annuler le dernier
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={onReinitialiser}
+            >
+              Réinitialiser la session
+            </button>
+            <button
+              className="btn btn-coral"
+              onClick={onDemarrerNouvelleSession}
+              title="Repasse tous les Féconde en Fertile (repos terminé) puis relance la session"
+            >
+              🌱 Tous fertiles → nouvelle session
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => onNettoyerSterilesPuisDemarrer(forcerJaugesNettoyage)}
+              title="Met tous les montures Stérile à la corbeille (récupérable) et repasse tout le reste en Fertile — pratique après un suivi de clonage mal tenu"
+            >
+              🧹 Nettoyer stériles → tout fertile
+            </button>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)" }}>
+              <input
+                type="checkbox"
+                checked={forcerJaugesNettoyage}
+                onChange={(e) => setForcerJaugesNettoyage(e.target.checked)}
+              />
+              forcer jauges à 100 (fictif)
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="stat-grid">
+        <div className="stat-card">
+          <div className="stat-value">{session.couples.length}</div>
+          <div className="stat-label">Accouplements restants</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{session.utilises}</div>
+          <div className="stat-label">{nomEntitePluriel} encore affectées</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{pct}%</div>
+          <div className="stat-label">Cheptel restant affecté</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{session.restants.length}</div>
+          <div className="stat-label">Restantes sans partenaire</div>
+        </div>
+      </div>
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}>
+          <div>
+            <b>Règles appliquées</b>
+            <div style={{
+              color: "var(--muted)",
+              fontSize: 12,
+              marginTop: 5,
+            }}>
+              Chaque clic retire réellement un mâle et une femelle du stock
+              virtuel, puis le plan complet est recalculé.
+            </div>
+          </div>
+          <label style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--muted)",
+            fontSize: 12,
+          }}>
+            <input
+              type="checkbox"
+              checked={purification}
+              onChange={(e) => setPurification(e.target.checked)}
+            />
+            Mode purification
+          </label>
+          <label style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--muted)",
+            fontSize: 12,
+          }}>
+            <input
+              type="checkbox"
+              checked={optimakina}
+              onChange={(e) => setOptimakina(e.target.checked)}
+            />
+            Optimakina utilisée
+          </label>
+          <label style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--muted)",
+            fontSize: 12,
+          }}>
+            Niveau mini (session)
+            <input
+              type="number"
+              className="field"
+              min={0}
+              max={200}
+              style={{ width: 70 }}
+              value={niveauMinimumSession || ""}
+              placeholder="0"
+              title="Suppose que toutes tes montures sont au moins à ce niveau pour ce calcul, sans avoir à le saisir sur chaque fiche"
+              onChange={(e) => setNiveauMinimumSession(e.target.value === "" ? 0 : Number(e.target.value))}
+            />
+          </label>
+        </div>
+      </div>
+
+      <NaissancesEnAttentePanel
+        naissances={naissances}
+        onConfirmer={onConfirmerNaissance}
+        onSupprimer={onSupprimerNaissance}
+        BadgeComponent={BadgeComponent}
+        generationDeCouleurFn={generationDeCouleurFn}
+        plierCouleurFn={plierCouleurFn}
+        couleursToutes={couleursToutes}
+        supporteReproducteur={supporteReproducteur}
+      />
+
+      <BebesARenommerPanel journal={journal} BadgeComponent={BadgeComponent} />
+
+      <StatsCroisementsPanel journal={journal} />
+
+      <div className="panel-card">
+        <h2 style={{ marginTop: 0 }}>Plan d'accouplement optimisé</h2>
+        {session.groupes.length === 0 && (
+          <div style={{ color: "var(--muted)" }}>
+            {realises > 0
+              ? "Tous les accouplements disponibles ont été réalisés."
+              : "Aucun couple compatible trouvé avec les sexes actuels."}
+          </div>
+        )}
+
+        {session.groupes.map((g, idx) => {
+          const aDesEtapes = Array.isArray(g.arbreCouples) && g.arbreCouples.length > 0;
+          const etapesVisibles = Boolean(etapesOuvertes[g.key]);
+          return (
+          <div
+            key={g.key}
+            style={{
+              padding: "13px 4px",
+              borderBottom: "1px solid var(--line)",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "70px minmax(230px,1fr) minmax(210px,1fr) auto",
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+            <span
+              className="pill"
+              style={{
+                justifyContent: "center",
+                color: "var(--gold2)",
+              }}
+            >
+              × {g.quantite}
+            </span>
+            <div>
+              <b>♂ <NomCopiable nom={g.male.nom || g.male.couleur} /></b>{" "}
+              <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} />
+              <span style={{
+                color: "var(--gold2)",
+                margin: "0 7px",
+              }}>
+                ×
+              </span>
+              <b>♀ <NomCopiable nom={g.femelle.nom || g.femelle.couleur} /></b>{" "}
+              <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                <CouleurCopiable couleur={g.male.couleur} gras={false} BadgeComponent={BadgeComponent} />
+                <span style={{ margin: "0 5px" }}>×</span>
+                <CouleurCopiable couleur={g.femelle.couleur} gras={false} BadgeComponent={BadgeComponent} />
+              </div>
+              <div style={{
+                color: "var(--muted)",
+                fontSize: 11,
+                marginTop: 4,
+              }}>
+                Priorité #{idx + 1} · score {Math.round(g.score)}
+              </div>
+            </div>
+            <div style={{
+              color: g.resultat === objectif
+                ? "var(--green)"
+                : "var(--muted)",
+              fontSize: 12,
+            }}>
+              {g.resultat ? (
+                <>
+                  <b>{g.resultat}</b><br />
+                </>
+              ) : null}
+              {g.raison}
+              {g.generationCible && (
+                <div style={{ marginTop: 4 }}>
+                  🎯 Génération cible : G{g.generationCible} (~{g.chanceGenerationCible}% de chance)
+                  <br />
+                  couleurs possibles : {(g.couleursGenerationCible || []).join(", ") || "—"}
+                </div>
+              )}
+            </div>
+            <div style={{
+              display: "flex",
+              gap: 8,
+              justifyContent: "flex-end",
+              flexWrap: "wrap",
+            }}>
+              <button
+                className="btn btn-coral"
+                onClick={() => onRealiserUn(g)}
+              >
+                ✓ 1 réalisé
+              </button>
+              {g.quantite > 1 && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => onTerminerGroupe(g)}
+                >
+                  Tout réaliser
+                </button>
+              )}
+              {aDesEtapes && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => toggleEtapes(g.key)}
+                >
+                  {etapesVisibles ? "Masquer les étapes" : "Voir les étapes"}
+                </button>
+              )}
+            </div>
+            </div>
+
+            {aDesEtapes && etapesVisibles && (
+              <div style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "var(--panelAlt, rgba(255,255,255,.03))",
+                border: "1px solid var(--line)",
+                fontSize: 12,
+                color: "var(--muted)",
+              }}>
+                <div style={{
+                  color: "var(--gold2)",
+                  fontWeight: 800,
+                  marginBottom: 8,
+                  fontSize: 11,
+                  letterSpacing: .4,
+                  textTransform: "uppercase",
+                }}>
+                  Arbre d'accouplements jusqu'à {objectif}
+                </div>
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}>
+                  {g.arbreCouples.map((etape, i) => {
+                    const estDerniere = etape.produit === objectif;
+                    return (
+                      <div
+                        key={`${g.key}-etape-${i}`}
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        {i === 0 && (
+                          <span
+                            className="pill"
+                            style={{ color: "var(--gold2)", fontWeight: 900 }}
+                          >
+                            {g.resultat}
+                          </span>
+                        )}
+                        {i > 0 && (
+                          <span className="pill" style={{ fontWeight: 700 }}>
+                            {g.arbreCouples[i - 1].produit}
+                          </span>
+                        )}
+                        <span style={{ color: "var(--gold2)" }}>×</span>
+                        <span className="pill" style={{ fontWeight: 700 }}>
+                          {etape.parents[0] === (i === 0 ? g.resultat : g.arbreCouples[i - 1].produit)
+                            ? etape.parents[1]
+                            : etape.parents[0]}
+                        </span>
+                        <ChevronRight size={14} style={{ color: "var(--gold2)", flexShrink: 0 }} />
+                        <span
+                          className="pill"
+                          style={{
+                            color: estDerniere ? "var(--green)" : "var(--text)",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {etape.produit}
+                        </span>
+                        {i === 0 && (
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                            (déjà réalisé)
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          );
+        })}
+      </div>
+
+      <ListeCoursesPanel
+        restants={session.restants}
+        BadgeComponent={BadgeComponent}
+        sexeFn={sexeFn}
+        couleurEstCanoniqueFn={couleurEstCanoniqueFn}
+        couleursToutes={couleursToutes}
+        resultatsParCouple={resultatsParCouple}
+        cleCoupleCouleursFn={cleCoupleCouleursFn}
+        generationDeCouleurFn={generationDeCouleurFn}
+        lieuCapture={lieuCapture}
+      />
+
+      {session.restants.length > 0 && (
+        <div className="panel-card" style={{ marginTop: 16 }}>
+          <b>{nomEntitePluriel} sans partenaire</b>
+          {session.raisonRestants && (
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 5 }}>
+              {session.raisonRestants}
+            </div>
+          )}
+          <div style={{
+            color: "var(--muted)",
+            fontSize: 12,
+            marginTop: 7,
+          }}>
+            {Object.entries(
+              session.restants.reduce((acc, m) => {
+                const sexe = sexeFn(m);
+                const k = `${m.couleur} ${
+                  sexe === "M" ? "♂" : sexe === "F" ? "♀" : "? (sexe inconnu)"
+                }`;
+                acc[k] = (acc[k] || 0) + 1;
+                return acc;
+              }, {})
+            ).map(([k, n]) => `${n}× ${k}`).join(" · ")}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

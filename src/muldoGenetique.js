@@ -5,7 +5,7 @@
 //
 // distanceLevenshtein/affectationMaximale viennent de geneticsUtils.js, déjà
 // partagé avec Dragodinde.jsx/Volkorne.jsx (pas de copie locale ici).
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique } from "./geneticsUtils.js";
 export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres };
 
 // ---------- constantes de design ----------
@@ -1145,94 +1145,14 @@ export function tierAilesMuldo(niveauAilesDonation, generationValidee) {
   return Math.max(0, Math.min(5, Math.min(Number(niveauAilesDonation) || 0, tierParSucces)));
 }
 
-export function choisirObjectifGpsAutomatique({
-  mode,
-  objectifCouleur,
-  generationCible,
-  generationMin,
-  generationMax,
-  cheptel,
-  historiqueCouleurs,
-}) {
-  if (mode === "couleur") {
-    return {
-      objectif: objectifCouleur,
-      raison: "Couleur choisie manuellement.",
-      candidats: [objectifCouleur],
-    };
-  }
-
-  const presentes = new Set(cheptel.map((m) => m.couleur));
-  const estDecouverte = (couleur) => Boolean(historiqueCouleurs[couleur]) || presentes.has(couleur);
-  const stock = cheptel.reduce((acc, m) => {
-    if (muldoReproductible(m)) acc[m.couleur] = (acc[m.couleur] || 0) + 1;
-    return acc;
-  }, {});
-
-  // Mode "succès" : on complète les générations dans l'ordre. On saute celles
-  // déjà entièrement découvertes et on vise la première génération incomplète.
-  let generationSucces = null;
-  if (mode === "succes") {
-    for (let g = 1; g <= 10; g += 1) {
-      const couleurs = GENERATIONS_MULDO[g] || [];
-      if (couleurs.length && couleurs.some((c) => !estDecouverte(c))) { generationSucces = g; break; }
-    }
-    if (generationSucces === null) {
-      return { objectif: objectifCouleur, raison: "Bravo — toutes les générations 1 à 10 sont complétées ! 🏆", candidats: [], complete: true };
-    }
-  }
-
-  let candidats = [];
-  if (mode === "generation") {
-    candidats = [...(GENERATIONS_MULDO[Number(generationCible)] || [])];
-  } else if (mode === "succes") {
-    candidats = [...(GENERATIONS_MULDO[generationSucces] || [])];
-  } else {
-    const min = Math.min(Number(generationMin), Number(generationMax));
-    const max = Math.max(Number(generationMin), Number(generationMax));
-    for (let g = min; g <= max; g += 1) candidats.push(...(GENERATIONS_MULDO[g] || []));
-  }
-
-  const manquantes = candidats.filter((c) => !estDecouverte(c));
-  if (!manquantes.length) {
-    return {
-      objectif: candidats[0] || objectifCouleur,
-      raison: mode === "generation"
-        ? `Génération ${generationCible} déjà complétée.`
-        : `Toutes les générations ${generationMin} à ${generationMax} sont complétées.`,
-      candidats,
-      complete: true,
-    };
-  }
-
-  const classees = manquantes
-    .map((couleur) => {
-      const estimation = meilleureRecettePourCouleur(couleur, stock);
-      return {
-        couleur,
-        cout: Number.isFinite(estimation?.cout) ? estimation.cout : 999,
-        generation: generationDeCouleur(couleur),
-      };
-    })
-    .sort((a, b) => {
-      if (mode === "collection" && a.generation !== b.generation) return a.generation - b.generation;
-      if (a.cout !== b.cout) return a.cout - b.cout;
-      return b.generation - a.generation;
-    });
-
-  const choix = classees[0];
-  return {
-    objectif: choix.couleur,
-    raison: mode === "succes"
-      ? `Succès : génération ${generationSucces} à compléter — couleur manquante la plus accessible.`
-      : mode === "generation"
-        ? `Couleur manquante de génération ${generationCible} estimée la plus accessible.`
-        : `Première couleur manquante accessible dans la progression des générations ${generationMin} à ${generationMax}.`,
-    candidats: manquantes,
-    complete: false,
-    cout: choix.cout,
-    generationSucces,
-  };
+export function choisirObjectifGpsAutomatique(params) {
+  return choisirObjectifGpsAutomatiqueGenerique({
+    ...params,
+    generationsTable: GENERATIONS_MULDO,
+    reproductibleFn: muldoReproductible,
+    meilleureRecetteFn: meilleureRecettePourCouleur,
+    generationDeCouleurFn: generationDeCouleur,
+  });
 }
 
 // ---------- utilitaires génétiques ----------

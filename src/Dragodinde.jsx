@@ -6,8 +6,8 @@
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
-import { NaissancesEnAttentePanel, ListeCoursesPanel, BebesARenommerPanel, CouleurCopiable, NomCopiable, exporterFicheImage } from "./panneauxElevage.jsx";
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
+import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
 const JAUGES_DRAGODINDE = [
@@ -193,9 +193,6 @@ function dragodindeReproductible(m) {
   if (statut.startsWith("steril") || statut.startsWith("senile")) return false;
   return reproRestantesDragodinde(m) > 0;
 }
-function couleurPresenteCheptelDragodinde(cheptel, couleur) {
-  return cheptel.some((m) => m.couleur === couleur);
-}
 function ancestorSetDragodinde(m, byId, depth = 8, seen = new Set()) {
   if (!m || depth <= 0) return seen;
   (m.parentIds || []).forEach((id) => {
@@ -228,7 +225,6 @@ function getNextActionDragodinde(m) {
   if ((Number(m.endurance) || 0) < 100) return { key: "endurance", label: "Abreuver", objet: "Abreuvoir", detail: "Augmente l'endurance.", color: "var(--cyan)" };
   return { key: "pret", label: "Prêt à accoupler", objet: "Zone / enclos", detail: "Toutes les statistiques utiles sont prêtes.", color: "var(--green)" };
 }
-function isBreedReadyDragodinde(m) { return getNextActionDragodinde(m).key === "pret"; }
 function genererNomCourtDragodinde(couleur) {
   const initiales = String(couleur || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
     .split(/[\s-]+/).filter((mot) => mot && !/^et$/i.test(mot)).map((mot) => mot[0].toUpperCase()).join("");
@@ -260,70 +256,6 @@ function meilleureRecettePourCouleurDragodinde(couleur, stock, visiting = new Se
   })).sort((a, b) => a.cout - b.cout);
   visiting.delete(couleur);
   return options[0];
-}
-function chercherCouplePourRecetteDragodinde(recette, cheptel, byId) {
-  const [a, b] = recette;
-  const candidatsA = cheptel.filter((m) => m.couleur === a && dragodindeReproductible(m));
-  const candidatsB = cheptel.filter((m) => m.couleur === b && dragodindeReproductible(m));
-  const couples = [];
-  candidatsA.forEach((ma) => candidatsB.forEach((mb) => {
-    if (ma.id === mb.id || sexeDragodinde(ma) === sexeDragodinde(mb)) return;
-    const coll = collisionScoreDragodinde(ma, mb, byId);
-    if (coll >= 99) return;
-    const male = sexeDragodinde(ma) === "M" ? ma : mb;
-    const femelle = sexeDragodinde(ma) === "F" ? ma : mb;
-    const pretBonus = (isBreedReadyDragodinde(ma) ? 20 : 0) + (isBreedReadyDragodinde(mb) ? 20 : 0);
-    const reproBonus = reproRestantesDragodinde(ma) + reproRestantesDragodinde(mb);
-    couples.push({ male, femelle, parents: [ma, mb], collision: coll, score: pretBonus + reproBonus * 5 - coll * 30 });
-  }));
-  return couples.sort((x, y) => y.score - x.score)[0] || null;
-}
-function construirePlanPourCouleurDragodinde(couleur, cheptel, byId, historiqueCouleurs = {}, depth = 0, seen = new Set()) {
-  const dejaPresente = couleurPresenteCheptelDragodinde(cheptel, couleur);
-  const dejaDecouverte = Boolean(historiqueCouleurs[couleur]) || dejaPresente;
-  if (depth > 8 || seen.has(couleur)) return { couleur, dejaPresente, dejaDecouverte, bloquee: true, etapes: [] };
-  const recettes = recettesPourCouleurDragodinde(couleur);
-  const options = recettes.map((recette) => {
-    const couple = chercherCouplePourRecetteDragodinde(recette, cheptel, byId);
-    const nouvelleCouleur = !dejaDecouverte;
-    if (couple) {
-      return {
-        couleur, recette, couple, type: dejaPresente ? "renfort" : "creation", nouvelleCouleur,
-        score: 10000 + (nouvelleCouleur ? 3000 : 0) + generationDeCouleurDragodinde(couleur) * 100 + couple.score,
-        etapes: [{ couleur, recette, couple, nouvelleCouleur, faisableMaintenant: true }], bloquee: false,
-      };
-    }
-    const nextSeen = new Set(seen); nextSeen.add(couleur);
-    const sousPlans = recette.map((parent) => construirePlanPourCouleurDragodinde(parent, cheptel, byId, historiqueCouleurs, depth + 1, nextSeen));
-    const etapes = sousPlans.flatMap((p) => p.etapes || []);
-    const bloquee = etapes.length === 0;
-    const nouvelles = etapes.filter((e) => e.nouvelleCouleur).length;
-    return {
-      couleur, recette, couple: null, type: "preparation", nouvelleCouleur, sousPlans, etapes, bloquee,
-      score: (bloquee ? -10000 : 5000) + nouvelles * 2000 - etapes.length * 100 + generationDeCouleurDragodinde(couleur) * 50,
-    };
-  });
-  return options.sort((a, b) => b.score - a.score)[0] || { couleur, recette: [], couple: null, type: "bloque", nouvelleCouleur: !dejaDecouverte, etapes: [], bloquee: true, score: -9999 };
-}
-function analyserGenerationCibleDragodinde(generation, cheptel, byId, historiqueCouleurs = {}) {
-  const objectif = couleursGenerationJusquaDragodinde(generation);
-  const possedees = objectif.filter((c) => couleurPresenteCheptelDragodinde(cheptel, c));
-  const decouvertes = objectif.filter((c) => historiqueCouleurs[c] || couleurPresenteCheptelDragodinde(cheptel, c));
-  const manquantes = objectif.filter((c) => !couleurPresenteCheptelDragodinde(cheptel, c));
-  const jamaisDecouvertes = objectif.filter((c) => !(historiqueCouleurs[c] || couleurPresenteCheptelDragodinde(cheptel, c)));
-  const plans = [];
-  for (let g = Number(generation); g >= 2; g -= 1) {
-    const couleurs = (GENERATIONS_DRAGODINDE[g] || []).filter((c) => !couleurPresenteCheptelDragodinde(cheptel, c) || !(historiqueCouleurs[c] || couleurPresenteCheptelDragodinde(cheptel, c)));
-    couleurs.forEach((couleur) => {
-      const plan = construirePlanPourCouleurDragodinde(couleur, cheptel, byId, historiqueCouleurs);
-      if (!plan.bloquee && plan.etapes.length > 0) {
-        plans.push({ ...plan, generationVisee: g, actionImmediate: { ...plan.etapes[0], generation: generationDeCouleurDragodinde(plan.etapes[0].couleur), bloquee: false } });
-      }
-    });
-    if (plans.length > 0) break;
-  }
-  const planChoisi = plans.sort((a, b) => b.score - a.score)[0] || null;
-  return { generation, objectif, possedees, decouvertes, manquantes, jamaisDecouvertes, plans, planChoisi, actionImmediate: planChoisi?.actionImmediate || null, etapes: planChoisi?.etapes || [] };
 }
 
 export function cleCoupleCouleursDragodinde(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
@@ -573,8 +505,8 @@ function DragodindeDetail({ m, byId, onPatch, onDelete }) {
           </select>
         </label>
         <label style={{ fontSize: 11, color: "var(--muted)" }}>Statut
-          <select className="field" value={m.sterile ? "Stérile" : "Fertile"} onChange={(e) => onPatch({ sterile: e.target.value === "Stérile", statut: e.target.value })}>
-            <option value="Fertile">Fertile</option><option value="Stérile">Stérile</option>
+          <select className="field" value={m.statut || (m.sterile ? "Stérile" : "Fertile")} onChange={(e) => onPatch({ sterile: e.target.value === "Stérile" || e.target.value === "Sénile", statut: e.target.value })}>
+            <option value="Fertile">Fertile</option><option value="Féconde">Féconde</option><option value="Stérile">Stérile</option><option value="Sénile">Sénile</option>
           </select>
         </label>
         <label style={{ fontSize: 11, color: "var(--muted)" }}>Niveau (optionnel, pour la génération cible)
@@ -770,102 +702,65 @@ export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToas
     </div>
   );
 }
-
-export function DragodindeGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, naissances, onConfirmer, onSupprimer, journal }) {
-  const [optimakina, setOptimakina] = useState(false);
-  const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
-  const session = useMemo(() => optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification, optimakina, niveauMinimumSession), [cheptel, objectif, purification, optimakina, niveauMinimumSession]);
-  const planGeneration = useMemo(() => analyserGenerationCibleDragodinde(generationCible, cheptel, byId, historiqueCouleurs), [generationCible, cheptel, byId, historiqueCouleurs]);
+export function DragodindeGpsPage({
+  session, mode, setMode, objectif, objectifCouleur, setObjectifCouleur,
+  generationCible, setGenerationCible, generationMin, setGenerationMin, generationMax, setGenerationMax,
+  choixObjectif, progressionGenerations, purification, setPurification, optimakina, setOptimakina,
+  niveauMinimumSession, setNiveauMinimumSession, suivi, realiserCouplesGps, onAnnuler, onReinitialiser,
+  onDemarrerNouvelleSession, onNettoyerSterilesPuisDemarrer, onVoirMuldo,
+  naissances, onConfirmer, onSupprimer, journal,
+}) {
   return (
-    <div>
-      <h1 style={{ fontSize: 28 }}>GPS Dragodinde</h1>
-      <div className="panel-card">
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ fontSize: 11, color: "var(--muted)" }}>Couleur objectif
-            <select className="field" value={objectif} onChange={(e) => setObjectif(e.target.value)}>
-              {COULEURS_DRAGODINDE.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 11, color: "var(--muted)" }}>Génération à compléter
-            <select className="field" value={generationCible} onChange={(e) => setGenerationCible(Number(e.target.value))}>
-              {Object.keys(GENERATIONS_DRAGODINDE).map((g) => <option key={g} value={g}>Génération {g}</option>)}
-            </select>
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-            <input type="checkbox" checked={purification} onChange={(e) => setPurification(e.target.checked)} /> Mode purification
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-            <input type="checkbox" checked={optimakina} onChange={(e) => setOptimakina(e.target.checked)} /> Optimakina utilisée
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-            Niveau mini (session)
-            <input
-              type="number" className="field" min={0} max={200} style={{ width: 70 }}
-              value={niveauMinimumSession || ""} placeholder="0"
-              title="Suppose que toutes tes montures sont au moins à ce niveau, sans le saisir sur chaque fiche"
-              onChange={(e) => setNiveauMinimumSession(e.target.value === "" ? 0 : Number(e.target.value))}
-            />
-          </label>
-        </div>
-        {planGeneration.actionImmediate && (
-          <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "rgba(0,0,0,.16)", border: "1px solid var(--line)" }}>
-            Action immédiate recommandée pour la génération {generationCible} :{" "}
-            <b>{planGeneration.actionImmediate.couleur}</b>{" "}
-            {planGeneration.actionImmediate.couple && (
-              <>— couple trouvé : ♂ {planGeneration.actionImmediate.couple.male.nom} × ♀ {planGeneration.actionImmediate.couple.femelle.nom}</>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="panel-card" style={{ marginTop: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <b>{session.groupes.length} couples proposés</b>
-          <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.utilises} / {session.totalFertiles} dragodindes utilisés</span>
-        </div>
-        {session.raisonRestants && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{session.raisonRestants}</div>}
-        {session.groupes.map((g) => (
-          <div key={g.key} style={{ padding: "10px 0", borderTop: "1px solid rgba(255,255,255,.06)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <span>
-              <b>× {g.quantite}</b>{" "}
-              ♂ <DragodindeBadge couleur={g.male.couleur} taille={16} /> <b>{g.male.nom || g.male.couleur}</b>
-              {" × "}
-              ♀ <DragodindeBadge couleur={g.femelle.couleur} taille={16} /> <b>{g.femelle.nom || g.femelle.couleur}</b>
-            </span>
-            <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>
-              {g.raison}
-              {g.generationCible && (
-                <div>🎯 Génération cible : G{g.generationCible} (~{g.chanceGenerationCible}% de chance) · couleurs possibles : {(g.couleursGenerationCible || []).join(", ") || "—"}</div>
-              )}
-            </span>
-            <button className="btn btn-coral" onClick={() => onRealiserUn(g)}>✓ 1 réalisé</button>
-          </div>
-        ))}
-      </div>
-      <ListeCoursesPanel
-        restants={session.restants}
-        BadgeComponent={DragodindeBadge}
-        sexeFn={sexeDragodinde}
-        couleurEstCanoniqueFn={couleurEstCanoniqueDragodinde}
-        couleursToutes={COULEURS_DRAGODINDE}
-        resultatsParCouple={RESULTATS_PAR_COUPLE_DRAGODINDE}
-        cleCoupleCouleursFn={cleCoupleCouleursDragodinde}
-        generationDeCouleurFn={generationDeCouleurDragodinde}
-        lieuCapture="en Montagne des Koalaks"
-      />
-      <BebesARenommerPanel journal={journal} BadgeComponent={DragodindeBadge} />
-      <NaissancesEnAttentePanel
-        naissances={naissances}
-        onConfirmer={onConfirmer}
-        onSupprimer={onSupprimer}
-        BadgeComponent={DragodindeBadge}
-        generationDeCouleurFn={generationDeCouleurDragodinde}
-        plierCouleurFn={plierCouleurDragodinde}
-        couleursToutes={COULEURS_DRAGODINDE}
-        supporteReproducteur={false}
-      />
-    </div>
+    <GpsDofusPage
+      session={session}
+      mode={mode}
+      setMode={setMode}
+      objectif={objectif}
+      objectifCouleur={objectifCouleur}
+      setObjectifCouleur={setObjectifCouleur}
+      generationCible={generationCible}
+      setGenerationCible={setGenerationCible}
+      generationMin={generationMin}
+      setGenerationMin={setGenerationMin}
+      generationMax={generationMax}
+      setGenerationMax={setGenerationMax}
+      choixObjectif={choixObjectif}
+      progressionGenerations={progressionGenerations}
+      purification={purification}
+      setPurification={setPurification}
+      optimakina={optimakina}
+      setOptimakina={setOptimakina}
+      niveauMinimumSession={niveauMinimumSession}
+      setNiveauMinimumSession={setNiveauMinimumSession}
+      suivi={suivi}
+      naissances={naissances}
+      journal={journal}
+      onConfirmerNaissance={onConfirmer}
+      onSupprimerNaissance={onSupprimer}
+      onRealiserUn={(g) => realiserCouplesGps((g.couples || []).slice(0, 1))}
+      onTerminerGroupe={(g) => realiserCouplesGps(g.couples || [])}
+      onAnnuler={onAnnuler}
+      onReinitialiser={onReinitialiser}
+      onDemarrerNouvelleSession={onDemarrerNouvelleSession}
+      onNettoyerSterilesPuisDemarrer={onNettoyerSterilesPuisDemarrer}
+      onVoirMuldo={onVoirMuldo}
+      BadgeComponent={DragodindeBadge}
+      generationDeCouleurFn={generationDeCouleurDragodinde}
+      plierCouleurFn={plierCouleurDragodinde}
+      couleursToutes={COULEURS_DRAGODINDE}
+      generationsTable={GENERATIONS_DRAGODINDE}
+      sexeFn={sexeDragodinde}
+      couleurEstCanoniqueFn={couleurEstCanoniqueDragodinde}
+      resultatsParCouple={RESULTATS_PAR_COUPLE_DRAGODINDE}
+      cleCoupleCouleursFn={cleCoupleCouleursDragodinde}
+      lieuCapture="en Montagne des Koalaks"
+      nomObjectifLabel="Dragodinde objectif"
+      nomEntitePluriel="Dragodindes"
+      supporteReproducteur={false}
+    />
   );
 }
+
 
 function suggererClonagesDragodinde(cheptel) {
   const candidats = (cheptel || []).filter((m) => !dragodindeReproductible(m));
@@ -986,8 +881,22 @@ export const STORAGE_HISTORY_KEY_DRAGODINDE = "dragodinde-historique-couleurs-v1
 export const STORAGE_JOURNAL_DRAGODINDE = "dragodinde-journal-naissances-v1";
 export const STORAGE_NAISSANCES_DRAGODINDE = "dragodinde-naissances-attente-v1";
 export const STORAGE_CORBEILLE_DRAGODINDE = "dragodinde-corbeille-v1";
+export const STORAGE_GPS_SESSION_DRAGODINDE = "dragodinde-gps-session-v1";
 export const CORBEILLE_DUREE_JOURS_DRAGODINDE = 30;
-export const CLES_SAUVEGARDE_DRAGODINDE = [STORAGE_KEY_DRAGODINDE, STORAGE_HISTORY_KEY_DRAGODINDE, STORAGE_JOURNAL_DRAGODINDE, STORAGE_NAISSANCES_DRAGODINDE, STORAGE_CORBEILLE_DRAGODINDE];
+export const CLES_SAUVEGARDE_DRAGODINDE = [STORAGE_KEY_DRAGODINDE, STORAGE_HISTORY_KEY_DRAGODINDE, STORAGE_JOURNAL_DRAGODINDE, STORAGE_NAISSANCES_DRAGODINDE, STORAGE_CORBEILLE_DRAGODINDE, STORAGE_GPS_SESSION_DRAGODINDE];
+
+const GPS_SUIVI_DEFAUT_DRAGODINDE = { mode: "couleur", objectif: "Ébène", purification: false, consommes: [], historique: [], totalInitial: 0 };
+function normaliserGpsSuiviDragodinde(v) {
+  if (!v || typeof v !== "object") return { ...GPS_SUIVI_DEFAUT_DRAGODINDE };
+  return {
+    mode: v.mode || "couleur",
+    objectif: v.objectif || "Ébène",
+    purification: Boolean(v.purification),
+    consommes: Array.isArray(v.consommes) ? v.consommes : [],
+    historique: Array.isArray(v.historique) ? v.historique : [],
+    totalInitial: Number(v.totalInitial || 0),
+  };
+}
 
 function chargerJSON(cle, defaut) {
   try { const v = JSON.parse(localStorage.getItem(cle)); return v ?? defaut; } catch (e) { return defaut; }
@@ -1014,11 +923,247 @@ export function useDragodindeElevage() {
   const [showNew, setShowNew] = useState(false);
   const [fusionA, setFusionA] = useState("");
   const [fusionB, setFusionB] = useState("");
+  const [modeGps, setModeGps] = useState("couleur");
   const [objectifGps, setObjectifGps] = useState("Ébène");
-  const [generationCibleGps, setGenerationCibleGps] = useState(3);
+  const [generationGps, setGenerationGps] = useState(3);
+  const [generationCollectionMin, setGenerationCollectionMin] = useState(2);
+  const [generationCollectionMax, setGenerationCollectionMax] = useState(10);
   const [purification, setPurification] = useState(false);
+  const [optimakina, setOptimakina] = useState(false);
+  const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
+  const [gpsSuivi, setGpsSuivi] = useState(() => normaliserGpsSuiviDragodinde(chargerJSON(STORAGE_GPS_SESSION_DRAGODINDE, GPS_SUIVI_DEFAUT_DRAGODINDE)));
 
   const byId = useMemo(() => Object.fromEntries(cheptel.map((m) => [m.id, m])), [cheptel]);
+
+  const progressionGps = useMemo(
+    () => progressionParGenerationDragodinde(cheptel, historiqueCouleurs),
+    [cheptel, historiqueCouleurs]
+  );
+
+  const choixObjectifGps = useMemo(
+    () => choisirObjectifGpsAutomatique({
+      mode: modeGps,
+      objectifCouleur: objectifGps,
+      generationCible: generationGps,
+      generationMin: generationCollectionMin,
+      generationMax: generationCollectionMax,
+      cheptel,
+      historiqueCouleurs,
+      generationsTable: GENERATIONS_DRAGODINDE,
+      reproductibleFn: dragodindeReproductible,
+      meilleureRecetteFn: meilleureRecettePourCouleurDragodinde,
+      generationDeCouleurFn: generationDeCouleurDragodinde,
+    }),
+    [modeGps, objectifGps, generationGps, generationCollectionMin, generationCollectionMax, cheptel, historiqueCouleurs]
+  );
+
+  const objectifGpsActif = choixObjectifGps.objectif || objectifGps;
+
+  const gpsSuiviActif = gpsSuivi.mode === modeGps
+    && gpsSuivi.objectif === objectifGpsActif
+    && gpsSuivi.purification === purification
+    ? gpsSuivi
+    : { mode: modeGps, objectif: objectifGpsActif, purification, consommes: [], historique: [], totalInitial: 0 };
+
+  const cheptelGpsDisponible = useMemo(() => {
+    const idsConsommes = new Set(gpsSuiviActif.consommes || []);
+    return cheptel.filter((m) => !idsConsommes.has(m.id));
+  }, [cheptel, gpsSuiviActif.consommes]);
+
+  const sessionGps = useMemo(
+    () => optimiserSessionAccouplementsDragodinde(cheptelGpsDisponible, objectifGpsActif, purification, optimakina, niveauMinimumSession),
+    [cheptelGpsDisponible, objectifGpsActif, purification, optimakina, niveauMinimumSession]
+  );
+
+  const sauvegarderSuiviGps = useCallback((next) => {
+    setGpsSuivi(next);
+    try {
+      localStorage.setItem(STORAGE_GPS_SESSION_DRAGODINDE, JSON.stringify(next));
+    } catch (e) {
+      console.error("Erreur de sauvegarde de la session GPS", e);
+    }
+  }, []);
+
+  const synchroniserContexteGps = useCallback(() => {
+    if (
+      gpsSuivi.mode === modeGps
+      && gpsSuivi.objectif === objectifGpsActif
+      && gpsSuivi.purification === purification
+    ) return;
+
+    const totalInitial = optimiserSessionAccouplementsDragodinde(cheptel, objectifGpsActif, purification).couples.length;
+
+    sauvegarderSuiviGps({
+      mode: modeGps,
+      objectif: objectifGpsActif,
+      purification,
+      consommes: [],
+      historique: [],
+      totalInitial,
+    });
+  }, [gpsSuivi.mode, gpsSuivi.objectif, gpsSuivi.purification, modeGps, objectifGpsActif, purification, cheptel, sauvegarderSuiviGps]);
+
+  const realiserCouplesGps = useCallback((couplesARealiser) => {
+    synchroniserContexteGps();
+    setGpsSuivi((prev) => {
+      const contexteValide = prev.mode === modeGps
+        && prev.objectif === objectifGpsActif
+        && prev.purification === purification;
+
+      const base = contexteValide
+        ? prev
+        : {
+            mode: modeGps,
+            objectif: objectifGpsActif,
+            purification,
+            consommes: [],
+            historique: [],
+            totalInitial: optimiserSessionAccouplementsDragodinde(cheptel, objectifGpsActif, purification).couples.length,
+          };
+
+      const deja = new Set(base.consommes || []);
+      const nouvellesPaires = [];
+      (couplesARealiser || []).forEach((c) => {
+        if (!c?.male?.id || !c?.femelle?.id) return;
+        if (deja.has(c.male.id) || deja.has(c.femelle.id)) return;
+        deja.add(c.male.id);
+        deja.add(c.femelle.id);
+        nouvellesPaires.push([c.male.id, c.femelle.id]);
+      });
+
+      const next = {
+        ...base,
+        consommes: [...deja],
+        historique: [...(base.historique || []), ...nouvellesPaires],
+        totalInitial: base.totalInitial || optimiserSessionAccouplementsDragodinde(cheptel, objectifGpsActif, purification).couples.length,
+      };
+
+      try {
+        localStorage.setItem(STORAGE_GPS_SESSION_DRAGODINDE, JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+
+    // Chaque couple réalisé ouvre une naissance à confirmer (immédiate et
+    // garantie) : le croisement ne donne pas forcément le résultat de la
+    // recette, donc on attend la saisie du résultat réel avant de toucher au
+    // statut des parents (voir confirmerNaissance).
+    setNaissances((prev) => {
+      const dejaPaires = new Set(prev.map((n) => `${n.maleId}|${n.femelleId}`));
+      const ajouts = (couplesARealiser || [])
+        .filter((c) => c?.male?.id && c?.femelle?.id && !dejaPaires.has(`${c.male.id}|${c.femelle.id}`))
+        .map((c) => ({
+          id: crypto.randomUUID(),
+          maleId: c.male.id,
+          femelleId: c.femelle.id,
+          maleNom: c.male.nom || c.male.couleur,
+          femelleNom: c.femelle.nom || c.femelle.couleur,
+          maleCouleur: c.male.couleur,
+          femelleCouleur: c.femelle.couleur,
+          resultatEspere: c.resultat || null,
+          possibles: [...new Set([
+            ...couleursNaissancePossiblesDragodinde(c.male.couleur, c.femelle.couleur),
+            ...couleursAncetres(c.male, cheptel),
+            ...couleursAncetres(c.femelle, cheptel),
+          ])],
+          date: new Date().toISOString(),
+        }));
+      if (!ajouts.length) return prev;
+      const suivant = [...prev, ...ajouts];
+      persisterNaissances(suivant);
+      return suivant;
+    });
+  }, [cheptel, modeGps, objectifGpsActif, purification, synchroniserContexteGps]);
+
+  const annulerDernierCoupleGps = useCallback(() => {
+    setGpsSuivi((prev) => {
+      if (
+        prev.mode !== modeGps
+        || prev.objectif !== objectifGpsActif
+        || prev.purification !== purification
+        || !(prev.historique || []).length
+      ) return prev;
+
+      const historique = [...prev.historique];
+      const dernierePaire = historique.pop();
+      const aRetirer = new Set(dernierePaire || []);
+      const next = {
+        ...prev,
+        historique,
+        consommes: (prev.consommes || []).filter((id) => !aRetirer.has(id)),
+      };
+      try {
+        localStorage.setItem(STORAGE_GPS_SESSION_DRAGODINDE, JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+
+      const [maleId, femelleId] = dernierePaire || [];
+      setNaissances((anciennes) => {
+        const suivantes = anciennes.filter((n) => !(n.maleId === maleId && n.femelleId === femelleId));
+        if (suivantes.length === anciennes.length) return anciennes;
+        persisterNaissances(suivantes);
+        return suivantes;
+      });
+
+      return next;
+    });
+  }, [modeGps, objectifGpsActif, purification]);
+
+  const reinitialiserSessionGps = useCallback(() => {
+    const totalInitial = optimiserSessionAccouplementsDragodinde(cheptel, objectifGpsActif, purification).couples.length;
+    sauvegarderSuiviGps({
+      mode: modeGps,
+      objectif: objectifGpsActif,
+      purification,
+      consommes: [],
+      historique: [],
+      totalInitial,
+    });
+  }, [cheptel, modeGps, objectifGpsActif, purification, sauvegarderSuiviGps]);
+
+  // Raccourci de début de session : bascule en masse tous les "Féconde"
+  // (repos terminé côté jeu) vers "Fertile", puis relance le plan GPS.
+  const demarrerNouvelleSessionAccouplement = useCallback(() => {
+    const nb = cheptel.filter((m) => m.statut === "Féconde").length;
+    if (nb > 0) {
+      updateCheptel((prev) => prev.map((m) => (m.statut === "Féconde" ? { ...m, statut: "Fertile", sterile: false } : m)));
+    }
+    reinitialiserSessionGps();
+  }, [cheptel, updateCheptel, reinitialiserSessionGps]);
+
+  // Remise à zéro après un suivi de clonage/session mal tenu : les stériles
+  // partent à la corbeille (récupérable) et tout le reste repasse Fertile.
+  const nettoyerSterilesPuisDemarrerSession = useCallback((forcerJauges = false) => {
+    const steriles = cheptel.filter((m) => m.sterile === true || m.statut === "Stérile");
+    const restants = cheptel.filter((m) => !(m.sterile === true || m.statut === "Stérile"));
+
+    if (steriles.length) {
+      setCorbeille((prev) => {
+        const next = [
+          ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
+          ...prev,
+        ].slice(0, 100);
+        localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(next));
+        return next;
+      });
+      setSelectedId((s) => (s && steriles.some((m) => m.id === s) ? null : s));
+    }
+
+    updateCheptel(() => restants.map((m) => ({
+      ...m,
+      statut: "Fertile",
+      sterile: false,
+      reproDone: 0,
+      reproRestantes: 1,
+      reproductionsRestantes: 1,
+      ...(forcerJauges ? { amour: 100, endurance: 100, maturite: 100 } : {}),
+    })));
+
+    reinitialiserSessionGps();
+  }, [cheptel, updateCheptel, reinitialiserSessionGps]);
 
   const updateCheptel = useCallback((updater) => {
     setCheptel((prev) => {
@@ -1109,37 +1254,9 @@ export function useDragodindeElevage() {
 
   // La naissance est immédiate et garantie, mais pas forcément le résultat de
   // la recette (le RNG du jeu peut retomber sur la couleur d'un parent ou
-  // d'un ancêtre) : on ouvre donc une naissance à confirmer plutôt que de
-  // créer le bébé directement avec la couleur espérée.
-  const onRealiserUn = useCallback((groupe) => {
-    const couple = groupe.couples[0];
-    if (!couple) return;
-    updateCheptel((prev) => prev.map((m) => {
-      if (m.id === couple.male.id || m.id === couple.femelle.id) return { ...m, reproDone: 1, reproMax: 1, reproRestantes: 0, reproductionsRestantes: 0, sterile: true, statut: "Stérile" };
-      return m;
-    }));
-    setNaissances((prev) => {
-      const naissance = {
-        id: crypto.randomUUID(),
-        maleId: couple.male.id,
-        femelleId: couple.femelle.id,
-        maleNom: couple.male.nom || couple.male.couleur,
-        femelleNom: couple.femelle.nom || couple.femelle.couleur,
-        maleCouleur: couple.male.couleur,
-        femelleCouleur: couple.femelle.couleur,
-        resultatEspere: couple.resultat || null,
-        possibles: [...new Set([
-          ...couleursNaissancePossiblesDragodinde(couple.male.couleur, couple.femelle.couleur),
-          ...couleursAncetres(couple.male, cheptel),
-          ...couleursAncetres(couple.femelle, cheptel),
-        ])],
-        date: new Date().toISOString(),
-      };
-      const next = [...prev, naissance];
-      persisterNaissances(next);
-      return next;
-    });
-  }, [updateCheptel, cheptel, persisterNaissances]);
+  // d'un ancêtre) : on confirme donc la couleur réellement obtenue avant de
+  // stériliser les parents (voir confirmerNaissance) — realiserCouplesGps
+  // (suivi de session GPS) se charge d'ouvrir la naissance à confirmer.
 
   const confirmerNaissance = useCallback((naissanceId, couleurChoisie, sexe) => {
     const n = naissances.find((x) => x.id === naissanceId);
@@ -1152,7 +1269,12 @@ export function useDragodindeElevage() {
       reproRestantes: 1, reproductionsRestantes: 1, amour: 0, endurance: 0, maturite: 0, serenite: 50,
       parentIds: [n.maleId, n.femelleId],
     };
-    updateCheptel((prev) => [...prev, bebe]);
+    updateCheptel((prev) => [
+      ...prev.map((m) => (m.id === n.maleId || m.id === n.femelleId)
+        ? { ...m, reproDone: 1, reproMax: 1, reproRestantes: 0, reproductionsRestantes: 0, sterile: true, statut: "Stérile" }
+        : m),
+      bebe,
+    ]);
     setNaissances((prev) => {
       const next = prev.filter((x) => x.id !== naissanceId);
       persisterNaissances(next);
@@ -1186,7 +1308,35 @@ export function useDragodindeElevage() {
     cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId },
     cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
     syncProps: { cheptel, updateCheptel },
-    gpsProps: { cheptel, objectif: objectifGps, setObjectif: setObjectifGps, generationCible: generationCibleGps, setGenerationCible: setGenerationCibleGps, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, journal },
+    gpsProps: {
+      session: sessionGps,
+      mode: modeGps,
+      setMode: setModeGps,
+      objectif: objectifGpsActif,
+      objectifCouleur: objectifGps,
+      setObjectifCouleur: setObjectifGps,
+      generationCible: generationGps,
+      setGenerationCible: setGenerationGps,
+      generationMin: generationCollectionMin,
+      setGenerationMin: setGenerationCollectionMin,
+      generationMax: generationCollectionMax,
+      setGenerationMax: setGenerationCollectionMax,
+      choixObjectif: choixObjectifGps,
+      progressionGenerations: progressionGps,
+      purification,
+      setPurification,
+      optimakina,
+      setOptimakina,
+      niveauMinimumSession,
+      setNiveauMinimumSession,
+      suivi: gpsSuiviActif,
+      realiserCouplesGps,
+      onAnnuler: annulerDernierCoupleGps,
+      onReinitialiser: reinitialiserSessionGps,
+      onDemarrerNouvelleSession: demarrerNouvelleSessionAccouplement,
+      onNettoyerSterilesPuisDemarrer: nettoyerSterilesPuisDemarrerSession,
+      journal,
+    },
     clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion },
     succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration },
     naissancesProps: { naissances, onConfirmer: confirmerNaissance, onSupprimer: supprimerNaissance },

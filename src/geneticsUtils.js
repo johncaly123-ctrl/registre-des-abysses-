@@ -144,6 +144,104 @@ export function bonusProbabiliteGenerationCible({ niveauA = 0, niveauB = 0, opti
   return Math.min(100, Math.round((base + bonusNiveau + bonusOptimakina) * 10) / 10);
 }
 
+// ---------- Choix automatique d'objectif GPS (mode succès/couleur/génération/collection) ----------
+// Générique : reçoit la table des générations et les fonctions propres à
+// chaque créature (reproductible, meilleure recette, génération d'une
+// couleur) au lieu de dépendre de globales par créature.
+export function choisirObjectifGpsAutomatique({
+  mode,
+  objectifCouleur,
+  generationCible,
+  generationMin,
+  generationMax,
+  cheptel,
+  historiqueCouleurs,
+  generationsTable,
+  reproductibleFn,
+  meilleureRecetteFn,
+  generationDeCouleurFn,
+}) {
+  if (mode === "couleur") {
+    return {
+      objectif: objectifCouleur,
+      raison: "Couleur choisie manuellement.",
+      candidats: [objectifCouleur],
+    };
+  }
+
+  const presentes = new Set(cheptel.map((m) => m.couleur));
+  const estDecouverte = (couleur) => Boolean(historiqueCouleurs[couleur]) || presentes.has(couleur);
+  const stock = cheptel.reduce((acc, m) => {
+    if (reproductibleFn(m)) acc[m.couleur] = (acc[m.couleur] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Mode "succès" : on complète les générations dans l'ordre. On saute celles
+  // déjà entièrement découvertes et on vise la première génération incomplète.
+  let generationSucces = null;
+  if (mode === "succes") {
+    for (let g = 1; g <= 10; g += 1) {
+      const couleurs = generationsTable[g] || [];
+      if (couleurs.length && couleurs.some((c) => !estDecouverte(c))) { generationSucces = g; break; }
+    }
+    if (generationSucces === null) {
+      return { objectif: objectifCouleur, raison: "Bravo — toutes les générations 1 à 10 sont complétées ! 🏆", candidats: [], complete: true };
+    }
+  }
+
+  let candidats = [];
+  if (mode === "generation") {
+    candidats = [...(generationsTable[Number(generationCible)] || [])];
+  } else if (mode === "succes") {
+    candidats = [...(generationsTable[generationSucces] || [])];
+  } else {
+    const min = Math.min(Number(generationMin), Number(generationMax));
+    const max = Math.max(Number(generationMin), Number(generationMax));
+    for (let g = min; g <= max; g += 1) candidats.push(...(generationsTable[g] || []));
+  }
+
+  const manquantes = candidats.filter((c) => !estDecouverte(c));
+  if (!manquantes.length) {
+    return {
+      objectif: candidats[0] || objectifCouleur,
+      raison: mode === "generation"
+        ? `Génération ${generationCible} déjà complétée.`
+        : `Toutes les générations ${generationMin} à ${generationMax} sont complétées.`,
+      candidats,
+      complete: true,
+    };
+  }
+
+  const classees = manquantes
+    .map((couleur) => {
+      const estimation = meilleureRecetteFn(couleur, stock);
+      return {
+        couleur,
+        cout: Number.isFinite(estimation?.cout) ? estimation.cout : 999,
+        generation: generationDeCouleurFn(couleur),
+      };
+    })
+    .sort((a, b) => {
+      if (mode === "collection" && a.generation !== b.generation) return a.generation - b.generation;
+      if (a.cout !== b.cout) return a.cout - b.cout;
+      return b.generation - a.generation;
+    });
+
+  const choix = classees[0];
+  return {
+    objectif: choix.couleur,
+    raison: mode === "succes"
+      ? `Succès : génération ${generationSucces} à compléter — couleur manquante la plus accessible.`
+      : mode === "generation"
+        ? `Couleur manquante de génération ${generationCible} estimée la plus accessible.`
+        : `Première couleur manquante accessible dans la progression des générations ${generationMin} à ${generationMax}.`,
+    candidats: manquantes,
+    complete: false,
+    cout: choix.cout,
+    generationSucces,
+  };
+}
+
 export function distanceLevenshtein(a, b) {
   if (a === b) return 0;
   const la = a.length;
