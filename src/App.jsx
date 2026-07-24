@@ -5768,16 +5768,16 @@ function GpsDofusPage({
               × {g.quantite}
             </span>
             <div>
-              <b>♂ <CouleurCopiable couleur={g.male.couleur} /></b>{" "}
-              <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} />
+              <b>♂ <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} /></b>{" "}
+              <CouleurCopiable couleur={g.male.couleur} />
               <span style={{
                 color: "var(--gold2)",
                 margin: "0 7px",
               }}>
                 ×
               </span>
-              <b>♀ <CouleurCopiable couleur={g.femelle.couleur} /></b>{" "}
-              <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />
+              <b>♀ <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} /></b>{" "}
+              <CouleurCopiable couleur={g.femelle.couleur} />
               <div style={{
                 color: "var(--muted)",
                 fontSize: 11,
