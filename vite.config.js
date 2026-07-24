@@ -47,4 +47,9 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    // e2e/*.spec.js sont des specs Playwright (voir playwright.config.js),
+    // pas des tests vitest — le glob par défaut de vitest les capterait sinon.
+    exclude: ["**/node_modules/**", "e2e/**"],
+  },
 });

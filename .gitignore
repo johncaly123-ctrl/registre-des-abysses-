@@ -6,3 +6,7 @@ dev-dist/
 .DS_Store
 .claude/
 supabase/.temp/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
