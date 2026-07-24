@@ -174,3 +174,26 @@ drop policy if exists "creer son abonnement push" on push_subscriptions;
 create policy "creer son abonnement push" on push_subscriptions for insert with check (auth.uid() = utilisateur);
 drop policy if exists "supprimer son abonnement push" on push_subscriptions;
 create policy "supprimer son abonnement push" on push_subscriptions for delete using (auth.uid() = utilisateur);
+
+-- v11 : déclenche l'Edge Function "rapid-function" (voir
+-- supabase/functions/envoyer-push/index.ts) à chaque nouveau message privé,
+-- pour l'envoi effectif des notifications push. verify_jwt est désactivé sur
+-- la fonction, donc aucun header d'authentification n'est nécessaire ici.
+create extension if not exists pg_net;
+
+create or replace function public.notifier_nouveau_message_prive()
+returns trigger as $$
+begin
+  perform net.http_post(
+    url := 'https://fcdculpkrcuhtexmqojz.supabase.co/functions/v1/rapid-function',
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    body := jsonb_build_object('record', to_jsonb(new))
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_nouveau_message_prive on messages_prives;
+create trigger on_nouveau_message_prive
+after insert on messages_prives
+for each row execute function public.notifier_nouveau_message_prive();
