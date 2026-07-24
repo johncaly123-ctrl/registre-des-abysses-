@@ -3,6 +3,33 @@
 // touche aux couleurs/générations/recettes reste dupliqué par créature
 // (choix délibéré : pas de moteur de croisement générique partagé).
 
+// Couleurs des ancêtres connus d'une monture (parents, grands-parents, ...),
+// jusqu'à `profondeur` générations en remontant `parentIds` — sert à élargir
+// les couleurs "possibles" à la naissance (le croisement peut retomber sur la
+// couleur d'un ancêtre plutôt que sur le résultat espéré de la recette).
+// Générique : ne dépend d'aucune table de couleurs, juste des champs
+// couleur/parentIds/id déjà communs aux 3 créatures.
+export function couleursAncetres(muldo, cheptel, profondeur = 3) {
+  const parId = new Map((cheptel || []).map((m) => [m.id, m]));
+  const couleurs = new Set();
+  let front = [muldo];
+  for (let p = 0; p < profondeur; p += 1) {
+    const suivant = [];
+    front.forEach((m) => {
+      (m?.parentIds || []).forEach((id) => {
+        const parent = parId.get(id);
+        if (parent && parent.couleur) {
+          couleurs.add(parent.couleur);
+          suivant.push(parent);
+        }
+      });
+    });
+    front = suivant;
+    if (!front.length) break;
+  }
+  return couleurs;
+}
+
 // Affectation hongroise : meilleur score global, pas choix glouton couple par couple.
 export function affectationMaximale(matrice) {
   const rows = matrice.length;

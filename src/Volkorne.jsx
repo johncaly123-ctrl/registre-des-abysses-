@@ -6,7 +6,8 @@
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
+import { NaissancesEnAttentePanel } from "./panneauxElevage.jsx";
 
 // ---------- Génétique : 15 couleurs monocolores, 105 bicolores (C(15,2)) ----------
 // Générations des monocolores confirmées sur l'outil de croisement dofusdb.fr.
@@ -394,6 +395,18 @@ function toutesLesRecettesProgressionVolkorne() {
   return map;
 }
 const RESULTATS_PAR_COUPLE_VOLKORNE = toutesLesRecettesProgressionVolkorne();
+
+// Couleurs qu'une naissance peut réellement donner : les résultats de recette
+// du couple, plus les couleurs des deux parents (le croisement peut "retomber"
+// sur l'une d'elles au lieu du résultat espéré).
+function couleursNaissancePossiblesVolkorne(couleurMale, couleurFemelle) {
+  const key = cleCoupleCouleurs(couleurMale, couleurFemelle);
+  const possibles = new Set(RESULTATS_PAR_COUPLE_VOLKORNE[key] || []);
+  possibles.add(couleurMale);
+  possibles.add(couleurFemelle);
+  return [...possibles];
+}
+
 function distancesEtParentsVersObjectifVolkorne(objectif) {
   const distances = { [objectif]: 0 };
   const parentDe = {};
@@ -781,7 +794,7 @@ export function VolkorneSynchronisationPage({ cheptel, updateCheptel, showToast 
   );
 }
 
-export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn }) {
+export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, naissances, onConfirmer, onSupprimer }) {
   const [optimakina, setOptimakina] = useState(false);
   const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
   const session = useMemo(() => optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification, optimakina, niveauMinimumSession), [cheptel, objectif, purification, optimakina, niveauMinimumSession]);
@@ -851,6 +864,16 @@ export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCibl
           </div>
         ))}
       </div>
+      <NaissancesEnAttentePanel
+        naissances={naissances}
+        onConfirmer={onConfirmer}
+        onSupprimer={onSupprimer}
+        BadgeComponent={VolkorneBadge}
+        generationDeCouleurFn={generationDeCouleurVolkorne}
+        plierCouleurFn={plierCouleurVolkorne}
+        couleursToutes={COULEURS_VOLKORNE}
+        supporteReproducteur={false}
+      />
     </div>
   );
 }
@@ -972,7 +995,10 @@ export function VolkorneSuccesPage({ historiqueCouleurs, cheptel, onToggleCouleu
 export const STORAGE_KEY_VOLKORNE = "cheptel-volkornes-v1";
 export const STORAGE_HISTORY_KEY_VOLKORNE = "volkorne-historique-couleurs-v1";
 export const STORAGE_JOURNAL_VOLKORNE = "volkorne-journal-naissances-v1";
-export const CLES_SAUVEGARDE_VOLKORNE = [STORAGE_KEY_VOLKORNE, STORAGE_HISTORY_KEY_VOLKORNE, STORAGE_JOURNAL_VOLKORNE];
+export const STORAGE_NAISSANCES_VOLKORNE = "volkorne-naissances-attente-v1";
+export const STORAGE_CORBEILLE_VOLKORNE = "volkorne-corbeille-v1";
+export const CORBEILLE_DUREE_JOURS_VOLKORNE = 30;
+export const CLES_SAUVEGARDE_VOLKORNE = [STORAGE_KEY_VOLKORNE, STORAGE_HISTORY_KEY_VOLKORNE, STORAGE_JOURNAL_VOLKORNE, STORAGE_NAISSANCES_VOLKORNE, STORAGE_CORBEILLE_VOLKORNE];
 
 function chargerJSON(cle, defaut) {
   try { const v = JSON.parse(localStorage.getItem(cle)); return v ?? defaut; } catch (e) { return defaut; }
@@ -982,6 +1008,18 @@ export function useVolkorneElevage() {
   const [cheptel, setCheptel] = useState(() => chargerJSON(STORAGE_KEY_VOLKORNE, []));
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY_VOLKORNE, {}));
   const [journal, setJournal] = useState(() => chargerJSON(STORAGE_JOURNAL_VOLKORNE, []));
+  const [naissances, setNaissances] = useState(() => chargerJSON(STORAGE_NAISSANCES_VOLKORNE, []));
+  const [corbeille, setCorbeille] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_CORBEILLE_VOLKORNE));
+      const limite = Date.now() - CORBEILLE_DUREE_JOURS_VOLKORNE * 24 * 60 * 60 * 1000;
+      const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
+      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(purge));
+      return purge;
+    } catch (e) {
+      return [];
+    }
+  });
   const [selectedId, setSelectedId] = useState(null);
   const [filter, setFilter] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -1003,9 +1041,44 @@ export function useVolkorneElevage() {
 
   const patchMuldo = useCallback((id, patch) => updateCheptel((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m))), [updateCheptel]);
   const deleteMuldo = useCallback((id) => {
-    updateCheptel((prev) => prev.filter((m) => m.id !== id));
+    setCheptel((prev) => {
+      const muldo = prev.find((m) => m.id === id);
+      const next = prev.filter((m) => m.id !== id);
+      localStorage.setItem(STORAGE_KEY_VOLKORNE, JSON.stringify(next));
+      if (muldo) {
+        setCorbeille((prevCorbeille) => {
+          const nextCorbeille = [{ muldo, supprimeLe: new Date().toISOString() }, ...prevCorbeille].slice(0, 100);
+          localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(nextCorbeille));
+          return nextCorbeille;
+        });
+      }
+      return next;
+    });
     setSelectedId((s) => (s === id ? null : s));
+  }, []);
+  const restaurerMuldo = useCallback((id) => {
+    setCorbeille((prev) => {
+      const entree = prev.find((e) => e.muldo.id === id);
+      if (!entree) return prev;
+      updateCheptel((prevCheptel) => [...prevCheptel, entree.muldo]);
+      const next = prev.filter((e) => e.muldo.id !== id);
+      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(next));
+      return next;
+    });
   }, [updateCheptel]);
+  const purgerCorbeilleEntree = useCallback((id) => {
+    setCorbeille((prev) => {
+      const next = prev.filter((e) => e.muldo.id !== id);
+      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  const viderCorbeille = useCallback(() => {
+    setCorbeille(() => {
+      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify([]));
+      return [];
+    });
+  }, []);
   const addMuldo = useCallback((form) => {
     updateCheptel((prev) => [...prev, {
       id: crypto.randomUUID(), nom: form.nom || genererNomCourtVolkorne(form.couleur), couleur: form.couleur,
@@ -1041,35 +1114,85 @@ export function useVolkorneElevage() {
     setFusionA(""); setFusionB("");
   }, [fusionA, fusionB, byId, updateCheptel]);
 
+  const persisterNaissances = useCallback((next) => {
+    localStorage.setItem(STORAGE_NAISSANCES_VOLKORNE, JSON.stringify(next));
+  }, []);
+
+  // La naissance est immédiate et garantie, mais pas forcément le résultat de
+  // la recette (le RNG du jeu peut retomber sur la couleur d'un parent ou
+  // d'un ancêtre) : on ouvre donc une naissance à confirmer plutôt que de
+  // créer le bébé directement avec la couleur espérée.
   const onRealiserUn = useCallback((groupe) => {
     const couple = groupe.couples[0];
     if (!couple) return;
-    const resultat = couple.resultat || couple.male.couleur;
-    const sexeResultat = Math.random() < 0.5 ? "Mâle" : "Femelle";
-    const bebe = {
-      id: crypto.randomUUID(), nom: genererNomCourtVolkorne(resultat), couleur: resultat,
-      generation: generationDeCouleurVolkorne(resultat), sexe: sexeResultat, statut: "Fertile", sterile: false,
-      reproRestantes: 1, reproductionsRestantes: 1, amour: 0, endurance: 0, maturite: 0, serenite: 50,
-      parentIds: [couple.male.id, couple.femelle.id],
-    };
     updateCheptel((prev) => prev.map((m) => {
-      if (m.id === couple.male.id || m.id === couple.femelle.id) return { ...m, reproRestantes: Math.max(0, reproRestantesVolkorne(m) - 1), reproductionsRestantes: Math.max(0, reproRestantesVolkorne(m) - 1) };
+      if (m.id === couple.male.id || m.id === couple.femelle.id) return { ...m, reproDone: 1, reproMax: 1, reproRestantes: 0, reproductionsRestantes: 0, sterile: true, statut: "Stérile" };
       return m;
-    }).concat(bebe));
+    }));
+    setNaissances((prev) => {
+      const naissance = {
+        id: crypto.randomUUID(),
+        maleId: couple.male.id,
+        femelleId: couple.femelle.id,
+        maleNom: couple.male.nom || couple.male.couleur,
+        femelleNom: couple.femelle.nom || couple.femelle.couleur,
+        maleCouleur: couple.male.couleur,
+        femelleCouleur: couple.femelle.couleur,
+        resultatEspere: couple.resultat || null,
+        possibles: [...new Set([
+          ...couleursNaissancePossiblesVolkorne(couple.male.couleur, couple.femelle.couleur),
+          ...couleursAncetres(couple.male, cheptel),
+          ...couleursAncetres(couple.femelle, cheptel),
+        ])],
+        date: new Date().toISOString(),
+      };
+      const next = [...prev, naissance];
+      persisterNaissances(next);
+      return next;
+    });
+  }, [updateCheptel, cheptel, persisterNaissances]);
+
+  const confirmerNaissance = useCallback((naissanceId, couleurChoisie, sexe) => {
+    const n = naissances.find((x) => x.id === naissanceId);
+    if (!n || !couleurChoisie || !sexe) return;
+    const couleur = canonicaliserCouleurVolkorne(couleurChoisie);
+    const nomCourt = genererNomCourtVolkorne(couleur);
+    const bebe = {
+      id: crypto.randomUUID(), nom: nomCourt, couleur,
+      generation: generationDeCouleurVolkorne(couleur), sexe, statut: "Fertile", sterile: false,
+      reproRestantes: 1, reproductionsRestantes: 1, amour: 0, endurance: 0, maturite: 0, serenite: 50,
+      parentIds: [n.maleId, n.femelleId],
+    };
+    updateCheptel((prev) => [...prev, bebe]);
+    setNaissances((prev) => {
+      const next = prev.filter((x) => x.id !== naissanceId);
+      persisterNaissances(next);
+      return next;
+    });
     setJournal((prev) => {
-      const next = [{ date: new Date().toISOString(), couleur: resultat, nom: bebe.nom }, ...prev].slice(0, 200);
+      const next = [{ date: new Date().toISOString(), couleur, nom: nomCourt }, ...prev].slice(0, 200);
       localStorage.setItem(STORAGE_JOURNAL_VOLKORNE, JSON.stringify(next));
       return next;
     });
-  }, [updateCheptel]);
+  }, [naissances, updateCheptel, persisterNaissances]);
+
+  const supprimerNaissance = useCallback((naissanceId) => {
+    setNaissances((prev) => {
+      const next = prev.filter((x) => x.id !== naissanceId);
+      persisterNaissances(next);
+      return next;
+    });
+  }, [persisterNaissances]);
 
   return {
-    cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, byId, historiqueCouleurs, journal,
+    cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, byId, historiqueCouleurs, journal, naissances, corbeille,
     cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId },
     cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
     syncProps: { cheptel, updateCheptel },
     gpsProps: { cheptel, objectif: objectifGps, setObjectif: setObjectifGps, generationCible: generationCibleGps, setGenerationCible: setGenerationCibleGps, purification, setPurification, byId, historiqueCouleurs, onRealiserUn },
     clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion },
     succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration },
+    naissancesProps: { naissances, onConfirmer: confirmerNaissance, onSupprimer: supprimerNaissance },
+    corbeilleProps: { corbeille, onRestaurer: restaurerMuldo, onPurger: purgerCorbeilleEntree, onVider: viderCorbeille, dureeJours: CORBEILLE_DUREE_JOURS_VOLKORNE },
   };
 }

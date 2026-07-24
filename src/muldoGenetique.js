@@ -5,8 +5,8 @@
 //
 // distanceLevenshtein/affectationMaximale viennent de geneticsUtils.js, déjà
 // partagé avec Dragodinde.jsx/Volkorne.jsx (pas de copie locale ici).
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
-export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible };
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
+export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres };
 
 // ---------- constantes de design ----------
 export const COLORS = {
@@ -810,28 +810,6 @@ export function genererNomCourt(couleur) {
   }
   return `${initiales}-${code}`;
 }
-
-export function couleursAncetres(muldo, cheptel, profondeur = 3) {
-  const parId = new Map((cheptel || []).map((m) => [m.id, m]));
-  const couleurs = new Set();
-  let front = [muldo];
-  for (let p = 0; p < profondeur; p += 1) {
-    const suivant = [];
-    front.forEach((m) => {
-      (m?.parentIds || []).forEach((id) => {
-        const parent = parId.get(id);
-        if (parent && parent.couleur) {
-          couleurs.add(parent.couleur);
-          suivant.push(parent);
-        }
-      });
-    });
-    front = suivant;
-    if (!front.length) break;
-  }
-  return couleurs;
-}
-
 
 export function distancesVersObjectif(objectif) {
   const distances = { [objectif]: 0 };
