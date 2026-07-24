@@ -7,7 +7,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
-import { NaissancesEnAttentePanel } from "./panneauxElevage.jsx";
+import { NaissancesEnAttentePanel, ListeCoursesPanel, BebesARenommerPanel } from "./panneauxElevage.jsx";
 
 // ---------- Génétique : 15 couleurs monocolores, 105 bicolores (C(15,2)) ----------
 // Générations des monocolores confirmées sur l'outil de croisement dofusdb.fr.
@@ -175,7 +175,7 @@ function correspondanceFloueVolkorne(plie, candidats) {
   });
   return meilleur !== null && !exAequo && meilleureDistance <= toleranceOCR(plie) ? meilleur : null;
 }
-function couleurEstCanoniqueVolkorne(couleur) {
+export function couleurEstCanoniqueVolkorne(couleur) {
   return indexCouleursVolkorne().has(plierCouleurVolkorne(couleur));
 }
 export function canonicaliserCouleurVolkorne(brut) {
@@ -382,25 +382,25 @@ function analyserGenerationCibleVolkorne(generation, cheptel, byId, historiqueCo
   return { generation, objectif, possedees, decouvertes, manquantes, jamaisDecouvertes, plans, planChoisi, actionImmediate: planChoisi?.actionImmediate || null, etapes: planChoisi?.etapes || [] };
 }
 
-function cleCoupleCouleurs(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
+export function cleCoupleCouleursVolkorne(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
 function toutesLesRecettesProgressionVolkorne() {
   const map = {};
   COULEURS_VOLKORNE.forEach((enfant) => {
     recettesPourCouleurVolkorne(enfant).forEach(([a, b]) => {
-      const key = cleCoupleCouleurs(a, b);
+      const key = cleCoupleCouleursVolkorne(a, b);
       if (!map[key]) map[key] = [];
       if (!map[key].includes(enfant)) map[key].push(enfant);
     });
   });
   return map;
 }
-const RESULTATS_PAR_COUPLE_VOLKORNE = toutesLesRecettesProgressionVolkorne();
+export const RESULTATS_PAR_COUPLE_VOLKORNE = toutesLesRecettesProgressionVolkorne();
 
 // Couleurs qu'une naissance peut réellement donner : les résultats de recette
 // du couple, plus les couleurs des deux parents (le croisement peut "retomber"
 // sur l'une d'elles au lieu du résultat espéré).
 function couleursNaissancePossiblesVolkorne(couleurMale, couleurFemelle) {
-  const key = cleCoupleCouleurs(couleurMale, couleurFemelle);
+  const key = cleCoupleCouleursVolkorne(couleurMale, couleurFemelle);
   const possibles = new Set(RESULTATS_PAR_COUPLE_VOLKORNE[key] || []);
   possibles.add(couleurMale);
   possibles.add(couleurFemelle);
@@ -456,7 +456,7 @@ function construireArbreCouplesVolkorne(resultat, objectif, parentDe) {
 function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false, niveauMinimum = 0) {
   if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
   if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
-  const key = cleCoupleCouleurs(male.couleur, femelle.couleur);
+  const key = cleCoupleCouleursVolkorne(male.couleur, femelle.couleur);
   const resultats = male.couleur === femelle.couleur && purification ? [male.couleur] : (RESULTATS_PAR_COUPLE_VOLKORNE[key] || []);
   let score = 25, raison = "Accouplement de soutien", meilleurResultat = null, meilleureDistance = Infinity;
   resultats.forEach((resultat) => {
@@ -794,7 +794,7 @@ export function VolkorneSynchronisationPage({ cheptel, updateCheptel, showToast 
   );
 }
 
-export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, naissances, onConfirmer, onSupprimer }) {
+export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, naissances, onConfirmer, onSupprimer, journal }) {
   const [optimakina, setOptimakina] = useState(false);
   const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
   const session = useMemo(() => optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification, optimakina, niveauMinimumSession), [cheptel, objectif, purification, optimakina, niveauMinimumSession]);
@@ -864,6 +864,18 @@ export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCibl
           </div>
         ))}
       </div>
+      <ListeCoursesPanel
+        restants={session.restants}
+        BadgeComponent={VolkorneBadge}
+        sexeFn={sexeVolkorne}
+        couleurEstCanoniqueFn={couleurEstCanoniqueVolkorne}
+        couleursToutes={COULEURS_VOLKORNE}
+        resultatsParCouple={RESULTATS_PAR_COUPLE_VOLKORNE}
+        cleCoupleCouleursFn={cleCoupleCouleursVolkorne}
+        generationDeCouleurFn={generationDeCouleurVolkorne}
+        lieuCapture="au Haras de Brâkmar"
+      />
+      <BebesARenommerPanel journal={journal} BadgeComponent={VolkorneBadge} />
       <NaissancesEnAttentePanel
         naissances={naissances}
         onConfirmer={onConfirmer}
@@ -1197,7 +1209,7 @@ export function useVolkorneElevage() {
     cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId },
     cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
     syncProps: { cheptel, updateCheptel },
-    gpsProps: { cheptel, objectif: objectifGps, setObjectif: setObjectifGps, generationCible: generationCibleGps, setGenerationCible: setGenerationCibleGps, purification, setPurification, byId, historiqueCouleurs, onRealiserUn },
+    gpsProps: { cheptel, objectif: objectifGps, setObjectif: setObjectifGps, generationCible: generationCibleGps, setGenerationCible: setGenerationCibleGps, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, journal },
     clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion },
     succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration },
     naissancesProps: { naissances, onConfirmer: confirmerNaissance, onSupprimer: supprimerNaissance },

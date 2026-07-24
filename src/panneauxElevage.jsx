@@ -6,6 +6,80 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 
+export async function copierPressePapiers(texte) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(texte);
+    } else {
+      const zone = document.createElement("textarea");
+      zone.value = texte;
+      document.body.appendChild(zone);
+      zone.select();
+      document.execCommand("copy");
+      document.body.removeChild(zone);
+    }
+    return true;
+  } catch (e) {
+    console.error("Copie impossible", e);
+    return false;
+  }
+}
+
+// ---------- Derniers bébés à renommer en jeu ----------
+export function BebesARenommerPanel({ journal, BadgeComponent }) {
+  const [copie, setCopie] = useState(null);
+  // On n'affiche que la DERNIÈRE portée : le dernier bébé confirmé, plus le
+  // précédent uniquement s'il vient du même couple juste avant (portée double
+  // Reproducteur). Au-delà, impossible de savoir quel nom copier — les anciens
+  // noms restent consultables sur les fiches du cheptel.
+  const nommes = (journal || []).filter((n) => n.nom);
+  const dernier = nommes[nommes.length - 1];
+  if (!dernier) return null;
+  const precedent = nommes[nommes.length - 2];
+  const memePortee = precedent
+    && precedent.male === dernier.male
+    && precedent.femelle === dernier.femelle
+    && Math.abs(new Date(dernier.date) - new Date(precedent.date)) < 10 * 60 * 1000;
+  const recents = memePortee ? [dernier, precedent] : [dernier];
+
+  const copier = async (nom) => {
+    if (await copierPressePapiers(nom)) {
+      setCopie(nom);
+      setTimeout(() => setCopie((c) => (c === nom ? null : c)), 1500);
+    }
+  };
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <b>{recents.length > 1 ? "Dernière portée — à renommer en jeu" : "Dernier bébé — à renommer en jeu"}</b>
+      <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
+        Le nom est copié automatiquement à la naissance ; récupère-le ici si besoin (« Copier » puis
+        Ctrl+V dans le renommage en jeu). Seule la dernière portée s'affiche — les noms plus anciens
+        restent sur les fiches du cheptel.
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+        {recents.map((n, i) => (
+          <div key={`${n.nom}-${i}`} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            border: "1px solid var(--line)", borderRadius: 12, padding: "7px 10px",
+            background: "rgba(0,0,0,.15)",
+          }}>
+            <BadgeComponent couleur={n.obtenu} taille={18} />
+            <span style={{ fontSize: 13 }}>
+              {n.obtenu} {n.sexe === "F" ? "♀" : "♂"} ·{" "}
+              <b style={{ color: "var(--gold2)", letterSpacing: .4 }}>{n.nom}</b>
+              <span style={{ color: "var(--muted)", fontSize: 11 }}> · {new Date(n.date).toLocaleDateString("fr-FR")}</span>
+            </span>
+            <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => copier(n.nom)}>
+              {copie === n.nom ? "✓ copié" : "Copier"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Corbeille (suppression douce) ----------
 export function CorbeillePanel({ corbeille, onRestaurer, onPurger, onVider, dureeJours = 30 }) {
   const [ouvert, setOuvert] = useState(false);
@@ -38,6 +112,74 @@ export function CorbeillePanel({ corbeille, onRestaurer, onPurger, onVider, dure
             </div>
           ))}
           <button className="btn btn-ghost" style={{ marginTop: 10, fontSize: 12 }} onClick={onVider}>Vider la corbeille</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Liste de courses ----------
+// Pour chaque (couleur, sexe) absent du stock, combien de montures
+// aujourd'hui sans partenaire deviendraient appariables si on l'ajoutait
+// (capture ou HDV). Majorant honnête : "jusqu'à X couples".
+function calculerListeCourses(restants, { sexeFn, couleurEstCanoniqueFn, couleursToutes, resultatsParCouple, cleCoupleCouleursFn, generationDeCouleurFn }) {
+  const besoins = new Map();
+  (restants || []).forEach((m) => {
+    const s = sexeFn(m);
+    if (!s || !couleurEstCanoniqueFn(m.couleur)) return;
+    const sexeVoulu = s === "M" ? "F" : "M";
+    couleursToutes.forEach((partenaire) => {
+      const recettes = resultatsParCouple[cleCoupleCouleursFn(m.couleur, partenaire)] || [];
+      if (!recettes.length) return;
+      const cle = `${partenaire}|${sexeVoulu}`;
+      besoins.set(cle, (besoins.get(cle) || 0) + 1);
+    });
+  });
+  return [...besoins.entries()]
+    .map(([cle, impact]) => {
+      const [couleur, sexe] = cle.split("|");
+      return { couleur, sexe, impact, generation: generationDeCouleurFn(couleur) };
+    })
+    .sort((a, b) => b.impact - a.impact || a.generation - b.generation)
+    .slice(0, 12);
+}
+
+export function ListeCoursesPanel({
+  restants,
+  BadgeComponent,
+  sexeFn,
+  couleurEstCanoniqueFn,
+  couleursToutes,
+  resultatsParCouple,
+  cleCoupleCouleursFn,
+  generationDeCouleurFn,
+  lieuCapture,
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  if (!restants || !restants.length) return null;
+  const courses = calculerListeCourses(restants, { sexeFn, couleurEstCanoniqueFn, couleursToutes, resultatsParCouple, cleCoupleCouleursFn, generationDeCouleurFn });
+  if (!courses.length) return null;
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOuvert((o) => !o)}>
+        <h2 style={{ margin: 0 }}>Liste de courses {ouvert ? "▾" : "▸"}</h2>
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>quoi capturer/acheter pour débloquer tes {restants.length} sans-partenaire</span>
+      </div>
+      {ouvert && (
+        <div style={{ marginTop: 10 }}>
+          {courses.map((c) => (
+            <div key={`${c.couleur}|${c.sexe}`} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "4px 0", fontSize: 13, borderBottom: "1px solid rgba(255,255,255,.04)", flexWrap: "wrap" }}>
+              <b>{c.sexe === "F" ? "♀" : "♂"} <BadgeComponent couleur={c.couleur} taille={16} /> {c.couleur}</b>
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                G{c.generation} · débloquerait jusqu'à {c.impact} couple(s)
+                {c.generation === 1 ? ` · capturable ${lieuCapture}` : " · via HDV, élevage ou clonage"}
+              </span>
+            </div>
+          ))}
+          <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
+            Impact = nombre de tes montures sans partenaire qui ont une recette avec cette couleur. Un même
+            achat ne débloque qu'un couple à la fois : c'est un plafond, pas une garantie.
+          </div>
         </div>
       )}
     </div>

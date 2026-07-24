@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { chargerJSON, sauvegarderJSON, creerEcritureDebattue, flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
-import { NaissancesEnAttentePanel, CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel } from "./panneauxElevage.jsx";
+import { NaissancesEnAttentePanel, CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel, ListeCoursesPanel, BebesARenommerPanel, copierPressePapiers } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
 import { Plus, Trash2, Waves, Heart, Zap, Sparkles, Droplets, AlertTriangle, ChevronRight, X, Skull, Baby, Save } from "lucide-react";
@@ -2712,25 +2712,6 @@ function exporterFicheMuldoImage(muldo) {
   }, "image/png");
 }
 
-async function copierPressePapiers(texte) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(texte);
-    } else {
-      const zone = document.createElement("textarea");
-      zone.value = texte;
-      document.body.appendChild(zone);
-      zone.select();
-      document.execCommand("copy");
-      document.body.removeChild(zone);
-    }
-    return true;
-  } catch (e) {
-    console.error("Copie impossible", e);
-    return false;
-  }
-}
-
 // Nom de couleur cliquable : copie "Muldo <Couleur>" (nom exact à l'HDV créatures).
 function CouleurCopiable({ couleur, gras = true }) {
   const [copie, setCopie] = useState(false);
@@ -4309,7 +4290,7 @@ function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo }) {
           ))}
       </div>
 
-      <BebesARenommerPanel journal={journal} />
+      <BebesARenommerPanel journal={journal} BadgeComponent={MuldoBadge} />
     </div>
   );
 }
@@ -4700,119 +4681,8 @@ function SauvegardePanel({ showToast }) {
   );
 }
 
-function BebesARenommerPanel({ journal }) {
-  const [copie, setCopie] = useState(null);
-  // On n'affiche que la DERNIÈRE portée : le dernier bébé confirmé, plus le
-  // précédent uniquement s'il vient du même couple juste avant (portée double
-  // Reproducteur). Au-delà, impossible de savoir quel nom copier — les anciens
-  // noms restent consultables sur les fiches du cheptel.
-  const nommes = (journal || []).filter((n) => n.nom);
-  const dernier = nommes[nommes.length - 1];
-  if (!dernier) return null;
-  const precedent = nommes[nommes.length - 2];
-  const memePortee = precedent
-    && precedent.male === dernier.male
-    && precedent.femelle === dernier.femelle
-    && Math.abs(new Date(dernier.date) - new Date(precedent.date)) < 10 * 60 * 1000;
-  const recents = memePortee ? [dernier, precedent] : [dernier];
-
-  const copier = async (nom) => {
-    if (await copierPressePapiers(nom)) {
-      setCopie(nom);
-      setTimeout(() => setCopie((c) => (c === nom ? null : c)), 1500);
-    }
-  };
-
-  return (
-    <div className="panel-card" style={{ marginTop: 16 }}>
-      <b>{recents.length > 1 ? "Dernière portée — à renommer en jeu" : "Dernier bébé — à renommer en jeu"}</b>
-      <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-        Le nom est copié automatiquement à la naissance ; récupère-le ici si besoin (« Copier » puis
-        Ctrl+V dans le renommage en jeu). Seule la dernière portée s'affiche — les noms plus anciens
-        restent sur les fiches du cheptel.
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-        {recents.map((n, i) => (
-          <div key={`${n.nom}-${i}`} style={{
-            display: "flex", alignItems: "center", gap: 8,
-            border: "1px solid var(--line)", borderRadius: 12, padding: "7px 10px",
-            background: "rgba(0,0,0,.15)",
-          }}>
-            <MuldoBadge couleur={n.obtenu} taille={18} />
-            <span style={{ fontSize: 13 }}>
-              {n.obtenu} {n.sexe === "F" ? "♀" : "♂"} ·{" "}
-              <b style={{ color: "var(--gold2)", letterSpacing: .4 }}>{n.nom}</b>
-              <span style={{ color: "var(--muted)", fontSize: 11 }}> · {new Date(n.date).toLocaleDateString("fr-FR")}</span>
-            </span>
-            <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => copier(n.nom)}>
-              {copie === n.nom ? "✓ copié" : "Copier"}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 
-
-// Liste de courses : pour chaque (couleur, sexe) absent du stock, combien de
-// muldos aujourd'hui sans partenaire deviendraient appariables si on
-// l'ajoutait (capture ou HDV). Majorant honnête : "jusqu'à X couples".
-function calculerListeCourses(restants) {
-  const besoins = new Map();
-  const toutes = couleursGenerationJusqua(10);
-  (restants || []).forEach((m) => {
-    const s = sexeMuldo(m);
-    if (!s || !couleurEstCanonique(m.couleur)) return;
-    const sexeVoulu = s === "M" ? "F" : "M";
-    toutes.forEach((partenaire) => {
-      const recettes = RESULTATS_PAR_COUPLE[cleCoupleCouleurs(m.couleur, partenaire)] || [];
-      if (!recettes.length) return;
-      const cle = `${partenaire}|${sexeVoulu}`;
-      besoins.set(cle, (besoins.get(cle) || 0) + 1);
-    });
-  });
-  return [...besoins.entries()]
-    .map(([cle, impact]) => {
-      const [couleur, sexe] = cle.split("|");
-      return { couleur, sexe, impact, generation: generationDeCouleur(couleur) };
-    })
-    .sort((a, b) => b.impact - a.impact || a.generation - b.generation)
-    .slice(0, 12);
-}
-
-function ListeCoursesPanel({ restants }) {
-  const [ouvert, setOuvert] = useState(false);
-  if (!restants || !restants.length) return null;
-  const courses = calculerListeCourses(restants);
-  if (!courses.length) return null;
-  return (
-    <div className="panel-card" style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOuvert((o) => !o)}>
-        <h2 style={{ margin: 0 }}>Liste de courses {ouvert ? "▾" : "▸"}</h2>
-        <span style={{ color: "var(--muted)", fontSize: 12 }}>quoi capturer/acheter pour débloquer tes {restants.length} sans-partenaire</span>
-      </div>
-      {ouvert && (
-        <div style={{ marginTop: 10 }}>
-          {courses.map((c) => (
-            <div key={`${c.couleur}|${c.sexe}`} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "4px 0", fontSize: 13, borderBottom: "1px solid rgba(255,255,255,.04)", flexWrap: "wrap" }}>
-              <b>{c.sexe === "F" ? "♀" : "♂"} <CouleurCopiable couleur={c.couleur} /></b>
-              <span style={{ color: "var(--muted)", fontSize: 12 }}>
-                G{c.generation} · débloquerait jusqu'à {c.impact} couple(s)
-                {c.generation === 1 ? " · capturable au Bassin des Muldos" : " · via HDV, élevage ou clonage"}
-              </span>
-            </div>
-          ))}
-          <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
-            Impact = nombre de tes muldos sans partenaire qui ont une recette avec cette couleur. Un même
-            achat ne débloque qu'un couple à la fois : c'est un plafond, pas une garantie.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function BarreEmpilee({ segments, hauteur = 14 }) {
   const total = segments.reduce((n, s) => n + s.valeur, 0) || 1;
@@ -5495,7 +5365,7 @@ function GpsDofusPage({
         couleursToutes={COULEURS_MULDO}
       />
 
-      <BebesARenommerPanel journal={journal} />
+      <BebesARenommerPanel journal={journal} BadgeComponent={MuldoBadge} />
 
       <StatsCroisementsPanel journal={journal} />
 
@@ -5695,7 +5565,17 @@ function GpsDofusPage({
         })}
       </div>
 
-      <ListeCoursesPanel restants={session.restants} />
+      <ListeCoursesPanel
+        restants={session.restants}
+        BadgeComponent={MuldoBadge}
+        sexeFn={sexeMuldo}
+        couleurEstCanoniqueFn={couleurEstCanonique}
+        couleursToutes={COULEURS_MULDO}
+        resultatsParCouple={RESULTATS_PAR_COUPLE}
+        cleCoupleCouleursFn={cleCoupleCouleurs}
+        generationDeCouleurFn={generationDeCouleur}
+        lieuCapture="au Bassin des Muldos (Baie de Sufokia)"
+      />
 
       {session.restants.length > 0 && (
         <div className="panel-card" style={{ marginTop: 16 }}>

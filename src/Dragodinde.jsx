@@ -7,7 +7,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres } from "./geneticsUtils.js";
-import { NaissancesEnAttentePanel } from "./panneauxElevage.jsx";
+import { NaissancesEnAttentePanel, ListeCoursesPanel, BebesARenommerPanel } from "./panneauxElevage.jsx";
 
 // ---------- Génétique : 11 couleurs monocolores, 55 bicolores (C(11,2)) ----------
 // Générations des monocolores confirmées sur l'outil de croisement dofusdb.fr
@@ -111,7 +111,7 @@ function correspondanceFloueDragodinde(plie, candidats) {
   });
   return meilleur !== null && !exAequo && meilleureDistance <= toleranceOCR(plie) ? meilleur : null;
 }
-function couleurEstCanoniqueDragodinde(couleur) {
+export function couleurEstCanoniqueDragodinde(couleur) {
   return indexCouleursDragodinde().has(plierCouleurDragodinde(couleur));
 }
 export function canonicaliserCouleurDragodinde(brut) {
@@ -318,25 +318,25 @@ function analyserGenerationCibleDragodinde(generation, cheptel, byId, historique
   return { generation, objectif, possedees, decouvertes, manquantes, jamaisDecouvertes, plans, planChoisi, actionImmediate: planChoisi?.actionImmediate || null, etapes: planChoisi?.etapes || [] };
 }
 
-function cleCoupleCouleurs(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
+export function cleCoupleCouleursDragodinde(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
 function toutesLesRecettesProgressionDragodinde() {
   const map = {};
   COULEURS_DRAGODINDE.forEach((enfant) => {
     recettesPourCouleurDragodinde(enfant).forEach(([a, b]) => {
-      const key = cleCoupleCouleurs(a, b);
+      const key = cleCoupleCouleursDragodinde(a, b);
       if (!map[key]) map[key] = [];
       if (!map[key].includes(enfant)) map[key].push(enfant);
     });
   });
   return map;
 }
-const RESULTATS_PAR_COUPLE_DRAGODINDE = toutesLesRecettesProgressionDragodinde();
+export const RESULTATS_PAR_COUPLE_DRAGODINDE = toutesLesRecettesProgressionDragodinde();
 
 // Couleurs qu'une naissance peut réellement donner : les résultats de recette
 // du couple, plus les couleurs des deux parents (le croisement peut "retomber"
 // sur l'une d'elles au lieu du résultat espéré).
 function couleursNaissancePossiblesDragodinde(couleurMale, couleurFemelle) {
-  const key = cleCoupleCouleurs(couleurMale, couleurFemelle);
+  const key = cleCoupleCouleursDragodinde(couleurMale, couleurFemelle);
   const possibles = new Set(RESULTATS_PAR_COUPLE_DRAGODINDE[key] || []);
   possibles.add(couleurMale);
   possibles.add(couleurFemelle);
@@ -392,7 +392,7 @@ function construireArbreCouplesDragodinde(resultat, objectif, parentDe) {
 function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false, niveauMinimum = 0) {
   if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
   if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
-  const key = cleCoupleCouleurs(male.couleur, femelle.couleur);
+  const key = cleCoupleCouleursDragodinde(male.couleur, femelle.couleur);
   const resultats = male.couleur === femelle.couleur && purification ? [male.couleur] : (RESULTATS_PAR_COUPLE_DRAGODINDE[key] || []);
   let score = 25, raison = "Accouplement de soutien", meilleurResultat = null, meilleureDistance = Infinity;
   resultats.forEach((resultat) => {
@@ -729,7 +729,7 @@ export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToas
   );
 }
 
-export function DragodindeGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, naissances, onConfirmer, onSupprimer }) {
+export function DragodindeGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, naissances, onConfirmer, onSupprimer, journal }) {
   const [optimakina, setOptimakina] = useState(false);
   const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
   const session = useMemo(() => optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification, optimakina, niveauMinimumSession), [cheptel, objectif, purification, optimakina, niveauMinimumSession]);
@@ -799,6 +799,18 @@ export function DragodindeGpsPage({ cheptel, objectif, setObjectif, generationCi
           </div>
         ))}
       </div>
+      <ListeCoursesPanel
+        restants={session.restants}
+        BadgeComponent={DragodindeBadge}
+        sexeFn={sexeDragodinde}
+        couleurEstCanoniqueFn={couleurEstCanoniqueDragodinde}
+        couleursToutes={COULEURS_DRAGODINDE}
+        resultatsParCouple={RESULTATS_PAR_COUPLE_DRAGODINDE}
+        cleCoupleCouleursFn={cleCoupleCouleursDragodinde}
+        generationDeCouleurFn={generationDeCouleurDragodinde}
+        lieuCapture="en Montagne des Koalaks"
+      />
+      <BebesARenommerPanel journal={journal} BadgeComponent={DragodindeBadge} />
       <NaissancesEnAttentePanel
         naissances={naissances}
         onConfirmer={onConfirmer}
@@ -1132,7 +1144,7 @@ export function useDragodindeElevage() {
     cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId },
     cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
     syncProps: { cheptel, updateCheptel },
-    gpsProps: { cheptel, objectif: objectifGps, setObjectif: setObjectifGps, generationCible: generationCibleGps, setGenerationCible: setGenerationCibleGps, purification, setPurification, byId, historiqueCouleurs, onRealiserUn },
+    gpsProps: { cheptel, objectif: objectifGps, setObjectif: setObjectifGps, generationCible: generationCibleGps, setGenerationCible: setGenerationCibleGps, purification, setPurification, byId, historiqueCouleurs, onRealiserUn, journal },
     clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion },
     succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration },
     naissancesProps: { naissances, onConfirmer: confirmerNaissance, onSupprimer: supprimerNaissance },
