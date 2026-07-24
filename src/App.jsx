@@ -981,6 +981,42 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     showToast(nb > 0 ? `${nb} muldo(s) passé(s) en Fertile — nouvelle session lancée.` : "Nouvelle session lancée.");
   };
 
+  // Remise à zéro après un suivi de clonage/session mal tenu : les stériles
+  // partent à la corbeille (jamais de suppression définitive directe, comme
+  // pour deleteMuldo) et tout le reste repasse Fertile, prêt à s'accoupler.
+  const nettoyerSterilesPuisDemarrerSession = () => {
+    const steriles = cheptel.filter((m) => m.sterile === true || m.statut === "Stérile");
+    const restants = cheptel.filter((m) => !(m.sterile === true || m.statut === "Stérile"));
+
+    if (steriles.length) {
+      setCorbeille((prev) => {
+        const next = [
+          ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
+          ...prev,
+        ].slice(0, 100);
+        try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+        return next;
+      });
+      if (selectedId && steriles.some((m) => m.id === selectedId)) setSelectedId(null);
+    }
+
+    updateCheptel(() => restants.map((m) => ({
+      ...m,
+      statut: "Fertile",
+      sterile: false,
+      reproDone: 0,
+      reproRestantes: 1,
+      reproductionsRestantes: 1,
+    })));
+
+    reinitialiserSessionGps();
+    showToast(
+      steriles.length
+        ? `${steriles.length} muldo(s) stérile(s) mis à la corbeille, ${restants.length} repassé(s) Fertile — nouvelle session lancée.`
+        : `${restants.length} muldo(s) repassé(s) Fertile — nouvelle session lancée.`
+    );
+  };
+
   const registerBirth = (parentAId, parentBId) => {
     const a = byId[parentAId], b = byId[parentBId];
     if (!a || !b) return;
@@ -1481,6 +1517,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
                   onAnnuler={annulerDernierCoupleGps}
                   onReinitialiser={reinitialiserSessionGps}
                   onDemarrerNouvelleSession={demarrerNouvelleSessionAccouplement}
+                  onNettoyerSterilesPuisDemarrer={nettoyerSterilesPuisDemarrerSession}
                   onVoirMuldo={voirMuldo}
                 />
               )}
@@ -5269,6 +5306,7 @@ function GpsDofusPage({
   onAnnuler,
   onReinitialiser,
   onDemarrerNouvelleSession,
+  onNettoyerSterilesPuisDemarrer,
   onVoirMuldo,
 }) {
   const [etapesOuvertes, setEtapesOuvertes] = useState({});
@@ -5613,6 +5651,13 @@ function GpsDofusPage({
               title="Repasse tous les Féconde en Fertile (repos terminé) puis relance la session"
             >
               🌱 Tous fertiles → nouvelle session
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={onNettoyerSterilesPuisDemarrer}
+              title="Met tous les muldos Stérile à la corbeille (récupérable) et repasse tout le reste en Fertile — pratique après un suivi de clonage mal tenu"
+            >
+              🧹 Nettoyer stériles → tout fertile
             </button>
           </div>
         </div>
