@@ -84,7 +84,7 @@ export function generationDeCouleurDragodinde(couleur) {
 }
 
 // ---------- OCR / correction floue ----------
-function plierCouleurDragodinde(value) {
+export function plierCouleurDragodinde(value) {
   return String(value || "")
     .normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
     .replace(/0/g, "o").replace(/[^a-z]+/g, " ").trim();
@@ -166,7 +166,7 @@ function analyserTexteCaptureDragodinde(texte) {
 }
 
 // ---------- Aides de domaine ----------
-function sexeDragodinde(m) {
+export function sexeDragodinde(m) {
   const sexe = String(m?.sexe || "").toLowerCase();
   if (sexe.includes("mâle") || sexe.includes("male") || sexe === "m") return "M";
   if (sexe.includes("femelle") || sexe === "f") return "F";
@@ -1105,7 +1105,15 @@ export function useDragodindeElevage() {
       return next;
     });
     setJournal((prev) => {
-      const next = [{ date: new Date().toISOString(), couleur, nom: nomCourt }, ...prev].slice(0, 200);
+      const next = [...prev, {
+        date: new Date().toISOString(),
+        male: n.maleCouleur,
+        femelle: n.femelleCouleur,
+        espere: n.resultatEspere || null,
+        obtenu: couleur,
+        sexe,
+        nom: nomCourt,
+      }];
       localStorage.setItem(STORAGE_JOURNAL_DRAGODINDE, JSON.stringify(next));
       return next;
     });

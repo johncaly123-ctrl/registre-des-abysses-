@@ -44,6 +44,171 @@ export function CorbeillePanel({ corbeille, onRestaurer, onPurger, onVider, dure
   );
 }
 
+// ---------- Statistiques de croisements ----------
+// N'a besoin que du journal (male/femelle/espere/obtenu/type), déjà la même
+// forme pour les 3 créatures.
+export function StatsCroisementsPanel({ journal }) {
+  const [ouvert, setOuvert] = useState(false);
+  const naissances = (journal || []).filter((n) => !n.type); // naissances uniquement (ni clonage, ni ajout manuel)
+  if (!naissances.length) return null;
+
+  const parCouple = new Map();
+  naissances.forEach((n) => {
+    const cle = `${n.male} × ${n.femelle}`;
+    if (!parCouple.has(cle)) parCouple.set(cle, { cle, male: n.male, femelle: n.femelle, total: 0, espere: n.espere, reussites: 0, resultats: new Map() });
+    const g = parCouple.get(cle);
+    g.total += 1;
+    if (n.espere && n.obtenu === n.espere) g.reussites += 1;
+    g.resultats.set(n.obtenu, (g.resultats.get(n.obtenu) || 0) + 1);
+  });
+  const groupes = [...parCouple.values()].sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOuvert((o) => !o)}>
+        <h2 style={{ margin: 0 }}>Statistiques de croisements {ouvert ? "▾" : "▸"}</h2>
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>{naissances.length} naissance(s) enregistrée(s)</span>
+      </div>
+      {ouvert && groupes.map((g) => {
+        const distribution = [...g.resultats.entries()]
+          .sort((x, y) => y[1] - x[1])
+          .map(([couleur, n]) => `${couleur} ×${n} (${Math.round(n / g.total * 100)}%)`)
+          .join(" · ");
+        return (
+          <div key={g.cle} style={{ borderTop: "1px solid rgba(255,255,255,.06)", marginTop: 10, paddingTop: 10, fontSize: 13 }}>
+            <b>♂ {g.male} × ♀ {g.femelle}</b>
+            <span style={{ color: "var(--muted)" }}> · {g.total} naissance(s)</span>
+            {g.espere && (
+              <span style={{ color: "var(--gold)" }}> · {g.espere} obtenu {g.reussites}/{g.total} ({Math.round(g.reussites / g.total * 100)}%)</span>
+            )}
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>{distribution}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- Arbre généalogique ----------
+export function ArbreGenealogiquePanel({ cheptel, onSelect, sexeFn, plierCouleurFn }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [recherche, setRecherche] = useState("");
+  const [choisiId, setChoisiId] = useState(null);
+
+  const parId = new Map((cheptel || []).map((m) => [m.id, m]));
+  const enfantsDe = new Map();
+  (cheptel || []).forEach((m) => {
+    (m.parentIds || m.parents || []).forEach((pid) => {
+      if (!enfantsDe.has(pid)) enfantsDe.set(pid, []);
+      enfantsDe.get(pid).push(m);
+    });
+  });
+
+  // Seuls les montures reliées à une généalogie (parents connus OU descendants) sont proposables.
+  const relies = (cheptel || []).filter((m) => (m.parentIds || m.parents || []).length || enfantsDe.has(m.id));
+  const prefixe = plierCouleurFn(recherche.trim());
+  const suggestions = prefixe
+    ? relies.filter((m) => plierCouleurFn(m.nom || "").startsWith(prefixe) || plierCouleurFn(m.couleur || "").startsWith(prefixe)).slice(0, 8)
+    : [];
+  const choisi = choisiId ? parId.get(choisiId) : null;
+
+  const etiquette = (m) => `${m.nom || m.id?.slice(0, 6)} — ${m.couleur} ${sexeFn(m) === "F" ? "♀" : sexeFn(m) === "M" ? "♂" : "?"}${m.sterile ? " (stérile)" : ""}`;
+  const ligneMuldo = (m, retrait) => (
+    <div key={`${m.id}-${retrait}`} style={{ paddingLeft: retrait * 18, fontSize: 13, padding: "3px 0", paddingInlineStart: retrait * 18 }}>
+      <button
+        type="button"
+        onClick={() => setChoisiId(m.id)}
+        style={{ background: "none", border: "none", padding: 0, color: m.id === choisiId ? "var(--gold)" : "inherit", font: "inherit", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
+      >
+        {etiquette(m)}
+      </button>
+      {onSelect && (
+        <button type="button" className="btn btn-ghost" style={{ marginLeft: 8, padding: "0 6px", fontSize: 11 }} onClick={() => onSelect(m.id)}>
+          fiche
+        </button>
+      )}
+    </div>
+  );
+
+  const parentsDe = (m) => (m?.parentIds || m?.parents || []).map((id) => parId.get(id)).filter(Boolean);
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOuvert((o) => !o)}>
+        <h2 style={{ margin: 0 }}>Arbre généalogique {ouvert ? "▾" : "▸"}</h2>
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>
+          {(cheptel || []).filter((m) => (m.parentIds || m.parents || []).length).length} monture(s) à généalogie connue
+        </span>
+      </div>
+      {!ouvert ? null : (<>
+      <div style={{ color: "var(--muted)", fontSize: 12, margin: "8px 0" }}>
+        Recherche une monture par son nom court ou sa couleur — seules les montures à généalogie
+        connue (nées dans l'appli ou parents enregistrés) apparaissent.
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          className="field"
+          placeholder="Nom ou couleur…"
+          value={recherche}
+          onChange={(e) => setRecherche(e.target.value)}
+          style={{ width: 230, padding: "4px 8px", fontSize: 12 }}
+        />
+        {suggestions.map((m) => (
+          <button
+            key={m.id}
+            className="btn btn-ghost"
+            style={m.id === choisiId ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+            onClick={() => setChoisiId(m.id)}
+          >
+            {m.nom || m.couleur}
+          </button>
+        ))}
+        {prefixe && !suggestions.length && (
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>aucune monture à généalogie connue ne correspond</span>
+        )}
+        {!relies.length && (
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>
+            (aucune généalogie pour l'instant : elle se construit à chaque naissance confirmée)
+          </span>
+        )}
+      </div>
+
+      {choisi && (
+        <div style={{ marginTop: 12 }}>
+          {(() => {
+            const parents = parentsDe(choisi);
+            const grandsParents = parents.flatMap((p) => parentsDe(p));
+            const enfants = enfantsDe.get(choisi.id) || [];
+            const petitsEnfants = enfants.flatMap((e) => enfantsDe.get(e.id) || []);
+            const section = (titre, liste, retrait) => liste.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 }}>{titre}</div>
+                {liste.map((m) => ligneMuldo(m, retrait))}
+              </div>
+            );
+            return (
+              <>
+                {section("Grands-parents", grandsParents, 0)}
+                {section("Parents", parents, 1)}
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 }}>Monture sélectionnée</div>
+                  <div style={{ paddingLeft: 36, fontSize: 13, fontWeight: 700, padding: "3px 0", paddingInlineStart: 36 }}>{etiquette(choisi)}</div>
+                </div>
+                {section("Enfants", enfants, 3)}
+                {section("Petits-enfants", petitsEnfants, 4)}
+                {!parents.length && !enfants.length && (
+                  <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>Ni parents ni descendants connus pour cette monture.</div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+      </>)}
+    </div>
+  );
+}
+
 // ---------- Naissances à confirmer ----------
 // La naissance est immédiate et garantie, mais pas forcément le résultat de
 // la recette (le RNG du jeu peut retomber sur la couleur d'un parent ou d'un

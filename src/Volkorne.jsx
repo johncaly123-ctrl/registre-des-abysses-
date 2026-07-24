@@ -148,7 +148,7 @@ export function generationDeCouleurVolkorne(couleur) {
 }
 
 // ---------- OCR / correction floue ----------
-function plierCouleurVolkorne(value) {
+export function plierCouleurVolkorne(value) {
   return String(value || "")
     .normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
     .replace(/0/g, "o").replace(/[^a-z]+/g, " ").trim();
@@ -230,7 +230,7 @@ function analyserTexteCaptureVolkorne(texte) {
 }
 
 // ---------- Aides de domaine ----------
-function sexeVolkorne(m) {
+export function sexeVolkorne(m) {
   const sexe = String(m?.sexe || "").toLowerCase();
   if (sexe.includes("mâle") || sexe.includes("male") || sexe === "m") return "M";
   if (sexe.includes("femelle") || sexe === "f") return "F";
@@ -1170,7 +1170,15 @@ export function useVolkorneElevage() {
       return next;
     });
     setJournal((prev) => {
-      const next = [{ date: new Date().toISOString(), couleur, nom: nomCourt }, ...prev].slice(0, 200);
+      const next = [...prev, {
+        date: new Date().toISOString(),
+        male: n.maleCouleur,
+        femelle: n.femelleCouleur,
+        espere: n.resultatEspere || null,
+        obtenu: couleur,
+        sexe,
+        nom: nomCourt,
+      }];
       localStorage.setItem(STORAGE_JOURNAL_VOLKORNE, JSON.stringify(next));
       return next;
     });
