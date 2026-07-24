@@ -2748,6 +2748,39 @@ function CouleurCopiable({ couleur, gras = true }) {
   );
 }
 
+// Nom cliquable : copie le nom exact (pratique pour le renommage en jeu ou
+// pour retrouver la bonne fiche), sans le badge couleur de CouleurCopiable.
+function NomCopiable({ nom, gras = true }) {
+  const [copie, setCopie] = useState(false);
+  const onClick = async (e) => {
+    e.stopPropagation();
+    if (await copierPressePapiers(nom)) {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 1200);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Copier « ${nom} »`}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        color: "inherit",
+        font: "inherit",
+        fontWeight: gras ? 700 : "inherit",
+        cursor: "pointer",
+        textDecoration: "underline dotted",
+        textUnderlineOffset: 3,
+      }}
+    >
+      {nom}{copie ? " ✓" : ""}
+    </button>
+  );
+}
+
 function formatKamas(n) {
   return `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(n) || 0))} k`;
 }
@@ -5835,18 +5868,21 @@ function GpsDofusPage({
               × {g.quantite}
             </span>
             <div>
-              <b>♂ {g.male.nom || g.male.couleur}</b>{" "}
-              <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} />{" "}
-              <CouleurCopiable couleur={g.male.couleur} gras={false} />
+              <b>♂ <NomCopiable nom={g.male.nom || g.male.couleur} /></b>{" "}
+              <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} />
               <span style={{
                 color: "var(--gold2)",
                 margin: "0 7px",
               }}>
                 ×
               </span>
-              <b>♀ {g.femelle.nom || g.femelle.couleur}</b>{" "}
-              <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />{" "}
-              <CouleurCopiable couleur={g.femelle.couleur} gras={false} />
+              <b>♀ <NomCopiable nom={g.femelle.nom || g.femelle.couleur} /></b>{" "}
+              <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                <CouleurCopiable couleur={g.male.couleur} gras={false} />
+                <span style={{ margin: "0 5px" }}>×</span>
+                <CouleurCopiable couleur={g.femelle.couleur} gras={false} />
+              </div>
               <div style={{
                 color: "var(--muted)",
                 fontSize: 11,
