@@ -87,6 +87,7 @@ export default function App() {
   const [generationCollectionMax, setGenerationCollectionMax] = useState(10);
   const [modePurification, setModePurification] = useState(false);
   const [optimakina, setOptimakina] = useState(false);
+  const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState({});
   const [page, setPage] = useState("dashboard");
   // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
@@ -396,8 +397,8 @@ export default function App() {
   }, [cheptel, gpsSuiviActif.consommes]);
 
   const sessionGps = useMemo(
-    () => optimiserSessionAccouplements(cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina),
-    [cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina]
+    () => optimiserSessionAccouplements(cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina, niveauMinimumSession),
+    [cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina, niveauMinimumSession]
   );
 
   const sauvegarderSuiviGps = useCallback((next) => {
@@ -1512,6 +1513,8 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
                   setPurification={setModePurification}
                   optimakina={optimakina}
                   setOptimakina={setOptimakina}
+                  niveauMinimumSession={niveauMinimumSession}
+                  setNiveauMinimumSession={setNiveauMinimumSession}
                   suivi={gpsSuiviActif}
                   naissances={naissances}
                   journal={journal}
@@ -5315,6 +5318,8 @@ function GpsDofusPage({
   setPurification,
   optimakina,
   setOptimakina,
+  niveauMinimumSession,
+  setNiveauMinimumSession,
   suivi,
   naissances,
   journal,
@@ -5757,6 +5762,26 @@ function GpsDofusPage({
             />
             Optimakina utilisée
           </label>
+          <label style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--muted)",
+            fontSize: 12,
+          }}>
+            Niveau mini (session)
+            <input
+              type="number"
+              className="field"
+              min={0}
+              max={200}
+              style={{ width: 70 }}
+              value={niveauMinimumSession || ""}
+              placeholder="0"
+              title="Suppose que toutes tes montures sont au moins à ce niveau pour ce calcul, sans avoir à le saisir sur chaque fiche"
+              onChange={(e) => setNiveauMinimumSession(e.target.value === "" ? 0 : Number(e.target.value))}
+            />
+          </label>
         </div>
       </div>
 
@@ -5810,16 +5835,18 @@ function GpsDofusPage({
               × {g.quantite}
             </span>
             <div>
-              <b>♂ <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} /></b>{" "}
-              <CouleurCopiable couleur={g.male.couleur} />
+              <b>♂ {g.male.nom || g.male.couleur}</b>{" "}
+              <BoutonFiche id={g.male.id} onVoir={onVoirMuldo} label={g.male.nom || g.male.couleur} />{" "}
+              <CouleurCopiable couleur={g.male.couleur} gras={false} />
               <span style={{
                 color: "var(--gold2)",
                 margin: "0 7px",
               }}>
                 ×
               </span>
-              <b>♀ <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} /></b>{" "}
-              <CouleurCopiable couleur={g.femelle.couleur} />
+              <b>♀ {g.femelle.nom || g.femelle.couleur}</b>{" "}
+              <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />{" "}
+              <CouleurCopiable couleur={g.femelle.couleur} gras={false} />
               <div style={{
                 color: "var(--muted)",
                 fontSize: 11,

@@ -374,7 +374,7 @@ function construireArbreCouplesDragodinde(resultat, objectif, parentDe) {
   }
   return etapes;
 }
-function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false) {
+function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false, niveauMinimum = 0) {
   if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
   if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
   const key = cleCoupleCouleurs(male.couleur, femelle.couleur);
@@ -396,14 +396,14 @@ function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purif
   const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleurDragodinde);
   const generationBase = Math.max(generationDeCouleurDragodinde(male.couleur), generationDeCouleurDragodinde(femelle.couleur));
   score += (generationCible - generationBase) * 15;
-  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: male.niveau, niveauB: femelle.niveau, optimakina });
+  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina });
   return {
     score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
     generationCible, viaAncetre, chanceGenerationCible,
     couleursGenerationCible: GENERATIONS_DRAGODINDE[generationCible] || [],
   };
 }
-function optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification = false, optimakina = false) {
+function optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
   const fertiles = cheptel.filter(dragodindeReproductible);
   const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectifDragodinde(objectif);
@@ -411,7 +411,7 @@ function optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification
   let femellesRestantes = fertiles.filter((m) => sexeDragodinde(m) === "F");
   const couples = [];
   while (malesRestants.length && femellesRestantes.length) {
-    const details = malesRestants.map((male) => femellesRestantes.map((femelle) => scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purification, byId, optimakina)));
+    const details = malesRestants.map((male) => femellesRestantes.map((femelle) => scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purification, byId, optimakina, niveauMinimum)));
     const affectations = affectationMaximale(details.map((row) => row.map((x) => x.score)));
     const valides = affectations.map(([i, j]) => ({ male: malesRestants[i], femelle: femellesRestantes[j], ...details[i][j] })).filter((c) => c.score > 0);
     if (!valides.length) break;
@@ -716,7 +716,8 @@ export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToas
 
 export function DragodindeGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn }) {
   const [optimakina, setOptimakina] = useState(false);
-  const session = useMemo(() => optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification, optimakina), [cheptel, objectif, purification, optimakina]);
+  const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
+  const session = useMemo(() => optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification, optimakina, niveauMinimumSession), [cheptel, objectif, purification, optimakina, niveauMinimumSession]);
   const planGeneration = useMemo(() => analyserGenerationCibleDragodinde(generationCible, cheptel, byId, historiqueCouleurs), [generationCible, cheptel, byId, historiqueCouleurs]);
   return (
     <div>
@@ -738,6 +739,15 @@ export function DragodindeGpsPage({ cheptel, objectif, setObjectif, generationCi
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
             <input type="checkbox" checked={optimakina} onChange={(e) => setOptimakina(e.target.checked)} /> Optimakina utilisée
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+            Niveau mini (session)
+            <input
+              type="number" className="field" min={0} max={200} style={{ width: 70 }}
+              value={niveauMinimumSession || ""} placeholder="0"
+              title="Suppose que toutes tes montures sont au moins à ce niveau, sans le saisir sur chaque fiche"
+              onChange={(e) => setNiveauMinimumSession(e.target.value === "" ? 0 : Number(e.target.value))}
+            />
           </label>
         </div>
         {planGeneration.actionImmediate && (

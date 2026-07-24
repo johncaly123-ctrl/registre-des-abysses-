@@ -942,7 +942,7 @@ export function construireArbreCouples(resultat, objectif, parentDe) {
   return etapes;
 }
 
-export function scoreCoupleObjectif(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false) {
+export function scoreCoupleObjectif(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false, niveauMinimum = 0) {
   if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
   if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
 
@@ -1014,8 +1014,8 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
   const generationBase = Math.max(generationDeCouleur(male.couleur), generationDeCouleur(femelle.couleur));
   score += (generationCible - generationBase) * 15;
   const chanceGenerationCible = bonusProbabiliteGenerationCible({
-    niveauA: male.niveau,
-    niveauB: femelle.niveau,
+    niveauA: Math.max(male.niveau || 0, niveauMinimum),
+    niveauB: Math.max(femelle.niveau || 0, niveauMinimum),
     optimakina,
   });
 
@@ -1032,7 +1032,7 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
   };
 }
 
-export function optimiserSessionAccouplements(cheptel, objectif, purification = false, optimakina = false) {
+export function optimiserSessionAccouplements(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
   const fertiles = cheptel.filter(muldoReproductible);
   const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectif(objectif);
@@ -1049,7 +1049,7 @@ export function optimiserSessionAccouplements(cheptel, objectif, purification = 
 
   while (malesRestants.length && femellesRestantes.length) {
     const details = malesRestants.map((male) => femellesRestantes.map((femelle) =>
-      scoreCoupleObjectif(male, femelle, objectif, distances, purification, byId, optimakina)
+      scoreCoupleObjectif(male, femelle, objectif, distances, purification, byId, optimakina, niveauMinimum)
     ));
     const matrice = details.map((row) => row.map((x) => x.score));
     const affectations = affectationMaximale(matrice);
