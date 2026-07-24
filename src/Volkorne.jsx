@@ -43,14 +43,87 @@ function construireGenerationsVolkorne() {
 export const GENERATIONS_VOLKORNE = construireGenerationsVolkorne();
 export const COULEURS_VOLKORNE = Object.values(GENERATIONS_VOLKORNE).flat();
 
-// Recettes bicolore+bicolore → monocolore spécial : aucune confirmée pour le
-// moment (données non trouvées lors des recherches). Volontairement vide
-// plutôt que fausse — le Cheptel, les Succès, la généalogie et le clonage
-// fonctionnent normalement, seul le plan GPS automatique vers un monocolore
-// spécial (Roux/Amande/Ivoire/Turquoise/Prune/Émeraude/Doré/Jade/Rubis/
-// Saphir/Améthyste) ne proposera pas d'étape tant que la recette n'aura pas
-// été vérifiée sur dofusdb.fr.
-const RECETTES_SPECIALES_VOLKORNE = {};
+// Recettes bicolore+bicolore → monocolore spécial, vérifiées sur les captures
+// de l'arbre de croisement dofuselevage.fr fournies par l'utilisateur
+// (2026-07-24) — comptes de recettes cohérents avec ceux annoncés par le site
+// (Roux/Amande/Ivoire/Turquoise : 3 · Prune/Émeraude : 12 · Doré : 8 ·
+// Jade/Rubis/Saphir/Améthyste : 2).
+const RECETTES_SPECIALES_VOLKORNE = {
+  "Roux": [
+    ["Pourpre et Orchidée", "Pourpre et Indigo"],
+    ["Pourpre et Orchidée", "Pourpre et Ébène"],
+    ["Pourpre et Ébène", "Pourpre et Indigo"],
+  ],
+  "Amande": [
+    ["Pourpre et Ébène", "Orchidée et Ébène"],
+    ["Pourpre et Ébène", "Indigo et Ébène"],
+    ["Indigo et Ébène", "Orchidée et Ébène"],
+  ],
+  "Ivoire": [
+    ["Pourpre et Indigo", "Indigo et Ébène"],
+    ["Pourpre et Indigo", "Orchidée et Indigo"],
+    ["Orchidée et Indigo", "Indigo et Ébène"],
+  ],
+  "Turquoise": [
+    ["Pourpre et Orchidée", "Orchidée et Ébène"],
+    ["Pourpre et Orchidée", "Orchidée et Indigo"],
+    ["Orchidée et Indigo", "Orchidée et Ébène"],
+  ],
+  "Prune": [
+    ["Roux et Amande", "Pourpre et Amande"],
+    ["Roux et Amande", "Orchidée et Amande"],
+    ["Roux et Amande", "Indigo et Amande"],
+    ["Roux et Amande", "Ébène et Amande"],
+    ["Roux et Amande", "Amande et Turquoise"],
+    ["Roux et Amande", "Amande et Ivoire"],
+    ["Roux et Amande", "Pourpre et Roux"],
+    ["Roux et Amande", "Orchidée et Roux"],
+    ["Roux et Amande", "Indigo et Roux"],
+    ["Roux et Amande", "Ébène et Roux"],
+    ["Roux et Amande", "Roux et Ivoire"],
+    ["Roux et Amande", "Roux et Turquoise"],
+  ],
+  "Émeraude": [
+    ["Ivoire et Turquoise", "Orchidée et Ivoire"],
+    ["Ivoire et Turquoise", "Indigo et Ivoire"],
+    ["Ivoire et Turquoise", "Ébène et Ivoire"],
+    ["Ivoire et Turquoise", "Pourpre et Ivoire"],
+    ["Ivoire et Turquoise", "Amande et Ivoire"],
+    ["Ivoire et Turquoise", "Roux et Ivoire"],
+    ["Ivoire et Turquoise", "Roux et Turquoise"],
+    ["Ivoire et Turquoise", "Orchidée et Turquoise"],
+    ["Ivoire et Turquoise", "Pourpre et Turquoise"],
+    ["Ivoire et Turquoise", "Indigo et Turquoise"],
+    ["Ivoire et Turquoise", "Ébène et Turquoise"],
+    ["Ivoire et Turquoise", "Amande et Turquoise"],
+  ],
+  "Doré": [
+    ["Pourpre et Prune", "Roux et Émeraude"],
+    ["Orchidée et Prune", "Turquoise et Émeraude"],
+    ["Indigo et Prune", "Ivoire et Émeraude"],
+    ["Ébène et Prune", "Amande et Émeraude"],
+    ["Amande et Prune", "Ébène et Émeraude"],
+    ["Turquoise et Prune", "Orchidée et Émeraude"],
+    ["Roux et Prune", "Pourpre et Émeraude"],
+    ["Ivoire et Prune", "Indigo et Émeraude"],
+  ],
+  "Jade": [
+    ["Pourpre et Doré", "Prune et Émeraude"],
+    ["Prune et Doré", "Roux et Doré"],
+  ],
+  "Rubis": [
+    ["Orchidée et Doré", "Prune et Émeraude"],
+    ["Prune et Doré", "Amande et Doré"],
+  ],
+  "Saphir": [
+    ["Indigo et Doré", "Prune et Émeraude"],
+    ["Émeraude et Doré", "Turquoise et Doré"],
+  ],
+  "Améthyste": [
+    ["Ébène et Doré", "Prune et Émeraude"],
+    ["Émeraude et Doré", "Ivoire et Doré"],
+  ],
+};
 
 function recettesPourCouleurVolkorne(couleur) {
   const speciales = RECETTES_SPECIALES_VOLKORNE[couleur];
