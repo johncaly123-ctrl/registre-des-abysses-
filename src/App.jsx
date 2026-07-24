@@ -1,1328 +1,43 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { chargerJSON, sauvegarderJSON, creerEcritureDebattue, flushToutesEcrituresDebattues } from "./stockage.js";
+import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
 import { Plus, Trash2, Waves, Heart, Zap, Sparkles, Droplets, AlertTriangle, ChevronRight, X, Skull, Baby, Save } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
-  CLES_SAUVEGARDE_DRAGODINDE,
+  CLES_SAUVEGARDE_DRAGODINDE, generationDeCouleurDragodinde,
 } from "./Dragodinde.jsx";
 import {
   useVolkorneElevage, VolkorneCheptelListPane, VolkorneCheptelMainPane,
   VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
-  CLES_SAUVEGARDE_VOLKORNE,
+  CLES_SAUVEGARDE_VOLKORNE, generationDeCouleurVolkorne,
 } from "./Volkorne.jsx";
+import {
+  COLORS, COULEURS_MULDO, GENERATION_10_MULDO, OBJECTIFS_COULEURS, CAPACITES_MULDO,
+  capacitesMuldo, normaliserMuldo, FATIGUE_OBSOLETE, STOCK_INITIAL_COULEURS,
+  RECETTES_SPECIALES_MULDO, RECETTES_COULEURS, recettesPourCouleur, recettesBicoloreAuto,
+  GENERATIONS_MULDO, couleursGenerationJusqua, plierCouleur, indexCouleursCanoniques,
+  canonicaliserCouleur, distanceLevenshtein, toleranceOCR, correspondanceFloue,
+  clesMonocoloresPliees, couleurEstCanonique, stockCouleurDisponible,
+  meilleureRecettePourCouleur, construireEtapesPourCouleur, generationDeCouleur,
+  CHEPTEL_INITIAL_AUTO, sexeMuldo, reproRestantesMuldo, muldoReproductible,
+  couleurPresenteCheptel, chercherCouplePourRecette, construirePlanPourCouleur,
+  analyserGenerationCible, cleCoupleCouleurs, toutesLesRecettesProgression,
+  RESULTATS_PAR_COUPLE, couleursNaissancePossibles, genererNomCourt, couleursAncetres,
+  distancesVersObjectif, construireCheminVersObjectif, distancesEtParentsVersObjectif,
+  construireArbreCouples, scoreCoupleObjectif, affectationMaximale,
+  optimiserSessionAccouplements, progressionParGeneration, plusHauteGenerationValidee,
+  tierAilesMuldo, choisirObjectifGpsAutomatique, ancestorSet, collisionScore,
+  collisionLabel, readinessScore, getNextAction, isBreedReady, generationGoalScore,
+  geneticPartners,
+} from "./muldoGenetique.js";
+import {
+  normaliserTexteOCR, extraireNombreDansLigne, analyserTexteCaptureMuldo,
+  stockMF, analyseRecettesPourCible, actionsAvecCouleur,
+} from "./muldoOCR.js";
 
-// ---------- constantes de design ----------
-const COLORS = {
-  bg: "#0A1B22",
-  panel: "#102B34",
-  panelAlt: "#0D242C",
-  line: "#1E4650",
-  coral: "#E8734A",
-  coralDim: "#B85A38",
-  glow: "#4FD1C5",
-  glowDim: "#2E7A72",
-  text: "#E7EDE9",
-  muted: "#6C8A94",
-  danger: "#D9534F",
-  gold: "#D4A94C",
-};
-
-const COULEURS_MULDO = [
-  "Doré",
-  "Indigo",
-  "Ébène",
-  "Pourpre",
-  "Orchidée",
-  "Doré et Pourpre",
-  "Indigo et Pourpre",
-  "Ébène et Pourpre",
-  "Orchidée et Pourpre",
-  "Doré et Orchidée",
-  "Indigo et Orchidée",
-  "Ébène et Orchidée",
-  "Doré et Ébène",
-  "Doré et Indigo",
-  "Ébène et Indigo",
-  "Roux",
-  "Amande",
-  "Doré et Amande",
-  "Ébène et Amande",
-  "Indigo et Amande",
-  "Orchidée et Amande",
-  "Pourpre et Amande",
-  "Roux et Amande",
-  "Roux et Doré",
-  "Roux et Ébène",
-  "Roux et Indigo",
-  "Roux et Orchidée",
-  "Roux et Pourpre",
-  "Ivoire",
-  "Turquoise",
-  "Pourpre et Ivoire",
-  "Orchidée et Ivoire",
-  "Indigo et Ivoire",
-  "Ébène et Ivoire",
-  "Doré et Ivoire",
-  "Roux et Ivoire",
-  "Amande et Ivoire",
-  "Turquoise et Ivoire",
-  "Turquoise et Pourpre",
-  "Turquoise et Orchidée",
-  "Turquoise et Indigo",
-  "Turquoise et Ébène",
-  "Turquoise et Roux",
-  "Turquoise et Amande",
-  "Turquoise et Doré",
-  "Prune",
-  "Émeraude",
-  "Prune et Pourpre",
-  "Prune et Orchidée",
-  "Prune et Indigo",
-  "Prune et Ébène",
-  "Prune et Doré",
-  "Prune et Roux",
-  "Prune et Amande",
-  "Prune et Ivoire",
-  "Prune et Turquoise",
-  "Prune et Émeraude",
-  "Pourpre et Émeraude",
-  "Orchidée et Émeraude",
-  "Indigo et Émeraude",
-  "Ébène et Émeraude",
-  "Doré et Émeraude",
-  "Roux et Émeraude",
-  "Amande et Émeraude",
-  "Ivoire et Émeraude",
-  "Turquoise et Émeraude",
-  "Ambre",
-  "Corail",
-  "Azur",
-  "Aigue-marine",
-  "Ambre et Doré",
-  "Ambre et Ébène",
-  "Ambre et Indigo",
-  "Ambre et Pourpre",
-  "Ambre et Orchidée",
-  "Ambre et Amande",
-  "Ambre et Roux",
-  "Ambre et Ivoire",
-  "Ambre et Turquoise",
-  "Ambre et Émeraude",
-  "Ambre et Prune",
-  "Ambre et Corail",
-  "Ambre et Azur",
-  "Ambre et Aigue-marine",
-  "Corail et Doré",
-  "Corail et Ébène",
-  "Corail et Indigo",
-  "Corail et Pourpre",
-  "Corail et Orchidée",
-  "Corail et Amande",
-  "Corail et Roux",
-  "Corail et Ivoire",
-  "Corail et Turquoise",
-  "Corail et Émeraude",
-  "Corail et Prune",
-  "Corail et Azur",
-  "Corail et Aigue-marine",
-  "Azur et Doré",
-  "Azur et Ébène",
-  "Azur et Indigo",
-  "Azur et Pourpre",
-  "Azur et Orchidée",
-  "Azur et Amande",
-  "Azur et Roux",
-  "Azur et Ivoire",
-  "Azur et Turquoise",
-  "Azur et Émeraude",
-  "Azur et Prune",
-  "Azur et Aigue-marine",
-  "Aigue-marine et Doré",
-  "Aigue-marine et Ébène",
-  "Aigue-marine et Indigo",
-  "Aigue-marine et Pourpre",
-  "Aigue-marine et Orchidée",
-  "Aigue-marine et Amande",
-  "Aigue-marine et Roux",
-  "Aigue-marine et Ivoire",
-  "Aigue-marine et Turquoise",
-  "Aigue-marine et Émeraude",
-  "Aigue-marine et Prune",
-];
-
-const GENERATION_10_MULDO = [
-  "Ambre et Doré",
-  "Ambre et Ébène",
-  "Ambre et Indigo",
-  "Ambre et Pourpre",
-  "Ambre et Orchidée",
-  "Ambre et Amande",
-  "Ambre et Roux",
-  "Ambre et Ivoire",
-  "Ambre et Turquoise",
-  "Ambre et Émeraude",
-  "Ambre et Prune",
-  "Ambre et Corail",
-  "Ambre et Azur",
-  "Ambre et Aigue-marine",
-  "Corail et Doré",
-  "Corail et Ébène",
-  "Corail et Indigo",
-  "Corail et Pourpre",
-  "Corail et Orchidée",
-  "Corail et Amande",
-  "Corail et Roux",
-  "Corail et Ivoire",
-  "Corail et Turquoise",
-  "Corail et Émeraude",
-  "Corail et Prune",
-  "Corail et Azur",
-  "Corail et Aigue-marine",
-  "Azur et Doré",
-  "Azur et Ébène",
-  "Azur et Indigo",
-  "Azur et Pourpre",
-  "Azur et Orchidée",
-  "Azur et Amande",
-  "Azur et Roux",
-  "Azur et Ivoire",
-  "Azur et Turquoise",
-  "Azur et Émeraude",
-  "Azur et Prune",
-  "Azur et Aigue-marine",
-  "Aigue-marine et Doré",
-  "Aigue-marine et Ébène",
-  "Aigue-marine et Indigo",
-  "Aigue-marine et Pourpre",
-  "Aigue-marine et Orchidée",
-  "Aigue-marine et Amande",
-  "Aigue-marine et Roux",
-  "Aigue-marine et Ivoire",
-  "Aigue-marine et Turquoise",
-  "Aigue-marine et Émeraude",
-  "Aigue-marine et Prune",
-];
-
-const OBJECTIFS_COULEURS = ["Prune", "Émeraude", "Ambre", "Corail", "Azur", "Aigue-marine"];
-const CAPACITES_MULDO = [
-  "Aucune",
-  "Reproductrice",
-  "Caméléone",
-  "Porteuse",
-  "Sage",
-  "Infatigable",
-  "Précoce",
-  "Amoureuse",
-  "Endurante",
-];
-
-function capacitesMuldo(m) {
-  const valeurs = Array.isArray(m?.capacites)
-    ? m.capacites
-    : [m?.capacite1, m?.capacite2].filter(Boolean);
-  return [...new Set(valeurs.filter((c) => c && c !== "Aucune"))].slice(0, 2);
-}
-
-function normaliserMuldo(m) {
-  const sterile = m?.sterile === true || m?.statut === "Stérile" || Number(m?.reproRestantes ?? m?.reproductionsRestantes ?? 1) <= 0;
-  const senile = m?.senile === true || m?.statut === "Sénile";
-  return {
-    ...m,
-    senile,
-    couleur: canonicaliserCouleur(m?.couleur),
-    sexe: sexeMuldo(m) || "",
-    statut: sterile ? "Stérile" : (m?.statut || "Fertile"),
-    sterile,
-    reproDone: sterile ? 1 : 0,
-    reproMax: 1,
-    reproRestantes: sterile ? 0 : 1,
-    reproductionsRestantes: sterile ? 0 : 1,
-    capacites: capacitesMuldo(m),
-    capacite1: capacitesMuldo(m)[0] || "Aucune",
-    capacite2: capacitesMuldo(m)[1] || "Aucune",
-    reproductrice: capacitesMuldo(m).includes("Reproductrice"),
-  };
-}
-const FATIGUE_OBSOLETE = true; // Nouvelle version : plus de jauge de fatigue.
-
-const STOCK_INITIAL_COULEURS = {
-  "Amande": 6,
-  "Doré": 19,
-  "Doré et Amande": 2,
-  "Doré et Indigo": 3,
-  "Doré et Ivoire": 1,
-  "Doré et Orchidée": 3,
-  "Doré et Ébène": 3,
-  "Indigo": 19,
-  "Indigo et Orchidée": 2,
-  "Indigo et Pourpre": 1,
-  "Ivoire": 1,
-  "Orchidée": 23,
-  "Orchidée et Amande": 3,
-  "Orchidée et Pourpre": 8,
-  "Pourpre": 18,
-  "Roux": 11,
-  "Roux et Doré": 1,
-  "Roux et Indigo": 1,
-  "Roux et Orchidée": 1,
-  "Roux et Pourpre": 3,
-  "Roux et Ébène": 1,
-  "Turquoise": 2,
-  "Turquoise et Doré": 1,
-  "Ébène": 24,
-  "Ébène et Amande": 1,
-  "Ébène et Indigo": 1,
-  "Ébène et Orchidée": 2,
-  "Ébène et Pourpre": 3,
-  "Prune": 0,
-  "Émeraude": 0,
-  "Ambre": 0,
-  "Corail": 0,
-  "Azur": 0,
-  "Aigue-marine": 0,
-};
-
-const RECETTES_SPECIALES_MULDO = {
-  "Roux": [
-    ["Doré et Pourpre", "Doré et Indigo"],
-    ["Doré et Pourpre", "Doré et Ébène"],
-    ["Doré et Pourpre", "Doré et Orchidée"],
-    ["Doré et Orchidée", "Doré et Indigo"],
-    ["Doré et Orchidée", "Doré et Ébène"],
-    ["Doré et Ébène", "Doré et Indigo"],
-  ],
-  "Amande": [
-    ["Indigo et Pourpre", "Ébène et Orchidée"],
-    ["Ébène et Pourpre", "Indigo et Orchidée"],
-    ["Orchidée et Pourpre", "Ébène et Indigo"],
-  ],
-  "Ivoire": [
-    ["Roux et Doré", "Ébène et Amande"],
-    ["Roux et Doré", "Indigo et Amande"],
-    ["Roux et Doré", "Orchidée et Amande"],
-    ["Roux et Doré", "Pourpre et Amande"],
-    ["Roux et Amande", "Ébène et Amande"],
-    ["Roux et Amande", "Pourpre et Amande"],
-    ["Roux et Amande", "Indigo et Amande"],
-    ["Roux et Amande", "Orchidée et Amande"],
-  ],
-  "Turquoise": [
-    ["Doré et Amande", "Roux et Ébène"],
-    ["Doré et Amande", "Roux et Orchidée"],
-    ["Doré et Amande", "Roux et Pourpre"],
-    ["Doré et Amande", "Roux et Indigo"],
-    ["Roux et Amande", "Roux et Ébène"],
-    ["Roux et Amande", "Roux et Indigo"],
-    ["Roux et Amande", "Roux et Orchidée"],
-    ["Roux et Amande", "Roux et Pourpre"],
-  ],
-  "Prune": [
-    ["Ébène et Ivoire", "Turquoise et Pourpre"],
-    ["Indigo et Ivoire", "Turquoise et Orchidée"],
-    ["Orchidée et Ivoire", "Turquoise et Indigo"],
-    ["Pourpre et Ivoire", "Turquoise et Ébène"],
-  ],
-  "Émeraude": [
-    ["Turquoise et Ivoire", "Turquoise et Doré"],
-    ["Turquoise et Ivoire", "Turquoise et Roux"],
-    ["Turquoise et Ivoire", "Amande et Ivoire"],
-    ["Turquoise et Ivoire", "Doré et Ivoire"],
-    ["Turquoise et Ivoire", "Turquoise et Amande"],
-    ["Turquoise et Amande", "Roux et Ivoire"],
-    ["Turquoise et Amande", "Doré et Ivoire"],
-    ["Doré et Ivoire", "Turquoise et Roux"],
-  ],
-  "Ambre": [
-    ["Pourpre et Émeraude", "Roux et Émeraude"],
-    ["Orchidée et Émeraude", "Amande et Émeraude"],
-    ["Indigo et Émeraude", "Ivoire et Émeraude"],
-    ["Ébène et Émeraude", "Turquoise et Émeraude"],
-    ["Doré et Émeraude", "Prune et Émeraude"],
-  ],
-  "Corail": [
-    ["Prune et Pourpre", "Prune et Roux"],
-    ["Prune et Orchidée", "Prune et Amande"],
-    ["Prune et Indigo", "Prune et Ivoire"],
-    ["Prune et Ébène", "Prune et Turquoise"],
-    ["Prune et Doré", "Prune et Émeraude"],
-  ],
-  "Azur": [
-    ["Pourpre et Émeraude", "Prune et Roux"],
-    ["Orchidée et Émeraude", "Prune et Amande"],
-    ["Indigo et Émeraude", "Prune et Ivoire"],
-    ["Ébène et Émeraude", "Prune et Turquoise"],
-    ["Doré et Émeraude", "Prune et Ivoire"],
-  ],
-  "Aigue-marine": [
-    ["Prune et Pourpre", "Roux et Émeraude"],
-    ["Prune et Orchidée", "Amande et Émeraude"],
-    ["Prune et Indigo", "Ivoire et Émeraude"],
-    ["Prune et Ébène", "Turquoise et Émeraude"],
-    ["Prune et Doré", "Turquoise et Émeraude"],
-  ],
-};
-
-// Les pages existantes qui affichent les objectifs spéciaux utilisent encore ce nom.
-const RECETTES_COULEURS = RECETTES_SPECIALES_MULDO;
-
-function recettesPourCouleur(couleur) {
-  const speciales = RECETTES_SPECIALES_MULDO[couleur];
-  if (speciales) return speciales;
-  if (!couleur.includes(" et ")) return [];
-  const [a, b] = couleur.split(" et ").map((partie) => partie.trim());
-  return a && b ? [[a, b]] : [];
-}
-
-// Alias conservé pour éviter de casser d'anciens appels éventuels.
-function recettesBicoloreAuto(couleur) {
-  return recettesPourCouleur(couleur);
-}
-
-// ---------- GPS de progression par génération ----------
-const GENERATIONS_MULDO = {
-  1: ["Doré", "Indigo", "Ébène", "Pourpre", "Orchidée"],
-  2: ["Doré et Pourpre", "Indigo et Pourpre", "Ébène et Pourpre", "Orchidée et Pourpre", "Doré et Orchidée", "Indigo et Orchidée", "Ébène et Orchidée", "Doré et Ébène", "Doré et Indigo", "Ébène et Indigo"],
-  3: ["Roux", "Amande"],
-  4: ["Doré et Amande", "Ébène et Amande", "Indigo et Amande", "Orchidée et Amande", "Pourpre et Amande", "Roux et Amande", "Roux et Doré", "Roux et Ébène", "Roux et Indigo", "Roux et Orchidée", "Roux et Pourpre"],
-  5: ["Ivoire", "Turquoise"],
-  6: ["Pourpre et Ivoire", "Orchidée et Ivoire", "Indigo et Ivoire", "Ébène et Ivoire", "Doré et Ivoire", "Roux et Ivoire", "Amande et Ivoire", "Turquoise et Ivoire", "Turquoise et Pourpre", "Turquoise et Orchidée", "Turquoise et Indigo", "Turquoise et Ébène", "Turquoise et Roux", "Turquoise et Amande", "Turquoise et Doré"],
-  7: ["Prune", "Émeraude"],
-  8: ["Prune et Pourpre", "Prune et Orchidée", "Prune et Indigo", "Prune et Ébène", "Prune et Doré", "Prune et Roux", "Prune et Amande", "Prune et Ivoire", "Prune et Turquoise", "Prune et Émeraude", "Pourpre et Émeraude", "Orchidée et Émeraude", "Indigo et Émeraude", "Ébène et Émeraude", "Doré et Émeraude", "Roux et Émeraude", "Amande et Émeraude", "Ivoire et Émeraude", "Turquoise et Émeraude"],
-  9: ["Ambre", "Corail", "Azur", "Aigue-marine"],
-  10: GENERATION_10_MULDO,
-};
-
-
-function couleursGenerationJusqua(generation) {
-  const out = [];
-  for (let g = 1; g <= Number(generation); g += 1) {
-    out.push(...(GENERATIONS_MULDO[g] || []));
-  }
-  return out;
-}
-
-// ---------- Canonicalisation des couleurs (répare l'OCR) ----------
-// L'OCR produit des variantes ("Dore et Amande", "Ebène", "0rchidée"…) qui ne
-// matchent ensuite aucune recette : le muldo devient inutilisable et la couleur
-// compte en double dans l'historique. On replie donc toute chaîne sur le nom
-// officiel, sans tenir compte des accents, de la casse ni de l'ordre des
-// parties d'un nom bicolore.
-function plierCouleur(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/0/g, "o")
-    .replace(/[^a-z]+/g, " ")
-    .trim();
-}
-
-let INDEX_COULEURS_CANONIQUES = null;
-function indexCouleursCanoniques() {
-  if (!INDEX_COULEURS_CANONIQUES) {
-    INDEX_COULEURS_CANONIQUES = new Map();
-    couleursGenerationJusqua(10).forEach((c) => {
-      INDEX_COULEURS_CANONIQUES.set(plierCouleur(c), c);
-    });
-  }
-  return INDEX_COULEURS_CANONIQUES;
-}
-
-function canonicaliserCouleur(brut) {
-  const texte = String(brut || "").trim();
-  if (!texte) return texte;
-  const index = indexCouleursCanoniques();
-  const plie = plierCouleur(texte);
-  const direct = index.get(plie);
-  if (direct) return direct;
-
-  // Nom bicolore dans le mauvais ordre.
-  const parties = plie.split(" et ").map((p) => p.trim()).filter(Boolean);
-  if (parties.length === 2) {
-    const [a, b] = parties;
-    const endroit = index.get(`${a} et ${b}`) || index.get(`${b} et ${a}`);
-    if (endroit) return endroit;
-  }
-
-  // Correction floue : le vocabulaire des couleurs est minuscule, donc une
-  // distance d'édition ≤ 2 identifie sans ambiguïté le nom visé malgré les
-  // erreurs de lecture OCR ("Orchidce", "lndigo", "Ëbéne"…).
-  const flouEntier = correspondanceFloue(plie, [...index.keys()]);
-  if (flouEntier) return index.get(flouEntier);
-
-  // …et partie par partie pour les bicolores très abîmés.
-  if (parties.length === 2) {
-    const monos = clesMonocoloresPliees();
-    const pa = correspondanceFloue(parties[0], monos);
-    const pb = correspondanceFloue(parties[1], monos);
-    if (pa && pb) {
-      const combine = index.get(`${pa} et ${pb}`) || index.get(`${pb} et ${pa}`);
-      if (combine) return combine;
-    }
-  }
-
-  return texte; // couleur vraiment inconnue : conservée telle quelle, signalée par le diagnostic
-}
-
-function distanceLevenshtein(a, b) {
-  if (a === b) return 0;
-  const la = a.length;
-  const lb = b.length;
-  if (Math.abs(la - lb) > 2) return 99; // au-delà de la tolérance max, inutile de calculer
-  const ligne = new Array(lb + 1);
-  for (let j = 0; j <= lb; j += 1) ligne[j] = j;
-  for (let i = 1; i <= la; i += 1) {
-    let diagonale = ligne[0];
-    ligne[0] = i;
-    for (let j = 1; j <= lb; j += 1) {
-      const memo = ligne[j];
-      ligne[j] = Math.min(
-        ligne[j] + 1,
-        ligne[j - 1] + 1,
-        diagonale + (a[i - 1] === b[j - 1] ? 0 : 1)
-      );
-      diagonale = memo;
-    }
-  }
-  return ligne[lb];
-}
-
-function toleranceOCR(mot) {
-  if (mot.length >= 5) return 2;
-  if (mot.length >= 3) return 1;
-  return 0;
-}
-
-// Renvoie la clé candidate la plus proche si (et seulement si) elle est dans
-// la tolérance ET sans ex æquo — en cas de doute, on ne corrige pas.
-function correspondanceFloue(plie, candidats) {
-  let meilleur = null;
-  let meilleureDistance = Infinity;
-  let exAequo = false;
-  candidats.forEach((candidat) => {
-    const d = distanceLevenshtein(plie, candidat);
-    if (d < meilleureDistance) {
-      meilleureDistance = d;
-      meilleur = candidat;
-      exAequo = false;
-    } else if (d === meilleureDistance) {
-      exAequo = true;
-    }
-  });
-  return meilleur !== null && !exAequo && meilleureDistance <= toleranceOCR(plie) ? meilleur : null;
-}
-
-let CLES_MONOCOLORES_PLIEES = null;
-function clesMonocoloresPliees() {
-  if (!CLES_MONOCOLORES_PLIEES) {
-    CLES_MONOCOLORES_PLIEES = [...indexCouleursCanoniques().keys()].filter((k) => !k.includes(" et "));
-  }
-  return CLES_MONOCOLORES_PLIEES;
-}
-
-function couleurEstCanonique(couleur) {
-  return indexCouleursCanoniques().has(plierCouleur(couleur));
-}
-
-function stockCouleurDisponible(stock, couleur) {
-  return Number(stock[couleur] || 0) > 0;
-}
-
-function meilleureRecettePourCouleur(couleur, stock, visiting = new Set()) {
-  if (stockCouleurDisponible(stock, couleur)) return { cout: 0, recette: null };
-  if (visiting.has(couleur)) return { cout: 999, recette: null };
-  const recettes = recettesPourCouleur(couleur);
-  if (!recettes.length) return { cout: 50, recette: null };
-  visiting.add(couleur);
-  const options = recettes.map((recette) => {
-    const cout = recette.reduce((sum, parent) => sum + meilleureRecettePourCouleur(parent, stock, visiting).cout, 1);
-    return { cout, recette };
-  }).sort((a, b) => a.cout - b.cout);
-  visiting.delete(couleur);
-  return options[0];
-}
-
-
-function construireEtapesPourCouleur(couleur, stock, etapes = [], seen = new Set()) {
-  if (stockCouleurDisponible(stock, couleur) || seen.has(couleur)) return etapes;
-  const best = meilleureRecettePourCouleur(couleur, stock);
-  if (!best.recette) {
-    etapes.push({ couleur, recette: [], bloquee: true });
-    seen.add(couleur);
-    return etapes;
-  }
-  best.recette.forEach((parent) => construireEtapesPourCouleur(parent, stock, etapes, seen));
-  etapes.push({ couleur, recette: best.recette, bloquee: false });
-  seen.add(couleur);
-  return etapes;
-}
-
-
-function generationDeCouleur(couleur) {
-  for (const [generation, couleurs] of Object.entries(GENERATIONS_MULDO)) {
-    if (couleurs.includes(couleur)) return Number(generation);
-  }
-  return couleur.includes(" et ") ? 4 : 1;
-}
-
-// Doit rester après generationDeCouleur/GENERATIONS_MULDO : le calcul de la
-// génération a besoin des deux au moment de l'évaluation de ce module.
-const CHEPTEL_INITIAL_AUTO = (() => {
-  const counts = STOCK_INITIAL_COULEURS;
-  let index = 1;
-  const items = [];
-
-  Object.entries(counts).forEach(([couleur, count]) => {
-    for (let i = 1; i <= count; i += 1) {
-      items.push({
-        id: `auto-${index}`,
-        nom: `${couleur} #${i}`,
-        sexe: i % 2 === 0 ? "Mâle" : "Femelle",
-        couleur,
-        generation: generationDeCouleur(couleur),
-        statut: "Fertile",
-        sterile: false,
-        capacites: [],
-        capacite1: "Aucune",
-        capacite2: "Aucune",
-        reproductrice: false,
-        reproRestantes: 1,
-        reproductionsRestantes: 1,
-        amour: 100,
-        endurance: 100,
-        maturite: 100,
-        serenite: 50,
-        note: "Créé automatiquement depuis le screen du cheptel. Sexe à corriger si besoin.",
-      });
-      index += 1;
-    }
-  });
-
-  return items;
-})();
-
-function sexeMuldo(m) {
-  const sexe = String(m?.sexe || "").toLowerCase();
-  if (sexe.includes("mâle") || sexe.includes("male") || sexe === "m") return "M";
-  if (sexe.includes("femelle") || sexe === "f") return "F";
-  return "";
-}
-
-function reproRestantesMuldo(m) {
-  const rest = m?.reproRestantes ?? m?.reproductionsRestantes;
-  if (rest !== undefined && rest !== null) return Number(rest) || 0;
-  return Math.max(0, Number(m?.reproMax ?? 4) - Number(m?.reproDone ?? 0));
-}
-
-function muldoReproductible(m) {
-  if (!m) return false;
-  // Tolérant à la casse et aux variantes : un muldo affiché "stérile" ne doit
-  // JAMAIS passer dans le plan du GPS, quelle que soit la forme de la donnée.
-  const sterileBrut = String(m.sterile ?? "").toLowerCase();
-  if (m.sterile === true || sterileBrut === "oui" || sterileBrut === "true" || sterileBrut.includes("st")) return false;
-  const statut = String(m.statut ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (statut.startsWith("steril") || statut.startsWith("senile")) return false;
-  return reproRestantesMuldo(m) > 0;
-}
-
-function couleurPresenteCheptel(cheptel, couleur) {
-  return cheptel.some((m) => m.couleur === couleur);
-}
-
-
-function chercherCouplePourRecette(recette, cheptel, byId) {
-  const [a, b] = recette;
-  const candidatsA = cheptel.filter((m) => m.couleur === a && muldoReproductible(m));
-  const candidatsB = cheptel.filter((m) => m.couleur === b && muldoReproductible(m));
-  const couples = [];
-
-  candidatsA.forEach((ma) => {
-    candidatsB.forEach((mb) => {
-      if (ma.id === mb.id) return;
-      if (sexeMuldo(ma) === sexeMuldo(mb)) return;
-      const coll = collisionScore(ma, mb, byId);
-      if (coll >= 99) return;
-
-      const male = sexeMuldo(ma) === "M" ? ma : mb;
-      const femelle = sexeMuldo(ma) === "F" ? ma : mb;
-      const pretBonus = (isBreedReady(ma) ? 20 : 0) + (isBreedReady(mb) ? 20 : 0);
-      const reproBonus = reproRestantesMuldo(ma) + reproRestantesMuldo(mb);
-      couples.push({
-        male,
-        femelle,
-        parents: [ma, mb],
-        collision: coll,
-        score: pretBonus + reproBonus * 5 - coll * 30,
-      });
-    });
-  });
-
-  return couples.sort((x, y) => y.score - x.score)[0] || null;
-}
-
-function construirePlanPourCouleur(couleur, cheptel, byId, historiqueCouleurs = {}, depth = 0, seen = new Set()) {
-  const dejaPresente = couleurPresenteCheptel(cheptel, couleur);
-  const dejaDecouverte = Boolean(historiqueCouleurs[couleur]) || dejaPresente;
-
-  if (depth > 8 || seen.has(couleur)) {
-    return { couleur, dejaPresente, dejaDecouverte, bloquee: true, etapes: [] };
-  }
-
-  const recettes = recettesPourCouleur(couleur);
-  const options = recettes.map((recette) => {
-    const couple = chercherCouplePourRecette(recette, cheptel, byId);
-    const nouvelleCouleur = !dejaDecouverte;
-
-    if (couple) {
-      return {
-        couleur,
-        recette,
-        couple,
-        type: dejaPresente ? "renfort" : "creation",
-        nouvelleCouleur,
-        score: 10000 + (nouvelleCouleur ? 3000 : 0) + generationDeCouleur(couleur) * 100 + couple.score,
-        etapes: [{ couleur, recette, couple, nouvelleCouleur, faisableMaintenant: true }],
-        bloquee: false,
-      };
-    }
-
-    const nextSeen = new Set(seen);
-    nextSeen.add(couleur);
-
-    const sousPlans = recette.map((parent) =>
-      construirePlanPourCouleur(parent, cheptel, byId, historiqueCouleurs, depth + 1, nextSeen)
-    );
-
-    const etapes = sousPlans.flatMap((p) => p.etapes || []);
-    const bloquee = etapes.length === 0;
-    const nouvelles = etapes.filter((e) => e.nouvelleCouleur).length;
-
-    return {
-      couleur,
-      recette,
-      couple: null,
-      type: "preparation",
-      nouvelleCouleur,
-      sousPlans,
-      etapes,
-      bloquee,
-      score: (bloquee ? -10000 : 5000) + nouvelles * 2000 - etapes.length * 100 + generationDeCouleur(couleur) * 50,
-    };
-  });
-
-  return options.sort((a, b) => b.score - a.score)[0] || {
-    couleur,
-    recette: [],
-    couple: null,
-    type: "bloque",
-    nouvelleCouleur: !dejaDecouverte,
-    etapes: [],
-    bloquee: true,
-    score: -9999,
-  };
-}
-
-function analyserGenerationCible(generation, cheptel, byId, historiqueCouleurs = {}) {
-  const objectif = couleursGenerationJusqua(generation);
-  const possedees = objectif.filter((c) => couleurPresenteCheptel(cheptel, c));
-  const decouvertes = objectif.filter((c) => historiqueCouleurs[c] || couleurPresenteCheptel(cheptel, c));
-  const manquantes = objectif.filter((c) => !couleurPresenteCheptel(cheptel, c));
-  const jamaisDecouvertes = objectif.filter((c) => !(historiqueCouleurs[c] || couleurPresenteCheptel(cheptel, c)));
-
-  const plans = [];
-
-  for (let g = Number(generation); g >= 2; g -= 1) {
-    const couleurs = (GENERATIONS_MULDO[g] || []).filter((couleur) => {
-      const pasDecouverte = !(historiqueCouleurs[couleur] || couleurPresenteCheptel(cheptel, couleur));
-      const pasPresente = !couleurPresenteCheptel(cheptel, couleur);
-      return pasDecouverte || pasPresente;
-    });
-
-    couleurs.forEach((couleur) => {
-      const plan = construirePlanPourCouleur(couleur, cheptel, byId, historiqueCouleurs);
-      if (!plan.bloquee && plan.etapes.length > 0) {
-        const action = plan.etapes[0];
-        plans.push({
-          ...plan,
-          generationVisee: g,
-          actionImmediate: {
-            ...action,
-            generation: generationDeCouleur(action.couleur),
-            bloquee: false,
-          },
-        });
-      }
-    });
-
-    if (plans.length > 0) break;
-  }
-
-  const planChoisi = plans.sort((a, b) => b.score - a.score)[0] || null;
-  const actionImmediate = planChoisi?.actionImmediate || null;
-  const etapes = planChoisi?.etapes || [];
-
-  return {
-    generation,
-    objectif,
-    possedees,
-    decouvertes,
-    manquantes,
-    jamaisDecouvertes,
-    plans,
-    planChoisi,
-    actionImmediate,
-    etapes,
-  };
-}
-
-
-
-// ---------- GPS global de session ----------
-function cleCoupleCouleurs(a, b) {
-  return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| ");
-}
-
-function toutesLesRecettesProgression() {
-  const map = {};
-  COULEURS_MULDO.forEach((enfant) => {
-    recettesPourCouleur(enfant).forEach(([a, b]) => {
-      const key = cleCoupleCouleurs(a, b);
-      if (!map[key]) map[key] = [];
-      if (!map[key].includes(enfant)) map[key].push(enfant);
-    });
-  });
-  return map;
-}
-
-const RESULTATS_PAR_COUPLE = toutesLesRecettesProgression();
-
-// Couleurs qu'une naissance peut réellement donner : les résultats de recette
-// du couple, plus les couleurs des deux parents (le croisement peut "retomber"
-// sur l'une d'elles au lieu du résultat espéré).
-function couleursNaissancePossibles(couleurMale, couleurFemelle) {
-  const key = cleCoupleCouleurs(couleurMale, couleurFemelle);
-  const possibles = new Set(RESULTATS_PAR_COUPLE[key] || []);
-  possibles.add(couleurMale);
-  possibles.add(couleurFemelle);
-  return [...possibles];
-}
-
-// La généalogie compte : la 3.5 peut faire naître une couleur portée par un
-// ANCÊTRE des parents (ex. un bébé "Doré et Indigo" d'un couple Doré et
-// Orchidée × Doré et Ébène dont un grand-parent était Doré et Indigo). On ne
-// connaît la généalogie que des muldos nés dans l'appli (parentIds) — pour les
-// autres, le sélecteur "Autre couleur…" du panneau couvre tous les cas.
-// Nom court unique pour identifier un bébé en jeu ("DE-4F7" pour un bébé de
-// parents Doré et Ébène) : initiales de la couleur du bébé + code aléatoire.
-// Copié automatiquement à la naissance → un simple Ctrl+V dans le renommage
-// en jeu suffit à relier le muldo physique à sa fiche (et sa généalogie).
-function genererNomCourt(couleur) {
-  // Charte des noms de monture en jeu : lettres latines NON accentuées
-  // (chiffres, espaces et tiret autorisés). On désaccentue donc les
-  // initiales (É→E). Le code mélange lettres et chiffres en excluant les
-  // confusables (I/L/O vs 1/0).
-  const initiales = String(couleur || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .split(/[\s-]+/)
-    .filter((mot) => mot && !/^et$/i.test(mot))
-    .map((mot) => mot[0].toUpperCase())
-    .join("");
-  const lettres = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 3; i += 1) {
-    code += lettres[Math.floor(Math.random() * lettres.length)];
-  }
-  return `${initiales}-${code}`;
-}
-
-function couleursAncetres(muldo, cheptel, profondeur = 3) {
-  const parId = new Map((cheptel || []).map((m) => [m.id, m]));
-  const couleurs = new Set();
-  let front = [muldo];
-  for (let p = 0; p < profondeur; p += 1) {
-    const suivant = [];
-    front.forEach((m) => {
-      (m?.parentIds || []).forEach((id) => {
-        const parent = parId.get(id);
-        if (parent && parent.couleur) {
-          couleurs.add(parent.couleur);
-          suivant.push(parent);
-        }
-      });
-    });
-    front = suivant;
-    if (!front.length) break;
-  }
-  return couleurs;
-}
-
-
-function distancesVersObjectif(objectif) {
-  const distances = { [objectif]: 0 };
-  const queue = [objectif];
-
-  while (queue.length) {
-    const enfant = queue.shift();
-    const d = distances[enfant];
-    const recettes = recettesPourCouleur(enfant);
-    (recettes || []).forEach(([a, b]) => {
-      [a, b].forEach((parent) => {
-        if (distances[parent] === undefined || distances[parent] > d + 1) {
-          distances[parent] = d + 1;
-          queue.push(parent);
-        }
-      });
-    });
-  }
-  return distances;
-}
-
-
-function construireCheminVersObjectif(couleurDepart, objectif, distances) {
-  if (!couleurDepart || !objectif) return [];
-
-  const chemin = [couleurDepart];
-  let courant = couleurDepart;
-
-  const gardeFou = new Set();
-  gardeFou.add(courant);
-
-  while (courant !== objectif) {
-    let meilleurParent = null;
-    let meilleureDistance = Infinity;
-
-    const recettes = recettesPourCouleur(courant);
-
-    recettes.forEach(([a, b]) => {
-      [a, b].forEach((parent) => {
-        const d = distances[parent];
-
-        if (
-          d !== undefined &&
-          d < meilleureDistance &&
-          !gardeFou.has(parent)
-        ) {
-          meilleureDistance = d;
-          meilleurParent = parent;
-        }
-      });
-    });
-
-    if (!meilleurParent) break;
-
-    chemin.push(meilleurParent);
-    gardeFou.add(meilleurParent);
-    courant = meilleurParent;
-  }
-
-  return chemin;
-}
-
-// Version enrichie : conserve, pour chaque couleur découverte pendant le parcours
-// depuis l'objectif, le couple exact (les deux parents) qui la produit. Ça permet
-// de reconstruire un vrai arbre généalogique (couples + naissances), pas juste
-// une chaîne d'une seule couleur par étape.
-function distancesEtParentsVersObjectif(objectif) {
-  const distances = { [objectif]: 0 };
-  const parentDe = {};
-  const queue = [objectif];
-
-  while (queue.length) {
-    const enfant = queue.shift();
-    const d = distances[enfant];
-    const recettes = recettesPourCouleur(enfant);
-    (recettes || []).forEach(([a, b]) => {
-      [a, b].forEach((parent) => {
-        if (distances[parent] === undefined) {
-          distances[parent] = d + 1;
-          parentDe[parent] = { via: enfant, pair: [a, b] };
-          queue.push(parent);
-        }
-      });
-    });
-  }
-
-  return { distances, parentDe };
-}
-
-// Reconstruit, en partant du résultat déjà obtenu, la suite d'accouplements
-// (couple complet -> naissance) jusqu'à l'objectif. Chaque étape contient les
-// deux parents et la couleur produite.
-function construireArbreCouples(resultat, objectif, parentDe) {
-  if (!resultat || !objectif || resultat === objectif) return [];
-  const etapes = [];
-  let courant = resultat;
-  const vus = new Set([courant]);
-
-  while (courant !== objectif) {
-    const info = parentDe[courant];
-    if (!info) break;
-    etapes.push({ parents: info.pair, produit: info.via });
-    courant = info.via;
-    if (vus.has(courant)) break;
-    vus.add(courant);
-  }
-
-  return etapes;
-}
-
-function scoreCoupleObjectif(male, femelle, objectif, distances, purification = false) {
-  if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
-  if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
-
-  const key = cleCoupleCouleurs(male.couleur, femelle.couleur);
-  // Mode purification : un couple de même couleur reproduit sa propre couleur.
-  // Sans ce cas particulier, RESULTATS_PAR_COUPLE n'a aucune entrée (X, X) et
-  // le couple était rejeté comme "sans recette" même avec purification cochée.
-  const resultats = male.couleur === femelle.couleur && purification
-    ? [male.couleur]
-    : (RESULTATS_PAR_COUPLE[key] || []);
-  let score = 25; // score positif : on utilise le cheptel tant qu'un couple différent est possible
-  let raison = "Accouplement de soutien";
-  let meilleurResultat = null;
-  let meilleureDistance = Infinity;
-
-  resultats.forEach((resultat) => {
-    const d = distances[resultat];
-    if (d === undefined) return;
-    const valeur = d === 0 ? 100000 : Math.max(1000, 25000 - d * 4000);
-    if (valeur > score) {
-      score = valeur;
-      meilleurResultat = resultat;
-      meilleureDistance = d;
-      raison = d === 0
-        ? `Peut produire directement ${objectif}`
-        : `Produit ${resultat}, à ${d} étape(s) de ${objectif}`;
-    }
-  });
-
-  const dMale = distances[male.couleur];
-  const dFemelle = distances[femelle.couleur];
-
-  // Rejet uniquement si ce couple n'a strictement aucune recette connue
-  // (impossible à reproduire dans le jeu, quel que soit l'objectif).
-  if (!resultats.length) {
-    return {
-      score: -1000000,
-      raison: "Couple sans recette officielle",
-      resultat: null,
-      distance: Infinity,
-    };
-  }
-
-  // Le couple est valide mais aucun de ses résultats possibles n'est sur le
-  // chemin connu vers l'objectif : on le garde quand même comme accouplement
-  // de soutien plutôt que de laisser les muldos sans partenaire. Il pourra
-  // redevenir utile plus tard, une fois l'objectif changé ou approfondi.
-  if (meilleurResultat === null) {
-    meilleurResultat = resultats[0];
-    raison = resultats.length > 1
-      ? `Accouplement de soutien · produit ${resultats.join(" ou ")}`
-      : `Accouplement de soutien · produit ${resultats[0]}`;
-  }
-
-  // Favorise légèrement les croisements qui combinent deux branches utiles distinctes.
-  if (dMale !== undefined && dFemelle !== undefined) score += 300;
-  score += Math.max(0, 20 - collisionScore(male, femelle, {}));
-
-  const chemin = construireCheminVersObjectif(
-    meilleurResultat,
-    objectif,
-    distances
-  );
-
-  return {
-    score,
-    raison,
-    resultat: meilleurResultat,
-    distance: meilleureDistance,
-    chemin,
-  };
-}
-
-// Affectation hongroise : meilleur score global, pas choix glouton couple par couple.
-function affectationMaximale(matrice) {
-  const rows = matrice.length;
-  const cols = rows ? matrice[0].length : 0;
-  if (!rows || !cols) return [];
-  const n = Math.max(rows, cols);
-  const maxVal = Math.max(0, ...matrice.flat().filter(Number.isFinite));
-  const cost = Array.from({ length: n }, (_, i) =>
-    Array.from({ length: n }, (_, j) => {
-      const value = i < rows && j < cols ? matrice[i][j] : 0;
-      return maxVal - Math.max(-1000000, value);
-    })
-  );
-
-  const u = Array(n + 1).fill(0);
-  const v = Array(n + 1).fill(0);
-  const p = Array(n + 1).fill(0);
-  const way = Array(n + 1).fill(0);
-
-  for (let i = 1; i <= n; i += 1) {
-    p[0] = i;
-    let j0 = 0;
-    const minv = Array(n + 1).fill(Infinity);
-    const used = Array(n + 1).fill(false);
-    do {
-      used[j0] = true;
-      const i0 = p[j0];
-      let delta = Infinity;
-      let j1 = 0;
-      for (let j = 1; j <= n; j += 1) {
-        if (used[j]) continue;
-        const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
-        if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
-        if (minv[j] < delta) { delta = minv[j]; j1 = j; }
-      }
-      for (let j = 0; j <= n; j += 1) {
-        if (used[j]) { u[p[j]] += delta; v[j] -= delta; }
-        else minv[j] -= delta;
-      }
-      j0 = j1;
-    } while (p[j0] !== 0);
-    do {
-      const j1 = way[j0];
-      p[j0] = p[j1];
-      j0 = j1;
-    } while (j0 !== 0);
-  }
-
-  const out = [];
-  for (let j = 1; j <= n; j += 1) {
-    const i = p[j] - 1;
-    const col = j - 1;
-    if (i >= 0 && i < rows && col < cols) out.push([i, col]);
-  }
-  return out;
-}
-
-function optimiserSessionAccouplements(cheptel, objectif, purification = false) {
-  const fertiles = cheptel.filter(muldoReproductible);
-  const { distances, parentDe } = distancesEtParentsVersObjectif(objectif);
-
-  // Passes successives : l'affectation hongroise travaille sur une matrice
-  // carrée, elle peut donc être FORCÉE de marier des couples invalides
-  // (même couleur, sans recette) qui étaient ensuite filtrés, laissant leurs
-  // deux membres sans partenaire alors qu'un autre appariement valide existait.
-  // On réaffecte donc les muldos libérés tant que de nouveaux couples valides
-  // apparaissent.
-  let malesRestants = fertiles.filter((m) => sexeMuldo(m) === "M");
-  let femellesRestantes = fertiles.filter((m) => sexeMuldo(m) === "F");
-  const couples = [];
-
-  while (malesRestants.length && femellesRestantes.length) {
-    const details = malesRestants.map((male) => femellesRestantes.map((femelle) =>
-      scoreCoupleObjectif(male, femelle, objectif, distances, purification)
-    ));
-    const matrice = details.map((row) => row.map((x) => x.score));
-    const affectations = affectationMaximale(matrice);
-
-    const valides = affectations
-      .map(([i, j]) => ({ male: malesRestants[i], femelle: femellesRestantes[j], ...details[i][j] }))
-      .filter((c) => c.score > 0);
-
-    if (!valides.length) break; // plus aucun couple valide possible
-
-    couples.push(...valides);
-    const pris = new Set(valides.flatMap((c) => [c.male.id, c.femelle.id]));
-    malesRestants = malesRestants.filter((m) => !pris.has(m.id));
-    femellesRestantes = femellesRestantes.filter((f) => !pris.has(f.id));
-  }
-
-  couples.sort((a, b) => b.score - a.score);
-
-  const utilises = new Set(couples.flatMap((c) => [c.male.id, c.femelle.id]));
-  const restants = fertiles.filter((m) => !utilises.has(m.id));
-
-  // Diagnostic : pourquoi reste-t-il des muldos sans partenaire ?
-  let raisonRestants = "";
-  if (restants.length) {
-    const sansSexe = restants.filter((m) => !sexeMuldo(m)).length;
-    const couleursInconnues = restants.filter((m) => !couleurEstCanonique(m.couleur)).length;
-    const morceaux = [];
-    if (couleursInconnues) {
-      morceaux.push(`${couleursInconnues} avec une couleur non reconnue (erreur OCR probable) — corrige-la sur leur fiche`);
-    }
-    if (sansSexe) {
-      morceaux.push(`${sansSexe} au sexe inconnu — renseigne ♂/♀ sur leur fiche pour les rendre appariables`);
-    }
-    if (malesRestants.length && femellesRestantes.length) {
-      morceaux.push(`${malesRestants.length} ♂ et ${femellesRestantes.length} ♀ sans croisement valide entre eux (couleurs identiques ou sans recette officielle)`);
-      if (!purification) {
-        const couleursPurifiables = new Set(
-          malesRestants
-            .map((m) => m.couleur)
-            .filter((c) => femellesRestantes.some((f) => f.couleur === c))
-        );
-        if (couleursPurifiables.size) {
-          morceaux.push(`astuce : coche « Mode purification » pour apparier les couples de même couleur (${couleursPurifiables.size} couleur(s) concernée(s))`);
-        }
-      }
-    } else if (malesRestants.length) {
-      morceaux.push(`surplus de ${malesRestants.length} ♂ (plus de ♀ fertiles disponibles)`);
-    } else if (femellesRestantes.length) {
-      morceaux.push(`surplus de ${femellesRestantes.length} ♀ (plus de ♂ fertiles disponibles)`);
-    }
-    // Astuce : les générations 1 esseulées peuvent trouver un partenaire par
-    // capture directe (les 5 bases sont sauvages au Bassin des Muldos).
-    if (restants.some((m) => generationDeCouleur(m.couleur) === 1)) {
-      morceaux.push("astuce : les partenaires de génération 1 se capturent au Bassin des Muldos (Baie de Sufokia)");
-    }
-    raisonRestants = morceaux.join(" · ");
-  }
-  const groupes = [];
-  couples.forEach((c) => {
-    const key = `${c.male.couleur}|||${c.femelle.couleur}|||${c.resultat || ""}|||${c.raison}`;
-    const existant = groupes.find((g) => g.key === key);
-    if (existant) {
-      existant.quantite += 1;
-      existant.couples.push(c);
-    } else groupes.push({
-      ...c,
-      key,
-      quantite: 1,
-      couples: [c],
-      arbreCouples: construireArbreCouples(c.resultat, objectif, parentDe),
-    });
-  });
-
-  return {
-    objectif,
-    couples,
-    groupes,
-    restants,
-    raisonRestants,
-    totalFertiles: fertiles.length,
-    utilises: utilises.size,
-    scoreTotal: couples.reduce((sum, c) => sum + c.score, 0),
-    distances,
-  };
-}
-
-
-function progressionParGeneration(cheptel, historiqueCouleurs = {}) {
-  const presentes = new Set(cheptel.map((m) => m.couleur));
-  const estDecouverte = (couleur) => Boolean(historiqueCouleurs[couleur]) || presentes.has(couleur);
-
-  return Object.entries(GENERATIONS_MULDO).map(([generation, couleurs]) => {
-    const decouvertes = couleurs.filter(estDecouverte);
-    return {
-      generation: Number(generation),
-      total: couleurs.length,
-      decouvertes: decouvertes.length,
-      manquantes: couleurs.filter((c) => !estDecouverte(c)),
-      pct: couleurs.length ? Math.round(decouvertes.length / couleurs.length * 100) : 0,
-    };
-  });
-}
-
-// Plus haute génération entièrement validée dans les Succès — sert de base
-// au déblocage des ailes "muldo" (barème palier × 2, voir tierAilesMuldo).
-function plusHauteGenerationValidee(cheptel, historiqueCouleurs) {
-  const completes = progressionParGeneration(cheptel, historiqueCouleurs)
-    .filter((p) => p.pct === 100)
-    .map((p) => p.generation);
-  return completes.length ? Math.max(...completes) : 0;
-}
-
-function tierAilesMuldo(niveauAilesDonation, generationValidee) {
-  const tierParSucces = Math.floor((Number(generationValidee) || 0) / 2);
-  return Math.max(0, Math.min(5, Math.min(Number(niveauAilesDonation) || 0, tierParSucces)));
-}
-
-function choisirObjectifGpsAutomatique({
-  mode,
-  objectifCouleur,
-  generationCible,
-  generationMin,
-  generationMax,
-  cheptel,
-  historiqueCouleurs,
-}) {
-  if (mode === "couleur") {
-    return {
-      objectif: objectifCouleur,
-      raison: "Couleur choisie manuellement.",
-      candidats: [objectifCouleur],
-    };
-  }
-
-  const presentes = new Set(cheptel.map((m) => m.couleur));
-  const estDecouverte = (couleur) => Boolean(historiqueCouleurs[couleur]) || presentes.has(couleur);
-  const stock = cheptel.reduce((acc, m) => {
-    if (muldoReproductible(m)) acc[m.couleur] = (acc[m.couleur] || 0) + 1;
-    return acc;
-  }, {});
-
-  // Mode "succès" : on complète les générations dans l'ordre. On saute celles
-  // déjà entièrement découvertes et on vise la première génération incomplète.
-  let generationSucces = null;
-  if (mode === "succes") {
-    for (let g = 1; g <= 10; g += 1) {
-      const couleurs = GENERATIONS_MULDO[g] || [];
-      if (couleurs.length && couleurs.some((c) => !estDecouverte(c))) { generationSucces = g; break; }
-    }
-    if (generationSucces === null) {
-      return { objectif: objectifCouleur, raison: "Bravo — toutes les générations 1 à 10 sont complétées ! 🏆", candidats: [], complete: true };
-    }
-  }
-
-  let candidats = [];
-  if (mode === "generation") {
-    candidats = [...(GENERATIONS_MULDO[Number(generationCible)] || [])];
-  } else if (mode === "succes") {
-    candidats = [...(GENERATIONS_MULDO[generationSucces] || [])];
-  } else {
-    const min = Math.min(Number(generationMin), Number(generationMax));
-    const max = Math.max(Number(generationMin), Number(generationMax));
-    for (let g = min; g <= max; g += 1) candidats.push(...(GENERATIONS_MULDO[g] || []));
-  }
-
-  const manquantes = candidats.filter((c) => !estDecouverte(c));
-  if (!manquantes.length) {
-    return {
-      objectif: candidats[0] || objectifCouleur,
-      raison: mode === "generation"
-        ? `Génération ${generationCible} déjà complétée.`
-        : `Toutes les générations ${generationMin} à ${generationMax} sont complétées.`,
-      candidats,
-      complete: true,
-    };
-  }
-
-  const classees = manquantes
-    .map((couleur) => {
-      const estimation = meilleureRecettePourCouleur(couleur, stock);
-      return {
-        couleur,
-        cout: Number.isFinite(estimation?.cout) ? estimation.cout : 999,
-        generation: generationDeCouleur(couleur),
-      };
-    })
-    .sort((a, b) => {
-      if (mode === "collection" && a.generation !== b.generation) return a.generation - b.generation;
-      if (a.cout !== b.cout) return a.cout - b.cout;
-      return b.generation - a.generation;
-    });
-
-  const choix = classees[0];
-  return {
-    objectif: choix.couleur,
-    raison: mode === "succes"
-      ? `Succès : génération ${generationSucces} à compléter — couleur manquante la plus accessible.`
-      : mode === "generation"
-        ? `Couleur manquante de génération ${generationCible} estimée la plus accessible.`
-        : `Première couleur manquante accessible dans la progression des générations ${generationMin} à ${generationMax}.`,
-    candidats: manquantes,
-    complete: false,
-    cout: choix.cout,
-    generationSucces,
-  };
-}
 
 const STATUTS = ["Fertile", "Féconde", "Stérile", "Sénile"];
 const JAUGES = [
@@ -1339,134 +54,14 @@ const STORAGE_SYNC_KEY = "muldo-synchronisation-filtres-v1";
 const STORAGE_GPS_SESSION = "gps-session-v1";
 const STORAGE_NAISSANCES = "muldo-naissances-attente-v1";
 const STORAGE_PRIX_KAMAS = "muldo-prix-kamas-v1";
+const STORAGE_PRIX_KAMAS_DRAGODINDE = "dragodinde-prix-kamas-v1";
+const STORAGE_PRIX_KAMAS_VOLKORNE = "volkorne-prix-kamas-v1";
 const STORAGE_JOURNAL = "muldo-journal-naissances-v1";
 const STORAGE_INSTANTANES = "muldo-instantanes-v1";
 const STORAGE_PROFIL = "muldo-profil-v1";
+const STORAGE_CORBEILLE = "muldo-corbeille-v1";
+const CORBEILLE_DUREE_JOURS = 30;
 
-// ---------- utilitaires génétiques ----------
-function ancestorSet(muldo, byId, depth = 8, seen = new Set()) {
-  if (!muldo || depth <= 0) return seen;
-  (muldo.parentIds || []).forEach((pid) => {
-    if (pid && byId[pid] && !seen.has(pid)) {
-      seen.add(pid);
-      ancestorSet(byId[pid], byId, depth - 1, seen);
-    }
-  });
-  return seen;
-}
-
-function collisionScore(a, b, byId) {
-  const ancA = ancestorSet(a, byId);
-  const ancB = ancestorSet(b, byId);
-  if (a.parentIds?.includes(b.id) || b.parentIds?.includes(a.id)) return 99; // parent/enfant direct
-  let shared = 0;
-  ancA.forEach((id) => { if (ancB.has(id)) shared++; });
-  return shared;
-}
-
-function collisionLabel(score) {
-  if (score >= 99) return { label: "Lien direct — à proscrire", color: COLORS.danger };
-  if (score === 0) return { label: "Aucune collision détectée", color: COLORS.glow };
-  if (score <= 2) return { label: `${score} collision(s) — risque modéré`, color: COLORS.gold };
-  return { label: `${score} collisions — risque élevé`, color: COLORS.danger };
-}
-
-function readinessScore(m) {
-  const { amour = 0, endurance = 0, maturite = 0, serenite = 0 } = m;
-  return (amour + endurance + maturite + serenite) / 4;
-}
-
-function getNextAction(m) {
-  const fatigue = Number(m.fatigue ?? 0);
-  const amour = Number(m.amour ?? 0);
-  const endurance = Number(m.endurance ?? 0);
-  const maturite = Number(m.maturite ?? 0);
-  const serenite = Number(m.serenite ?? 0);
-  const reproDone = Number(m.reproDone ?? 0);
-  const reproMax = Number(m.reproMax ?? 4);
-
-  if (m.statut === "Stérile" || m.statut === "Sénile" || reproDone >= reproMax) {
-    return { key: "termine", label: "Terminé / à vendre", objet: "Aucun objet", detail: "Ce muldo n'a plus de reproduction utile.", color: COLORS.muted };
-  }
-
-  if (fatigue >= 240) {
-    return { key: "repos", label: "Repos", objet: "Étable / inventaire", detail: "Fatigue au maximum : laisse-le redescendre avant de continuer.", color: COLORS.gold };
-  }
-
-  if (maturite < 100) {
-    return { key: "maturite", label: "Monter maturité", objet: "Abreuvoirs", detail: "Priorité : maturité. Garde une sérénité proche de 0 si possible.", color: COLORS.glow };
-  }
-
-  if (amour < 100) {
-    return {
-      key: "amour",
-      label: "Monter amour",
-      objet: "Dragofesses",
-      detail: serenite < 0 ? "Passe d'abord la sérénité en positif, puis monte l'amour." : "Sérénité positive : c'est le bon moment pour monter l'amour.",
-      color: serenite < 0 ? COLORS.gold : COLORS.coral,
-    };
-  }
-
-  if (endurance < 100) {
-    return {
-      key: "endurance",
-      label: "Monter endurance",
-      objet: "Foudroyeurs",
-      detail: serenite > 0 ? "Passe d'abord la sérénité en négatif, puis monte l'endurance." : "Sérénité négative : c'est le bon moment pour monter l'endurance.",
-      color: serenite > 0 ? COLORS.gold : COLORS.coral,
-    };
-  }
-
-  return { key: "pret", label: "Prêt à accoupler", objet: "Enclos / accouplement", detail: "Toutes les statistiques utiles sont prêtes.", color: COLORS.glow };
-}
-
-function isBreedReady(m) {
-  return getNextAction(m).key === "pret";
-}
-
-function generationGoalScore(f, m, byId) {
-  const coll = collisionScore(f, m, byId);
-  if (coll >= 99) return -9999;
-
-  const genGap = Math.abs(Number(f.generation ?? 1) - Number(m.generation ?? 1));
-  const nextGen = Math.max(Number(f.generation ?? 1), Number(m.generation ?? 1)) + 1;
-  const remaining = (Number(f.reproMax ?? 4) - Number(f.reproDone ?? 0)) + (Number(m.reproMax ?? 4) - Number(m.reproDone ?? 0));
-  const readyBonus = (isBreedReady(f) ? 35 : 0) + (isBreedReady(m) ? 35 : 0);
-  const sameGenBonus = genGap === 0 ? 60 : genGap === 1 ? 20 : -30;
-  const colorBonus = f.couleur !== m.couleur ? 10 : 0;
-
-  return sameGenBonus + readyBonus + remaining * 5 + nextGen * 4 + colorBonus - coll * 25;
-}
-
-
-
-function geneticPartners(target, cheptel, byId) {
-  if (!target) return [];
-
-  return cheptel
-    .filter(
-      (m) =>
-        m.id !== target.id &&
-        m.sexe !== target.sexe &&
-        m.statut !== "Stérile" &&
-        m.statut !== "Sénile"
-    )
-    .map((partner) => {
-      const coll = collisionScore(target, partner, byId);
-
-      let score = 100;
-
-      if (coll > 0) score -= coll * 20;
-      if (target.couleur !== partner.couleur) score += 15;
-      if (target.generation === partner.generation) score += 25;
-      if (Math.abs(target.generation - partner.generation) === 1) score += 10;
-
-      return { partner, score, coll };
-    })
-    .filter((x) => x.coll < 99)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
-}
 
 // ---------- composant principal ----------
 export default function App() {
@@ -1537,6 +132,18 @@ export default function App() {
         .then(() => compte.rafraichirProfil());
     }
   }, [cheptel, historiqueCouleurs, compte.session, compte.profil]);
+  // Pousse le nombre de couleurs muldo découvertes vers le profil Supabase —
+  // alimente le classement des éleveurs de la Taverne (auto-déclaratif, comme
+  // succes_generation_muldo ci-dessus).
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const nb = Object.values(historiqueCouleurs || {}).filter(Boolean).length;
+    if (compte.profil.couleurs_decouvertes_muldo !== nb) {
+      supabase.from("profils").update({ couleurs_decouvertes_muldo: nb })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [historiqueCouleurs, compte.session, compte.profil]);
   const [instantanes, setInstantanes] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_INSTANTANES));
@@ -1549,6 +156,17 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_JOURNAL));
       return Array.isArray(saved) ? saved : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [corbeille, setCorbeille] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_CORBEILLE));
+      const limite = Date.now() - CORBEILLE_DUREE_JOURS * 24 * 60 * 60 * 1000;
+      const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
+      localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(purge));
+      return purge;
     } catch (e) {
       return [];
     }
@@ -2072,11 +690,21 @@ export default function App() {
   }
 
   if (saved) {
-    setCheptel(JSON.parse(saved).map(normaliserMuldo));
+    try {
+      const parsedCheptel = JSON.parse(saved);
+      if (Array.isArray(parsedCheptel)) setCheptel(parsedCheptel.map(normaliserMuldo));
+    } catch (e) {
+      console.error("Cheptel illisible", e);
+    }
   }
 
   if (savedHistory) {
-    setHistoriqueCouleurs(JSON.parse(savedHistory));
+    try {
+      const parsedHistory = JSON.parse(savedHistory);
+      if (parsedHistory && typeof parsedHistory === "object") setHistoriqueCouleurs(parsedHistory);
+    } catch (e) {
+      console.error("Historique des couleurs illisible", e);
+    }
   }
 
   if (savedGpsSession) {
@@ -2117,16 +745,12 @@ useEffect(() => {
   });
 }, [cheptel, loading]);
 
-const persist = useCallback(async (next) => {
+const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), []);
+  const persist = useCallback(async (next) => {
     setSaving(true);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch (e) {
-      console.error("Erreur de sauvegarde", e);
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+    ecrireCheptelDebattue(next);
+    setSaving(false);
+  }, [ecrireCheptelDebattue]);
 
   const updateCheptel = useCallback((updater) => {
     setCheptel((prev) => {
@@ -2306,8 +930,55 @@ const persist = useCallback(async (next) => {
   };
 
   const deleteMuldo = (id) => {
+    const muldo = byId[id];
     updateCheptel((prev) => prev.filter((m) => m.id !== id));
     if (selectedId === id) setSelectedId(null);
+    if (muldo) {
+      setCorbeille((prev) => {
+        const next = [{ muldo, supprimeLe: new Date().toISOString() }, ...prev].slice(0, 100);
+        try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+        return next;
+      });
+    }
+  };
+
+  const restaurerMuldo = (id) => {
+    const entree = corbeille.find((e) => e.muldo.id === id);
+    if (!entree) return;
+    updateCheptel((prev) => [...prev, entree.muldo]);
+    setCorbeille((prev) => {
+      const next = prev.filter((e) => e.muldo.id !== id);
+      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+      return next;
+    });
+  };
+
+  const purgerCorbeilleEntree = (id) => {
+    setCorbeille((prev) => {
+      const next = prev.filter((e) => e.muldo.id !== id);
+      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+      return next;
+    });
+  };
+
+  const viderCorbeille = () => {
+    if (!window.confirm("Vider définitivement la corbeille ? Cette action est irréversible.")) return;
+    setCorbeille(() => {
+      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify([])); } catch (e) { console.error(e); }
+      return [];
+    });
+  };
+
+  // Raccourci de début de session : bascule en masse tous les "Féconde"
+  // (repos terminé côté jeu) vers "Fertile", puis relance le plan GPS —
+  // évite de repasser un par un sur chaque fiche avant chaque session.
+  const demarrerNouvelleSessionAccouplement = () => {
+    const nb = cheptel.filter((m) => m.statut === "Féconde").length;
+    if (nb > 0) {
+      updateCheptel((prev) => prev.map((m) => (m.statut === "Féconde" ? { ...m, statut: "Fertile" } : m)));
+    }
+    reinitialiserSessionGps();
+    showToast(nb > 0 ? `${nb} muldo(s) passé(s) en Fertile — nouvelle session lancée.` : "Nouvelle session lancée.");
   };
 
   const registerBirth = (parentAId, parentBId) => {
@@ -2686,7 +1357,7 @@ const persist = useCallback(async (next) => {
               style={{ padding: "8px 12px" }}
             >
               {compte.profil
-                ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={16} />
+                ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={24} />
                 : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>}
             </button>
             <button className="btn btn-coral" onClick={() => setShowNew(true)}><Plus size={15} /> Nouveau muldo</button>
@@ -2736,10 +1407,10 @@ const persist = useCallback(async (next) => {
                 onVoirMuldo={voirMuldo}
               />
               <GraphiquesPanel cheptel={cheptel} journal={journal} instantanes={instantanes} />
-              <EstimationKamasPanel cheptel={cheptel} />
+              <EstimationKamasSelecteur cheptelMuldo={cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} />
               <MemoElevagePanel />
+              <CorbeillePanel corbeille={corbeille} onRestaurer={restaurerMuldo} onPurger={purgerCorbeilleEntree} onVider={viderCorbeille} />
               <SauvegardePanel showToast={showToast} />
-              <SoutienPanel profil={profil} setProfil={setProfil} />
             </>
           )}
 
@@ -2809,6 +1480,7 @@ const persist = useCallback(async (next) => {
                   onTerminerGroupe={(g) => realiserCouplesGps(g.couples || [])}
                   onAnnuler={annulerDernierCoupleGps}
                   onReinitialiser={reinitialiserSessionGps}
+                  onDemarrerNouvelleSession={demarrerNouvelleSessionAccouplement}
                   onVoirMuldo={voirMuldo}
                 />
               )}
@@ -2916,7 +1588,7 @@ const persist = useCallback(async (next) => {
       {showNew && <NewMuldoModal cheptel={cheptel} onClose={() => setShowNew(false)} onCreate={addMuldo} />}
 
       {profilOuvert && (
-        <ProfilModal compte={compte} profilLocal={profil} onClose={() => setProfilOuvert(false)} />
+        <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} />
       )}
 
       {ficheRapide && (
@@ -2956,170 +1628,6 @@ const persist = useCallback(async (next) => {
 
 
 
-
-function normaliserTexteOCR(value) {
-  return String(value || "")
-    .replace(/[|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extraireNombreDansLigne(ligne) {
-  const nums = String(ligne || "").match(/\b\d{1,3}\b/g);
-  if (!nums || nums.length === 0) return 1;
-  return Math.max(1, Number(nums[nums.length - 1]) || 1);
-}
-
-
-function analyserTexteCaptureMuldo(texte) {
-  const lignes = String(texte || "")
-    .split(/\n+/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  // Deux colonnes dans l'interface Dofus : l'OCR lit souvent TOUS les noms,
-  // puis TOUS les chiffres en bloc à la fin — mais certaines lignes gardent
-  // leur chiffre inline ("Muldo Roux et Pourpre 1"). On associe donc chaque
-  // couleur à son chiffre inline si elle en a un, et le bloc de fin ne remplit
-  // que les couleurs restantes, dans l'ordre d'apparition. Empiler tous les
-  // chiffres dans un seul tableau décalerait toutes les quantités dès la
-  // première ligne inline.
-  const entrees = []; // { couleur, quantite: number | null }
-  const quantitesEnBloc = [];
-
-  for (let i = 0; i < lignes.length; i++) {
-    let ligne = lignes[i];
-
-    // "Muldo" mal lu par l'OCR ("Mulde", "Muido", "MuIdo"…) : on répare le
-    // préfixe si le premier mot est à distance ≤ 2 du mot attendu.
-    const premierMot = (ligne.split(/\s+/)[0] || "");
-    if (
-      premierMot
-      && !/^muldo$/i.test(premierMot)
-      && distanceLevenshtein(plierCouleur(premierMot), "muldo") <= 2
-    ) {
-      ligne = `Muldo${ligne.slice(premierMot.length)}`;
-    }
-
-    // Nom coupé sur deux lignes ("Muldo Doré et" / "Amande").
-    if (/^Muldo\s+/i.test(ligne) && /et$/i.test(ligne) && i + 1 < lignes.length) {
-      ligne += " " + lignes[i + 1];
-      i++;
-    }
-
-    ligne = ligne
-      .replace(/Mulda/gi, "Muldo")
-      .replace(/Orchidées/gi, "Orchidée")
-      .replace(/\bat\b/gi, "et")
-      .replace(/\bét\b/gi, "et");
-
-    const matchInline = ligne.match(/^Muldo\s+(.+?)\s+(\d+)$/i);
-    if (matchInline) {
-      entrees.push({
-        couleur: canonicaliserCouleur(matchInline[1].trim()),
-        quantite: Number(matchInline[2]),
-      });
-      continue;
-    }
-
-    if (/^Muldo/i.test(ligne)) {
-      entrees.push({
-        couleur: canonicaliserCouleur(ligne.replace(/^Muldo\s+/i, "").trim()),
-        quantite: null,
-      });
-      continue;
-    }
-
-    // Ligne de compteur seule. L'OCR confond parfois 0 avec o/O et 1 avec l/I.
-    if (/^[0-9OolI]+$/.test(ligne)) {
-      quantitesEnBloc.push(Number(ligne.replace(/[oO]/g, "0").replace(/[lI]/g, "1")) || 0);
-    }
-  }
-
-  // Le bloc de chiffres remplit, dans l'ordre, les couleurs sans chiffre inline.
-  let k = 0;
-  entrees.forEach((entree) => {
-    if (entree.quantite === null) {
-      entree.quantite = k < quantitesEnBloc.length ? quantitesEnBloc[k] : 0;
-      k += 1;
-    }
-  });
-
-  return entrees.map(({ couleur, quantite }) => ({
-    couleur,
-    reconnu: couleurEstCanonique(couleur),
-    male: 0,
-    femelle: 0,
-    inconnu: quantite,
-    total: quantite,
-  })).sort((a, b) => a.couleur.localeCompare(b.couleur, "fr"));
-}
-
-function stockMF(cheptel) {
-  return cheptel.reduce((acc, m) => {
-    const couleur = m.couleur;
-    if (!acc[couleur]) acc[couleur] = { male: 0, femelle: 0, total: 0 };
-    const sexe = String(m.sexe || "").toLowerCase();
-
-    if (sexe.includes("mâle") || sexe.includes("male") || sexe === "m") acc[couleur].male += 1;
-    else if (sexe.includes("femelle") || sexe === "f") acc[couleur].femelle += 1;
-
-    acc[couleur].total += 1;
-    return acc;
-  }, {});
-}
-
-function analyseRecettesPourCible(cible, cheptel) {
-  const stock = stockMF(cheptel);
-  const recettes = RECETTES_COULEURS[cible] || [];
-
-  return recettes.map(([a, b]) => {
-    const sa = stock[a] || { male: 0, femelle: 0, total: 0 };
-    const sb = stock[b] || { male: 0, femelle: 0, total: 0 };
-
-    const couplesAB = sa.male * sb.femelle;
-    const couplesBA = sa.femelle * sb.male;
-    const couples = couplesAB + couplesBA;
-
-    const manque = [];
-    if (sa.total === 0) manque.push(a);
-    if (sb.total === 0) manque.push(b);
-
-    return {
-      parentA: a,
-      parentB: b,
-      stockA: sa,
-      stockB: sb,
-      couples,
-      manque,
-      possible: couples > 0,
-      partiel: manque.length === 1,
-    };
-  }).sort((x, y) => {
-    if (x.possible !== y.possible) return x.possible ? -1 : 1;
-    if (x.manque.length !== y.manque.length) return x.manque.length - y.manque.length;
-    return y.couples - x.couples;
-  });
-}
-
-function actionsAvecCouleur(couleur, cheptel) {
-  const stock = stockMF(cheptel);
-
-  return Object.entries(RECETTES_COULEURS).flatMap(([cible, recettes]) =>
-    recettes
-      .filter(([a, b]) => a === couleur || b === couleur)
-      .map(([a, b]) => {
-        const partenaire = a === couleur ? b : a;
-        const s = stock[partenaire] || { male: 0, femelle: 0, total: 0 };
-        return {
-          cible,
-          partenaire,
-          stockPartenaire: s,
-          disponible: s.total > 0,
-        };
-      })
-  );
-}
 
 function ImportCapturePanel({ captureText, setCaptureText, capturePreview, setCapturePreview, importCapture, onImport }) {
   const totalReconnu = importCapture.reduce((sum, l) => sum + l.total, 0);
@@ -3485,7 +1993,10 @@ function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
             Génération {muldo.generation} · Ajouté le {new Date(muldo.dateAjout).toLocaleDateString("fr-FR")}
           </div>
         </div>
-        <button className="btn btn-ghost" onClick={onDelete}><Trash2 size={13} /> Retirer</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={() => exporterFicheMuldoImage(muldo)} title="Télécharger une image de cette fiche, à partager sur Discord/le forum">🖼️ Exporter</button>
+          <button className="btn btn-ghost" onClick={onDelete}><Trash2 size={13} /> Retirer</button>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
@@ -4047,6 +2558,88 @@ function MuldoBadge({ couleur, taille = 22 }) {
   );
 }
 
+// Génère et télécharge une image "carte d'éleveur" (900x520) pour un muldo —
+// pensée pour être partagée telle quelle sur Discord/le forum. Dessine la
+// pastille de couleur à la main (mêmes teintes que MuldoBadge) plutôt que de
+// charger une image externe, pour rester fiable même sans visuel personnalisé.
+function exporterFicheMuldoImage(muldo) {
+  const largeur = 900, hauteur = 520;
+  const canvas = document.createElement("canvas");
+  canvas.width = largeur; canvas.height = hauteur;
+  const ctx = canvas.getContext("2d");
+
+  const degrade = ctx.createLinearGradient(0, 0, largeur, hauteur);
+  degrade.addColorStop(0, "#2b241d");
+  degrade.addColorStop(1, "#17130f");
+  ctx.fillStyle = degrade;
+  ctx.fillRect(0, 0, largeur, hauteur);
+
+  ctx.strokeStyle = "#d6a64a";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, 10, largeur - 20, hauteur - 20);
+
+  // Pastille de couleur (mêmes teintes que MuldoBadge, coupée en 2 si bicolore)
+  const teintes = teintesDeCouleur(muldo.couleur);
+  const cx = 165, cy = 260, r = 120;
+  ctx.save();
+  if (teintes.length >= 2) {
+    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2); ctx.closePath();
+    ctx.fillStyle = teintes[1]; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.arc(cx, cy, r, Math.PI / 2, -Math.PI / 2); ctx.closePath();
+    ctx.fillStyle = teintes[0]; ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = teintes[0]; ctx.fill();
+  }
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.35)";
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+
+  const gaucheTexte = 340;
+  const largeurDispoTitre = largeur - gaucheTexte - 30;
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#f4ead4";
+  let tailleTitre = 44;
+  const titre = muldo.nom || muldo.couleur;
+  ctx.font = `bold ${tailleTitre}px Georgia, 'Iowan Old Style', serif`;
+  while (tailleTitre > 22 && ctx.measureText(titre).width > largeurDispoTitre) {
+    tailleTitre -= 2;
+    ctx.font = `bold ${tailleTitre}px Georgia, 'Iowan Old Style', serif`;
+  }
+  ctx.fillText(titre, gaucheTexte, 150);
+
+  ctx.fillStyle = "#d6a64a";
+  ctx.font = "600 24px Georgia, serif";
+  ctx.fillText(muldo.couleur, gaucheTexte, 190);
+
+  const lignes = [
+    `Génération ${muldo.generation}`,
+    `${muldo.sexe === "F" ? "♀ Femelle" : "♂ Mâle"}`,
+    `${muldo.statut || (muldo.sterile ? "Stérile" : "Fertile")}`,
+  ];
+  ctx.fillStyle = "#c9bfae";
+  ctx.font = "22px Georgia, sans-serif";
+  lignes.forEach((ligne, i) => ctx.fillText(ligne, gaucheTexte, 245 + i * 36));
+
+  ctx.fillStyle = "rgba(244,234,212,.55)";
+  ctx.font = "16px Georgia, sans-serif";
+  ctx.fillText("🍺 Registre des Abysses — élevage de muldos", gaucheTexte, hauteur - 50);
+  ctx.font = "13px Georgia, sans-serif";
+  ctx.fillText("Projet communautaire non affilié à Ankama.", gaucheTexte, hauteur - 28);
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const lien = document.createElement("a");
+    lien.href = url;
+    lien.download = `muldo-${slugCouleur(muldo.couleur)}-${(muldo.nom || "fiche").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`;
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+    URL.revokeObjectURL(url);
+  }, "image/png");
+}
+
 async function copierPressePapiers(texte) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -4106,10 +2699,10 @@ function formatKamas(n) {
 // sont saisis à la main par couleur (une fois), persistés, et le total suit
 // automatiquement l'évolution du cheptel. Les stériles sont comptés avec une
 // décote réglable (leur valeur réelle est surtout le recyclage).
-function EstimationKamasPanel({ cheptel }) {
+function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge }) {
   const [config, setConfig] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_PRIX_KAMAS));
+      const saved = JSON.parse(localStorage.getItem(storageKey));
       if (saved && typeof saved === "object") {
         return {
           prix: saved.prix || {},
@@ -4125,11 +2718,11 @@ function EstimationKamasPanel({ cheptel }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_PRIX_KAMAS, JSON.stringify(config));
+      localStorage.setItem(storageKey, JSON.stringify(config));
     } catch (e) {
       console.error(e);
     }
-  }, [config]);
+  }, [config, storageKey]);
 
   const lignes = useMemo(() => {
     const parCouleur = new Map();
@@ -4146,41 +2739,28 @@ function EstimationKamasPanel({ cheptel }) {
         const prixUnitaire = Number(config.prix[l.couleur]) || 0;
         const sousTotal = l.fertiles * prixUnitaire
           + (l.steriles + l.seniles) * prixUnitaire * (config.decoteSterile / 100);
-        const generation = generationDeCouleur(l.couleur);
-        // Extraction : rendement = numéro de génération en ambres (dès la gen 2).
-        // Exception : un muldo SÉNILE ne rend qu'une seule ressource.
+        const generation = generationDeCouleurFn(l.couleur);
+        // Extraction : rendement = numéro de génération en ressources (dès la gen 2).
+        // Exception : un individu SÉNILE ne rend qu'une seule ressource.
         const valeurExtraction = generation >= 2
           ? ((l.fertiles + l.steriles) * generation + l.seniles * 1) * (Number(config.prixAmbre) || 0)
           : 0;
         return { ...l, prixUnitaire, sousTotal, generation, valeurExtraction };
       })
       .sort((a, b) => (a.generation - b.generation) || a.couleur.localeCompare(b.couleur, "fr"));
-  }, [cheptel, config]);
+  }, [cheptel, config, generationDeCouleurFn]);
 
   const total = lignes.reduce((n, l) => n + l.sousTotal, 0);
   const totalExtraction = lignes.reduce((n, l) => n + l.valeurExtraction, 0);
   const totalOptimal = lignes.reduce((n, l) => n + Math.max(l.sousTotal, l.valeurExtraction), 0);
   const sansPrix = lignes.filter((l) => !l.prixUnitaire).length;
 
-  // Clic sur une couleur → copie "Muldo <Couleur>" (nom exact à l'HDV créatures).
+  // Clic sur une couleur → copie "<Créature> <Couleur>" (nom exact à l'HDV créatures).
   const [copie, setCopie] = useState(null);
   const copierNomHdv = async (couleur) => {
-    const nom = `Muldo ${couleur}`;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(nom);
-      } else {
-        const zone = document.createElement("textarea");
-        zone.value = nom;
-        document.body.appendChild(zone);
-        zone.select();
-        document.execCommand("copy");
-        document.body.removeChild(zone);
-      }
+    if (await copierPressePapiers(`${nomHdv} ${couleur}`)) {
       setCopie(couleur);
       setTimeout(() => setCopie((c) => (c === couleur ? null : c)), 1500);
-    } catch (e) {
-      console.error("Copie impossible", e);
     }
   };
 
@@ -4192,9 +2772,9 @@ function EstimationKamasPanel({ cheptel }) {
   };
 
   return (
-    <div className="panel-card" style={{ marginTop: 16 }}>
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0 }}>Valeur estimée du cheptel</h2>
+        <h2 style={{ margin: 0 }}>{icone} Valeur estimée — {nomHdv}</h2>
         <div style={{ textAlign: "right" }}>
           <div style={{ color: "var(--gold)", fontSize: 22, fontWeight: 900 }}>{formatKamas(total)}</div>
           <div style={{ color: "var(--muted)", fontSize: 11 }}>
@@ -4222,7 +2802,7 @@ function EstimationKamasPanel({ cheptel }) {
         />
         % du prix d'un fertile
         <span style={{ margin: "0 6px", color: "var(--text-faint, var(--muted))" }}>·</span>
-        Prix de l'ambre :
+        Prix de « {labelExtraction} » :
         <input
           type="number"
           className="field"
@@ -4231,7 +2811,7 @@ function EstimationKamasPanel({ cheptel }) {
           onChange={(e) => setConfig((prev) => ({ ...prev, prixAmbre: Math.max(0, Number(e.target.value) || 0) }))}
           style={{ width: 90 }}
         />
-        k (extraction : génération × ambres, dès la gen 2)
+        k (extraction : génération × quantité, dès la gen 2)
       </label>
 
       <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -4244,10 +2824,10 @@ function EstimationKamasPanel({ cheptel }) {
               <button
                 type="button"
                 onClick={() => copierNomHdv(l.couleur)}
-                title={`Copier « Muldo ${l.couleur} » pour la recherche HDV`}
+                title={`Copier « ${nomHdv} ${l.couleur} » pour la recherche HDV`}
                 style={{ background: "none", border: "none", padding: 0, color: "inherit", font: "inherit", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
               >
-                <MuldoBadge couleur={l.couleur} taille={18} />{" "}{l.couleur}
+                {Badge ? <Badge couleur={l.couleur} taille={18} /> : icone}{" "}{l.couleur}
               </button>{" "}
               <span style={{ color: "var(--muted)", fontSize: 11 }}>G{l.generation}</span>
               {copie === l.couleur && (
@@ -4268,7 +2848,7 @@ function EstimationKamasPanel({ cheptel }) {
             <span style={{ textAlign: "right", color: l.sousTotal ? "var(--text)" : "var(--muted)" }}>{formatKamas(l.sousTotal)}</span>
             <span
               title={l.generation >= 2
-                ? `${l.fertiles + l.steriles} muldo(s) × ${l.generation} ambre(s) × ${formatKamas(config.prixAmbre)}${l.valeurExtraction > l.sousTotal ? " — l'extraction rapporte plus que la vente HDV" : ""}`
+                ? `${l.fertiles + l.steriles} individu(s) × ${l.generation} ${labelExtraction}(s) × ${formatKamas(config.prixAmbre)}${l.valeurExtraction > l.sousTotal ? " — l'extraction rapporte plus que la vente HDV" : ""}`
                 : "Génération 1 : extraction impossible"}
               style={{
                 textAlign: "right",
@@ -4281,6 +2861,48 @@ function EstimationKamasPanel({ cheptel }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Trois créatures, trois économies distinctes (couleurs, générations, prix
+// différents) : un sélecteur au lieu de tout empiler dans un seul tableau.
+const CREATURES_ESTIMATION = [
+  { cle: "muldo", label: "Muldo", icone: "🐴", nomHdv: "Muldo", labelExtraction: "Ambre", storageKey: STORAGE_PRIX_KAMAS, generationDeCouleurFn: generationDeCouleur, badge: MuldoBadge },
+  { cle: "dragodinde", label: "Dragodinde", icone: "🐲", nomHdv: "Dragodinde", labelExtraction: "Neurone de Dragodinde", storageKey: STORAGE_PRIX_KAMAS_DRAGODINDE, generationDeCouleurFn: generationDeCouleurDragodinde },
+  { cle: "volkorne", label: "Volkorne", icone: "🐎", nomHdv: "Volkorne", labelExtraction: "Corne de Volkorne", storageKey: STORAGE_PRIX_KAMAS_VOLKORNE, generationDeCouleurFn: generationDeCouleurVolkorne },
+];
+
+function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolkorne }) {
+  const [actif, setActif] = useState("muldo");
+  const cheptelParCreature = { muldo: cheptelMuldo, dragodinde: cheptelDragodinde, volkorne: cheptelVolkorne };
+  const config = CREATURES_ESTIMATION.find((c) => c.cle === actif);
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {CREATURES_ESTIMATION.map((c) => (
+          <button
+            key={c.cle}
+            type="button"
+            className="btn btn-ghost"
+            style={actif === c.cle ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+            onClick={() => setActif(c.cle)}
+          >
+            {c.icone} {c.label}
+          </button>
+        ))}
+      </div>
+      <EstimationKamasTable
+        key={config.cle}
+        cheptel={cheptelParCreature[config.cle]}
+        storageKey={config.storageKey}
+        generationDeCouleurFn={config.generationDeCouleurFn}
+        nomHdv={config.nomHdv}
+        labelExtraction={config.labelExtraction}
+        icone={config.icone}
+        badge={config.badge}
+      />
     </div>
   );
 }
@@ -4504,7 +3126,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini }) {
 }
 
 // ---------- Modale Profil (ouverte depuis le bouton d'en-tête) ----------
-function ProfilModal({ compte, profilLocal, onClose }) {
+function ProfilModal({ compte, profilLocal, setProfilLocal, onClose }) {
   const { session, profil, pretMdp, rafraichirProfil } = compte;
   const [description, setDescription] = useState("");
   const [nouveauMdp, setNouveauMdp] = useState("");
@@ -4559,7 +3181,7 @@ function ProfilModal({ compte, profilLocal, onClose }) {
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={20} />
+              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={40} />
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.user.email} <span style={{ opacity: .6 }}>(privé)</span></span>
             </div>
 
@@ -4595,7 +3217,7 @@ function ProfilModal({ compte, profilLocal, onClose }) {
                       ) : undefined}
                       onClick={() => !verrouille && patcher({ style_ailes: style }, `Ailes ${label} équipées.`)}
                     >
-                      <AileNiveau style={style} taille={18} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
+                      <AileNiveau style={style} taille={36} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
                     </button>
                   );
                 })}
@@ -4627,9 +3249,9 @@ function ProfilModal({ compte, profilLocal, onClose }) {
                 {[1,2,3,4,5].map((n) => (
                   <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === profil.niveau_ailes ? "var(--gold)" : "var(--line)"}`, background: n === profil.niveau_ailes ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 3 }}>
-                      <AileNiveau style="dragodinde" miroir taille={16} niveau={n} />
-                      <AileNiveau style="muldo" taille={16} niveau={n} />
-                      <AileNiveau style="volkorne" taille={16} niveau={n} />
+                      <AileNiveau style="dragodinde" miroir taille={32} niveau={n} />
+                      <AileNiveau style="muldo" taille={32} niveau={n} />
+                      <AileNiveau style="volkorne" taille={32} niveau={n} />
                     </div>
                     <div style={{ fontWeight: 800, color: "var(--gold2)", marginTop: 4, fontSize: 13 }}>{montantPourNiveau(n)} €</div>
                   </div>
@@ -4644,10 +3266,14 @@ function ProfilModal({ compte, profilLocal, onClose }) {
             </div>
           </div>
         )}
+
+        <SoutienPanel profil={profilLocal} setProfil={setProfilLocal} />
       </div>
     </div>
   );
 }
+
+const STORAGE_LU_SUJETS = "taverne-lu-sujets-v1";
 
 function TavernePage({ compte, onOuvrirProfil }) {
   const { session } = compte;
@@ -4657,20 +3283,146 @@ function TavernePage({ compte, onOuvrirProfil }) {
   const [vue, setVue] = useState({ type: "liste" });
   const [messages, setMessages] = useState([]);
   const [saisie, setSaisie] = useState("");
+  const [luSujets, setLuSujets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_LU_SUJETS)) || {}; } catch (e) { return {}; }
+  });
+
+  const marquerSujetLu = (sujetId) => {
+    setLuSujets((prev) => {
+      const next = { ...prev, [sujetId ?? "general"]: new Date().toISOString() };
+      try { localStorage.setItem(STORAGE_LU_SUJETS, JSON.stringify(next)); } catch (e) { console.error(e); }
+      return next;
+    });
+  };
   const [creationOuverte, setCreationOuverte] = useState(false);
   const [nouveauTitre, setNouveauTitre] = useState("");
   const [nouveauContenu, setNouveauContenu] = useState("");
   const [erreur, setErreur] = useState("");
+  const [profilPublicId, setProfilPublicId] = useState(null);
+  const [dmCible, setDmCible] = useState(null);
+  const [messagesPrives, setMessagesPrives] = useState([]);
+  const [saisieDm, setSaisieDm] = useState("");
+  const [boiteOuverte, setBoiteOuverte] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [nonLuTotal, setNonLuTotal] = useState(0);
+  const [classementOuvert, setClassementOuvert] = useState(false);
+  const [classement, setClassement] = useState([]);
+  const [pushActif, setPushActif] = useState(false);
+  const [pushErreur, setPushErreur] = useState("");
+  const [pushEnCours, setPushEnCours] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user || !pushSupporte()) return;
+    abonnementPushActuel().then((sub) => setPushActif(!!sub)).catch(() => {});
+  }, [session?.user?.id]);
+
+  const basculerNotificationsPush = async () => {
+    if (!session?.user) return;
+    setPushErreur("");
+    setPushEnCours(true);
+    try {
+      if (pushActif) {
+        await desactiverNotificationsPush(session.user.id);
+        setPushActif(false);
+      } else {
+        await activerNotificationsPush(session.user.id);
+        setPushActif(true);
+      }
+    } catch (e) {
+      setPushErreur(e.message || "Impossible de modifier les notifications push.");
+    } finally {
+      setPushEnCours(false);
+    }
+  };
+
+  const chargerClassement = async () => {
+    if (!supabase) return;
+    const { data } = await supabase.from("profils")
+      .select("id, pseudo, style_ailes, niveau_ailes, succes_generation_muldo, couleurs_decouvertes_muldo, description, cree_le")
+      .order("succes_generation_muldo", { ascending: false })
+      .order("couleurs_decouvertes_muldo", { ascending: false })
+      .limit(20);
+    setClassement(data || []);
+    const carte = {};
+    (data || []).forEach((p) => { carte[p.id] = p; });
+    setProfilsParId((prev) => ({ ...prev, ...carte }));
+  };
   const finFil = React.useRef(null);
+  const dmCibleRef = React.useRef(dmCible);
+  useEffect(() => { dmCibleRef.current = dmCible; }, [dmCible]);
 
   // ----- Chargements -----
   const chargerProfils = async (ids) => {
     const manquants = [...new Set(ids)].filter((id) => id && !profilsParId[id]);
     if (!manquants.length) return;
-    const { data } = await supabase.from("profils").select("id, pseudo, style_ailes, niveau_ailes, succes_generation_muldo, description").in("id", manquants);
+    const { data } = await supabase.from("profils").select("id, pseudo, style_ailes, niveau_ailes, succes_generation_muldo, description, cree_le").in("id", manquants);
     const carte = {};
     (data || []).forEach((p) => { carte[p.id] = p; });
     setProfilsParId((prev) => ({ ...prev, ...carte }));
+  };
+
+  const chargerConversations = async () => {
+    if (!supabase || !session?.user) return;
+    const { data } = await supabase.from("messages_prives")
+      .select("id, expediteur, destinataire, contenu, lu, cree_le")
+      .or(`expediteur.eq.${session.user.id},destinataire.eq.${session.user.id}`)
+      .order("cree_le", { ascending: false })
+      .limit(500);
+    const parPartenaire = {};
+    (data || []).forEach((m) => {
+      const autre = m.expediteur === session.user.id ? m.destinataire : m.expediteur;
+      if (!parPartenaire[autre]) parPartenaire[autre] = { id: autre, dernier: m, nonLu: 0 };
+      if (m.destinataire === session.user.id && !m.lu) parPartenaire[autre].nonLu += 1;
+    });
+    const liste = Object.values(parPartenaire).sort((a, b) => new Date(b.dernier.cree_le) - new Date(a.dernier.cree_le));
+    setConversations(liste);
+    setNonLuTotal(liste.reduce((s, c) => s + c.nonLu, 0));
+    chargerProfils(liste.map((c) => c.id));
+  };
+
+  const chargerConversationFil = async (autreId) => {
+    if (!supabase || !session?.user) return;
+    const { data } = await supabase.from("messages_prives")
+      .select("id, expediteur, destinataire, contenu, lu, cree_le")
+      .or(`and(expediteur.eq.${session.user.id},destinataire.eq.${autreId}),and(expediteur.eq.${autreId},destinataire.eq.${session.user.id})`)
+      .order("cree_le", { ascending: true })
+      .limit(500);
+    setMessagesPrives(data || []);
+    chargerProfils([autreId]);
+    await supabase.from("messages_prives").update({ lu: true }).eq("destinataire", session.user.id).eq("expediteur", autreId).eq("lu", false);
+    chargerConversations();
+  };
+
+  const ouvrirConversation = (autreId) => {
+    setDmCible(autreId);
+    setBoiteOuverte(false);
+    setProfilPublicId(null);
+    chargerConversationFil(autreId);
+  };
+
+  const envoyerMessagePrive = async () => {
+    const contenu = saisieDm.trim();
+    if (!contenu || !session?.user || !dmCible) return;
+    setSaisieDm("");
+    const { error } = await supabase.from("messages_prives").insert({ expediteur: session.user.id, destinataire: dmCible, contenu });
+    if (error) { setErreur("Message refusé : " + error.message); return; }
+    chargerConversationFil(dmCible);
+  };
+
+  const supprimerSujet = async (id) => {
+    if (id === null) return;
+    if (!window.confirm("Supprimer définitivement ce sujet et tous ses messages ?")) return;
+    const { error } = await supabase.from("sujets").delete().eq("id", id);
+    if (error) { setErreur("Suppression impossible : " + error.message); return; }
+    setVue({ type: "liste" });
+    chargerListe();
+  };
+
+  const supprimerMessage = async (id) => {
+    if (!window.confirm("Supprimer définitivement ce message ?")) return;
+    const { error } = await supabase.from("messages").delete().eq("id", id);
+    if (error) { setErreur("Suppression impossible : " + error.message); return; }
+    if (vue.type === "sujet") chargerFil(vue.id);
   };
 
   const chargerListe = async () => {
@@ -4700,23 +3452,40 @@ function TavernePage({ compte, onOuvrirProfil }) {
   useEffect(() => {
     if (!supabase) return undefined;
     chargerListe();
+    if (session?.user) chargerConversations();
     const canal = supabase
       .channel("taverne-forum")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (evt) => {
         chargerListe();
         const sujetCourant = vueRef.current.type === "sujet" ? vueRef.current.id : undefined;
-        if (sujetCourant !== undefined && (evt.new?.sujet_id ?? null) === sujetCourant) chargerFil(sujetCourant);
+        if (sujetCourant !== undefined && (evt.new?.sujet_id ?? null) === sujetCourant) { chargerFil(sujetCourant); marquerSujetLu(sujetCourant); }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, () => {
+        chargerListe();
+        if (vueRef.current.type === "sujet") chargerFil(vueRef.current.id);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "sujets" }, () => chargerListe())
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "sujets" }, () => {
+        chargerListe();
+        if (vueRef.current.type === "sujet") setVue({ type: "liste" });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages_prives" }, (evt) => {
+        if (!session?.user) return;
+        const concerne = evt.new?.expediteur === session.user.id || evt.new?.destinataire === session.user.id;
+        if (!concerne) return;
+        chargerConversations();
+        const cible = dmCibleRef.current;
+        if (cible && (evt.new.expediteur === cible || evt.new.destinataire === cible)) chargerConversationFil(cible);
+      })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
-  }, []);
+  }, [session?.user?.id]);
 
   const vueRef = React.useRef(vue);
   useEffect(() => { vueRef.current = vue; }, [vue]);
 
   useEffect(() => {
-    if (vue.type === "sujet") chargerFil(vue.id);
+    if (vue.type === "sujet") { chargerFil(vue.id); marquerSujetLu(vue.id); }
   }, [vue.type, vue.id]);
 
   useEffect(() => {
@@ -4744,7 +3513,7 @@ function TavernePage({ compte, onOuvrirProfil }) {
     if (error) { setErreur("Création impossible : " + error.message); return; }
     await supabase.from("messages").insert({ auteur: session.user.id, contenu, sujet_id: data.id });
     setNouveauTitre(""); setNouveauContenu(""); setCreationOuverte(false);
-    setVue({ type: "sujet", id: data.id, titre: data.titre });
+    setVue({ type: "sujet", id: data.id, titre: data.titre, auteur: session.user.id });
     chargerListe();
   };
 
@@ -4755,7 +3524,11 @@ function TavernePage({ compte, onOuvrirProfil }) {
       ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo)
       : p.niveau_ailes;
     return (
-      <span title={p.description || undefined}>
+      <span
+        title={p.description || undefined}
+        onClick={(e) => { e.stopPropagation(); setProfilPublicId(id); }}
+        style={{ cursor: "pointer" }}
+      >
         <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={taille} />
       </span>
     );
@@ -4779,8 +3552,12 @@ function TavernePage({ compte, onOuvrirProfil }) {
     ...sujets,
   ].map((s) => {
     const stat = statsSujets[s.id ?? "general"] || { nb: 0, dernier: null };
-    return { ...s, ...stat };
-  }).sort((a, b) => (b.epingle ? 0 : new Date(b.dernier || b.cree_le || 0)) - (a.epingle ? 1 : new Date(a.dernier || a.cree_le || 0)) && 0 || (a.epingle ? -1 : b.epingle ? 1 : new Date(b.dernier || b.cree_le || 0) - new Date(a.dernier || a.cree_le || 0)));
+    const cle = s.id ?? "general";
+    const nonLu = !!(session?.user && s.auteur === session.user.id && stat.dernier
+      && (!luSujets[cle] || new Date(stat.dernier) > new Date(luSujets[cle])));
+    return { ...s, ...stat, nonLu };
+  }).sort((a, b) => (a.epingle ? -1 : b.epingle ? 1 : new Date(b.dernier || b.cree_le || 0) - new Date(a.dernier || a.cree_le || 0)));
+  const mesSujetsNonLus = lignesSujets.filter((s) => s.nonLu).length;
 
   return (
     <div>
@@ -4788,10 +3565,32 @@ function TavernePage({ compte, onOuvrirProfil }) {
       <div className="panel-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>🍻 La Taverne des éleveurs</h2>
-          {session
-            ? <span style={{ color: "var(--muted)", fontSize: 12 }}>Connecté · gère ton profil via le bouton 👤 en haut à droite</span>
-            : <button className="btn btn-coral" onClick={onOuvrirProfil}>Se connecter pour participer</button>}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button className="btn btn-ghost" onClick={() => { setClassementOuvert(true); chargerClassement(); }}>🏆 Classement</button>
+            {session && (
+              <button className="btn btn-ghost" style={{ position: "relative" }} onClick={() => { setBoiteOuverte(true); chargerConversations(); }}>
+                📬 Messages privés
+                {nonLuTotal > 0 && (
+                  <span style={{ position: "absolute", top: -6, right: -6, background: "var(--red)", color: "#fff", borderRadius: 10, fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>{nonLuTotal}</span>
+                )}
+              </button>
+            )}
+            {session && pushSupporte() && (
+              <button
+                className="btn btn-ghost"
+                disabled={pushEnCours}
+                title={pushActif ? "Désactiver les notifications de nouveaux messages" : "Être notifié des nouveaux messages privés même hors de l'onglet"}
+                onClick={basculerNotificationsPush}
+              >
+                {pushActif ? "🔕 Désactiver les notifs" : "🔔 Activer les notifs"}
+              </button>
+            )}
+            {session
+              ? <span style={{ color: "var(--muted)", fontSize: 12 }}>Connecté · gère ton profil via le bouton 👤 en haut à droite</span>
+              : <button className="btn btn-coral" onClick={onOuvrirProfil}>Se connecter pour participer</button>}
+          </div>
         </div>
+        {pushErreur && <div style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>{pushErreur}</div>}
         {!session && (
           <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 8 }}>
             La lecture est libre. Pour créer un sujet ou répondre, connecte-toi ou crée ton compte
@@ -4804,7 +3603,14 @@ function TavernePage({ compte, onOuvrirProfil }) {
       {vue.type === "liste" && (
         <div className="panel-card" style={{ marginTop: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <b>Sujets de discussion</b>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <b>Sujets de discussion</b>
+              {mesSujetsNonLus > 0 && (
+                <span style={{ background: "var(--red)", color: "#fff", borderRadius: 10, fontSize: 11, padding: "2px 7px", fontWeight: 700 }} title="Nouvelles réponses à tes sujets">
+                  🔔 {mesSujetsNonLus}
+                </span>
+              )}
+            </div>
             {session && (
               <button className="btn btn-coral" onClick={() => setCreationOuverte((o) => !o)}>➕ Nouveau sujet</button>
             )}
@@ -4823,11 +3629,14 @@ function TavernePage({ compte, onOuvrirProfil }) {
               <div
                 key={s.id ?? "general"}
                 className="row-item"
-                onClick={() => setVue({ type: "sujet", id: s.id, titre: s.titre })}
+                onClick={() => setVue({ type: "sujet", id: s.id, titre: s.titre, auteur: s.auteur })}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 10px", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", borderRadius: 8, flexWrap: "wrap" }}
               >
                 <div style={{ minWidth: 220, flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{s.titre}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                    {s.titre}
+                    {s.nonLu && <span style={{ background: "var(--red)", color: "#fff", borderRadius: 10, fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>nouveau</span>}
+                  </div>
                   {s.auteur && (
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
                       ouvert par <AuteurAile id={s.auteur} taille={13} />
@@ -4856,6 +3665,11 @@ function TavernePage({ compte, onOuvrirProfil }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
             <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => { setVue({ type: "liste" }); chargerListe(); }}>← Sujets</button>
             <h2 style={{ margin: 0, fontSize: 17 }}>{vue.titre}</h2>
+            {vue.id !== null && session?.user?.id === vue.auteur && (
+              <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12, color: "var(--red)", marginLeft: "auto" }} onClick={() => supprimerSujet(vue.id)}>
+                <Trash2 size={13} /> Supprimer le sujet
+              </button>
+            )}
           </div>
           <div style={{ maxHeight: 460, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 6 }}>
             {messages.length === 0 && (
@@ -4864,14 +3678,19 @@ function TavernePage({ compte, onOuvrirProfil }) {
               </div>
             )}
             {messages.map((m) => (
-              <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 2, borderBottom: "1px solid rgba(255,255,255,.04)", paddingBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <AuteurAile id={m.auteur} />
+              <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, borderBottom: "1px solid rgba(255,255,255,.04)", paddingBottom: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
+                  <AuteurAile id={m.auteur} taille={32} />
                   <span style={{ color: "var(--muted)", fontSize: 10 }}>
                     {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
-                <div style={{ fontSize: 13, paddingLeft: 4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.contenu}</div>
+                <div style={{ fontSize: 13, paddingTop: 4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", flex: "1 1 auto" }}>{m.contenu}</div>
+                {session?.user?.id === m.auteur && (
+                  <button className="btn btn-ghost" title="Supprimer ce message" style={{ padding: "3px 6px", fontSize: 11, color: "var(--red)", flex: "0 0 auto" }} onClick={() => supprimerMessage(m.id)}>
+                    <Trash2 size={12} />
+                  </button>
+                )}
               </div>
             ))}
             <div ref={finFil} />
@@ -4890,6 +3709,194 @@ function TavernePage({ compte, onOuvrirProfil }) {
           </div>
         </div>
       )}
+
+      {classementOuvert && (
+        <ClassementModal
+          classement={classement}
+          onOuvrirProfil={(id) => { setClassementOuvert(false); setProfilPublicId(id); }}
+          onClose={() => setClassementOuvert(false)}
+        />
+      )}
+
+      {profilPublicId && profilsParId[profilPublicId] && (
+        <ProfilPublicModal
+          profil={profilsParId[profilPublicId]}
+          estMoi={session?.user?.id === profilPublicId}
+          peutEnvoyerMp={!!session?.user}
+          onClose={() => setProfilPublicId(null)}
+          onMessagePrive={() => ouvrirConversation(profilPublicId)}
+        />
+      )}
+
+      {boiteOuverte && (
+        <BoiteReceptionModal
+          conversations={conversations}
+          profilsParId={profilsParId}
+          onOuvrir={ouvrirConversation}
+          onClose={() => setBoiteOuverte(false)}
+        />
+      )}
+
+      {dmCible && session?.user && (
+        <MessagesPrivesModal
+          session={session}
+          messages={messagesPrives}
+          profilCible={profilsParId[dmCible]}
+          saisie={saisieDm}
+          setSaisie={setSaisieDm}
+          onEnvoyer={envoyerMessagePrive}
+          onClose={() => setDmCible(null)}
+          onOuvrirProfil={() => setProfilPublicId(dmCible)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePrive }) {
+  const niveauEffectif = profil.style_ailes === "muldo"
+    ? tierAilesMuldo(profil.niveau_ailes, profil.succes_generation_muldo)
+    : profil.niveau_ailes;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(360px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={32} />
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕</button>
+        </div>
+        {profil.description && <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 14 }}>{profil.description}</div>}
+        <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 10 }}>
+          Membre depuis le {profil.cree_le ? new Date(profil.cree_le).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }) : "—"}
+        </div>
+        {!estMoi && peutEnvoyerMp && (
+          <button className="btn btn-coral" style={{ marginTop: 16 }} onClick={onMessagePrive}>✉️ Envoyer un message privé</button>
+        )}
+        {!estMoi && !peutEnvoyerMp && (
+          <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 14 }}>Connecte-toi pour envoyer un message privé.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ClassementModal({ classement, onOuvrirProfil, onClose }) {
+  const MEDAILLES = ["🥇", "🥈", "🥉"];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(520px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h3 style={{ margin: 0 }}>🏆 Classement des éleveurs</h3>
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
+          Classé par générations muldo validées (page Succès), puis par couleurs découvertes.
+        </div>
+        {classement.length === 0 && (
+          <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>Personne au classement pour l'instant.</div>
+        )}
+        {classement.map((p, i) => {
+          const niveauEffectif = p.style_ailes === "muldo" ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo) : p.niveau_ailes;
+          return (
+            <div
+              key={p.id}
+              className="row-item"
+              onClick={() => onOuvrirProfil(p.id)}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 8px", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", borderRadius: 8 }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <span style={{ width: 26, textAlign: "center", fontWeight: 800, color: "var(--gold2)" }}>{MEDAILLES[i] || i + 1}</span>
+                <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={20} />
+              </div>
+              <div style={{ display: "flex", gap: 14, color: "var(--muted)", fontSize: 12, flex: "0 0 auto" }}>
+                <span>G<b style={{ color: "var(--text)" }}>{p.succes_generation_muldo || 0}</b></span>
+                <span><b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_muldo || 0}</b> couleurs</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BoiteReceptionModal({ conversations, profilsParId, onOuvrir, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h3 style={{ margin: 0 }}>📬 Messages privés</h3>
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
+        </div>
+        {conversations.length === 0 && (
+          <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
+            Aucune conversation pour l'instant — clique sur un pseudo pour en démarrer une.
+          </div>
+        )}
+        {conversations.map((c) => {
+          const p = profilsParId[c.id];
+          const niveauEffectif = p ? (p.style_ailes === "muldo" ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo) : p.niveau_ailes) : 0;
+          return (
+            <div
+              key={c.id}
+              className="row-item"
+              onClick={() => onOuvrir(c.id)}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", borderRadius: 8 }}
+            >
+              <div style={{ minWidth: 0 }}>
+                {p ? <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={20} /> : "Éleveur"}
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.dernier.contenu}</div>
+              </div>
+              {c.nonLu > 0 && <span style={{ background: "var(--red)", color: "#fff", borderRadius: 10, fontSize: 11, padding: "2px 7px", fontWeight: 700, flex: "0 0 auto" }}>{c.nonLu}</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MessagesPrivesModal({ session, messages, profilCible, saisie, setSaisie, onEnvoyer, onClose, onOuvrirProfil }) {
+  const finRef = React.useRef(null);
+  useEffect(() => { finRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+  const niveauEffectif = profilCible ? (profilCible.style_ailes === "muldo" ? tierAilesMuldo(profilCible.niveau_ailes, profilCible.succes_generation_muldo) : profilCible.niveau_ailes) : 0;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", maxHeight: "80vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg, rgba(53,43,34,.99), rgba(43,36,29,.99))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12, cursor: profilCible ? "pointer" : "default" }} onClick={() => profilCible && onOuvrirProfil()}>
+            {profilCible ? <PseudoAvecAiles pseudo={profilCible.pseudo} soutien={profilCible.niveau_ailes > 0} styleAiles={profilCible.style_ailes} niveau={niveauEffectif} taille={24} /> : "Éleveur"}
+          </button>
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
+        </div>
+        <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 8, paddingRight: 4 }}>
+          {messages.length === 0 && (
+            <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>Aucun message échangé pour l'instant.</div>
+          )}
+          {messages.map((m) => {
+            const moi = m.expediteur === session.user.id;
+            return (
+              <div key={m.id} style={{ alignSelf: moi ? "flex-end" : "flex-start", maxWidth: "80%", background: moi ? "rgba(214,166,74,.16)" : "rgba(255,255,255,.05)", border: `1px solid ${moi ? "var(--gold)" : "var(--line)"}`, borderRadius: 12, padding: "8px 10px" }}>
+                <div style={{ fontSize: 13, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.contenu}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, textAlign: moi ? "right" : "left" }}>
+                  {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+            );
+          })}
+          <div ref={finRef} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <input
+            className="field"
+            placeholder="Ton message privé… (2000 caractères max)"
+            maxLength={2000}
+            value={saisie}
+            onChange={(e) => setSaisie(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onEnvoyer()}
+          />
+          <button className="btn btn-coral" disabled={!saisie.trim()} onClick={onEnvoyer}>Envoyer</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -5411,7 +4418,7 @@ function SoutienPanel({ profil, setProfil }) {
     <div className="panel-card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Soutien du projet</h2>
-        {profil.soutien && <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} />}
+        {profil.soutien && <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={32} />}
       </div>
       <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
         Le Registre restera utilisable gratuitement. Les soutiens gagnent leurs ailes selon leur don, en
@@ -5446,7 +4453,7 @@ function SoutienPanel({ profil, setProfil }) {
                 onClick={() => set({ styleAiles: style })}
                 title={style === "muldo" ? "Aperçu local — en vrai, débloquées par palier de don ET succès de génération" : undefined}
               >
-                <AileSvg style={style} taille={18} /> {label}
+                <AileSvg style={style} taille={32} /> {label}
               </button>
             ))}
           </div>
@@ -5475,16 +4482,16 @@ function SoutienPanel({ profil, setProfil }) {
       </div>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14, padding: "10px 12px", border: "1px dashed var(--line)", borderRadius: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="dragodinde" taille={44} niveau={niveau} />
+          <AileNiveau style="dragodinde" taille={90} niveau={niveau} />
           <span style={{ color: "var(--gold2)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("dragodinde", niveau)}</span>
         </div>
-        <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} />
+        <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={40} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="muldo" taille={44} niveau={niveau} />
+          <AileNiveau style="muldo" taille={90} niveau={niveau} />
           <span style={{ color: "var(--cyan)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("muldo", niveau)}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="volkorne" taille={44} niveau={niveau} />
+          <AileNiveau style="volkorne" taille={90} niveau={niveau} />
           <span style={{ color: "#e87832", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("volkorne", niveau)}</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11, alignSelf: "center" }}>
@@ -5505,12 +4512,16 @@ const CLES_SAUVEGARDE = [
   STORAGE_JOURNAL,
   STORAGE_INSTANTANES,
   STORAGE_PROFIL,
+  STORAGE_CORBEILLE,
+  STORAGE_PRIX_KAMAS_DRAGODINDE,
+  STORAGE_PRIX_KAMAS_VOLKORNE,
   ...CLES_SAUVEGARDE_DRAGODINDE,
   ...CLES_SAUVEGARDE_VOLKORNE,
 ];
 
 function SauvegardePanel({ showToast }) {
   const exporter = () => {
+    flushToutesEcrituresDebattues();
     const donnees = {};
     CLES_SAUVEGARDE.forEach((cle) => {
       const valeur = localStorage.getItem(cle);
@@ -5580,6 +4591,43 @@ function SauvegardePanel({ showToast }) {
           </label>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CorbeillePanel({ corbeille, onRestaurer, onPurger, onVider }) {
+  const [ouvert, setOuvert] = useState(false);
+  if (!corbeille.length) return null;
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => setOuvert((o) => !o)}>
+        <div>
+          <b>🗑️ Corbeille</b>
+          <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>
+            {corbeille.length} muldo(s) supprimé(s) récemment — restaurables {CORBEILLE_DUREE_JOURS} jours
+          </span>
+        </div>
+        <span style={{ color: "var(--gold2)" }}>{ouvert ? "▾" : "▸"}</span>
+      </div>
+      {ouvert && (
+        <div style={{ marginTop: 12 }}>
+          {corbeille.map(({ muldo, supprimeLe }) => (
+            <div key={muldo.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,.05)", flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13 }}>
+                <b>{muldo.nom || muldo.couleur}</b>
+                <span style={{ color: "var(--muted)", marginLeft: 8 }}>
+                  {muldo.couleur} · G{muldo.generation} · supprimé le {new Date(supprimeLe).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => onRestaurer(muldo.id)}>↩ Restaurer</button>
+                <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: "var(--red)" }} onClick={() => onPurger(muldo.id)}><Trash2 size={12} /></button>
+              </div>
+            </div>
+          ))}
+          <button className="btn btn-ghost" style={{ marginTop: 10, fontSize: 12 }} onClick={onVider}>Vider la corbeille</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -6220,6 +5268,7 @@ function GpsDofusPage({
   onTerminerGroupe,
   onAnnuler,
   onReinitialiser,
+  onDemarrerNouvelleSession,
   onVoirMuldo,
 }) {
   const [etapesOuvertes, setEtapesOuvertes] = useState({});
@@ -6557,6 +5606,13 @@ function GpsDofusPage({
               onClick={onReinitialiser}
             >
               Réinitialiser la session
+            </button>
+            <button
+              className="btn btn-coral"
+              onClick={onDemarrerNouvelleSession}
+              title="Repasse tous les Féconde en Fertile (repos terminé) puis relance la session"
+            >
+              🌱 Tous fertiles → nouvelle session
             </button>
           </div>
         </div>
@@ -6923,7 +5979,7 @@ function SuccesDofusPage({
                     type="button"
                     key={c}
                     className={`success-chip ${checked ? "success-ok" : "success-miss"}`}
-                    onClick={() => !ownedNow && onToggleCouleur(c, !Boolean(historiqueCouleurs?.[c]))}
+                    onClick={() => !ownedNow && onToggleCouleur(c, !historiqueCouleurs?.[c])}
                     title={ownedNow ? "Présent dans le cheptel : validation automatique" : "Cliquer pour modifier l'historique"}
                     style={{ cursor: ownedNow ? "default" : "pointer", textAlign: "left", font: "inherit" }}
                   >

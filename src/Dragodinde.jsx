@@ -73,7 +73,7 @@ function couleursGenerationJusquaDragodinde(generation) {
   return out;
 }
 
-function generationDeCouleurDragodinde(couleur) {
+export function generationDeCouleurDragodinde(couleur) {
   for (const [gen, couleurs] of Object.entries(GENERATIONS_DRAGODINDE)) {
     if (couleurs.includes(couleur)) return Number(gen);
   }

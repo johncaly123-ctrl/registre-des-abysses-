@@ -66,7 +66,7 @@ function couleursGenerationJusquaVolkorne(generation) {
   return out;
 }
 
-function generationDeCouleurVolkorne(couleur) {
+export function generationDeCouleurVolkorne(couleur) {
   for (const [gen, couleurs] of Object.entries(GENERATIONS_VOLKORNE)) {
     if (couleurs.includes(couleur)) return Number(gen);
   }
