@@ -5,8 +5,8 @@
 //
 // distanceLevenshtein/affectationMaximale viennent de geneticsUtils.js, déjà
 // partagé avec Dragodinde.jsx/Volkorne.jsx (pas de copie locale ici).
-import { affectationMaximale, distanceLevenshtein } from "./geneticsUtils.js";
-export { affectationMaximale, distanceLevenshtein };
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
+export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible };
 
 // ---------- constantes de design ----------
 export const COLORS = {
@@ -238,6 +238,7 @@ export function normaliserMuldo(m) {
     capacite1: capacitesMuldo(m)[0] || "Aucune",
     capacite2: capacitesMuldo(m)[1] || "Aucune",
     reproductrice: capacitesMuldo(m).includes("Reproductrice"),
+    niveau: m?.niveau != null && m.niveau !== "" ? Number(m.niveau) : null,
   };
 }
 export const FATIGUE_OBSOLETE = true; // Nouvelle version : plus de jauge de fatigue.
@@ -941,7 +942,7 @@ export function construireArbreCouples(resultat, objectif, parentDe) {
   return etapes;
 }
 
-export function scoreCoupleObjectif(male, femelle, objectif, distances, purification = false) {
+export function scoreCoupleObjectif(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false) {
   if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
   if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
 
@@ -998,7 +999,7 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
 
   // Favorise légèrement les croisements qui combinent deux branches utiles distinctes.
   if (dMale !== undefined && dFemelle !== undefined) score += 300;
-  score += Math.max(0, 20 - collisionScore(male, femelle, {}));
+  score += Math.max(0, 20 - collisionScore(male, femelle, byId));
 
   const chemin = construireCheminVersObjectif(
     meilleurResultat,
@@ -1006,17 +1007,34 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
     distances
   );
 
+  // Génération cible (mécanique du jeu) : petit bonus de tri pour préférer
+  // les couples visant une génération plus haute, sans écraser le scoring
+  // recette ci-dessus.
+  const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleur);
+  const generationBase = Math.max(generationDeCouleur(male.couleur), generationDeCouleur(femelle.couleur));
+  score += (generationCible - generationBase) * 15;
+  const chanceGenerationCible = bonusProbabiliteGenerationCible({
+    niveauA: male.niveau,
+    niveauB: femelle.niveau,
+    optimakina,
+  });
+
   return {
     score,
     raison,
     resultat: meilleurResultat,
     distance: meilleureDistance,
     chemin,
+    generationCible,
+    viaAncetre,
+    chanceGenerationCible,
+    couleursGenerationCible: GENERATIONS_MULDO[generationCible] || [],
   };
 }
 
-export function optimiserSessionAccouplements(cheptel, objectif, purification = false) {
+export function optimiserSessionAccouplements(cheptel, objectif, purification = false, optimakina = false) {
   const fertiles = cheptel.filter(muldoReproductible);
+  const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectif(objectif);
 
   // Passes successives : l'affectation hongroise travaille sur une matrice
@@ -1031,7 +1049,7 @@ export function optimiserSessionAccouplements(cheptel, objectif, purification = 
 
   while (malesRestants.length && femellesRestantes.length) {
     const details = malesRestants.map((male) => femellesRestantes.map((femelle) =>
-      scoreCoupleObjectif(male, femelle, objectif, distances, purification)
+      scoreCoupleObjectif(male, femelle, objectif, distances, purification, byId, optimakina)
     ));
     const matrice = details.map((row) => row.map((x) => x.score));
     const affectations = affectationMaximale(matrice);

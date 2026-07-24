@@ -6,7 +6,7 @@
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
 
 // ---------- Génétique : 15 couleurs monocolores, 105 bicolores (C(15,2)) ----------
 // Générations des monocolores confirmées sur l'outil de croisement dofusdb.fr.
@@ -367,7 +367,7 @@ function construireArbreCouplesVolkorne(resultat, objectif, parentDe) {
   }
   return etapes;
 }
-function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purification = false) {
+function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purification = false, byId = {}, optimakina = false) {
   if (!male || !femelle) return { score: -1000000, raison: "Couple invalide", resultat: null, distance: Infinity };
   if (male.couleur === femelle.couleur && !purification) return { score: -1000000, raison: "Même couleur interdite", resultat: null, distance: Infinity };
   const key = cleCoupleCouleurs(male.couleur, femelle.couleur);
@@ -384,18 +384,27 @@ function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purific
     meilleurResultat = resultats[0];
     raison = resultats.length > 1 ? `Accouplement de soutien · produit ${resultats.join(" ou ")}` : `Accouplement de soutien · produit ${resultats[0]}`;
   }
-  score += Math.max(0, 20 - collisionScoreVolkorne(male, femelle, {}));
+  score += Math.max(0, 20 - collisionScoreVolkorne(male, femelle, byId));
   const chemin = construireCheminVersObjectifVolkorne(meilleurResultat, objectif, distances);
-  return { score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin };
+  const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleurVolkorne);
+  const generationBase = Math.max(generationDeCouleurVolkorne(male.couleur), generationDeCouleurVolkorne(femelle.couleur));
+  score += (generationCible - generationBase) * 15;
+  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: male.niveau, niveauB: femelle.niveau, optimakina });
+  return {
+    score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
+    generationCible, viaAncetre, chanceGenerationCible,
+    couleursGenerationCible: GENERATIONS_VOLKORNE[generationCible] || [],
+  };
 }
-function optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification = false) {
+function optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification = false, optimakina = false) {
   const fertiles = cheptel.filter(volkorneReproductible);
+  const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectifVolkorne(objectif);
   let malesRestants = fertiles.filter((m) => sexeVolkorne(m) === "M");
   let femellesRestantes = fertiles.filter((m) => sexeVolkorne(m) === "F");
   const couples = [];
   while (malesRestants.length && femellesRestantes.length) {
-    const details = malesRestants.map((male) => femellesRestantes.map((femelle) => scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purification)));
+    const details = malesRestants.map((male) => femellesRestantes.map((femelle) => scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purification, byId, optimakina)));
     const affectations = affectationMaximale(details.map((row) => row.map((x) => x.score)));
     const valides = affectations.map(([i, j]) => ({ male: malesRestants[i], femelle: femellesRestantes[j], ...details[i][j] })).filter((c) => c.score > 0);
     if (!valides.length) break;
@@ -535,6 +544,17 @@ function VolkorneDetail({ m, byId, onPatch, onDelete }) {
           <select className="field" value={m.sterile ? "Stérile" : "Fertile"} onChange={(e) => onPatch({ sterile: e.target.value === "Stérile", statut: e.target.value })}>
             <option value="Fertile">Fertile</option><option value="Stérile">Stérile</option>
           </select>
+        </label>
+        <label style={{ fontSize: 11, color: "var(--muted)" }}>Niveau (optionnel, pour la génération cible)
+          <input
+            className="field"
+            type="number"
+            min={0}
+            max={200}
+            placeholder="?"
+            value={m.niveau ?? ""}
+            onChange={(e) => onPatch({ niveau: e.target.value === "" ? null : Number(e.target.value) })}
+          />
         </label>
       </div>
       <div style={{ marginTop: 12, padding: 10, borderRadius: 10, border: `1px solid ${action.color}`, background: "rgba(0,0,0,.12)" }}>
@@ -689,7 +709,8 @@ export function VolkorneSynchronisationPage({ cheptel, updateCheptel, showToast 
 }
 
 export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCible, setGenerationCible, purification, setPurification, byId, historiqueCouleurs, onRealiserUn }) {
-  const session = useMemo(() => optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification), [cheptel, objectif, purification]);
+  const [optimakina, setOptimakina] = useState(false);
+  const session = useMemo(() => optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification, optimakina), [cheptel, objectif, purification, optimakina]);
   const planGeneration = useMemo(() => analyserGenerationCibleVolkorne(generationCible, cheptel, byId, historiqueCouleurs), [generationCible, cheptel, byId, historiqueCouleurs]);
   return (
     <div>
@@ -708,6 +729,9 @@ export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCibl
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
             <input type="checkbox" checked={purification} onChange={(e) => setPurification(e.target.checked)} /> Mode purification
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+            <input type="checkbox" checked={optimakina} onChange={(e) => setOptimakina(e.target.checked)} /> Optimakina utilisée
           </label>
         </div>
         {planGeneration.actionImmediate && (
@@ -728,8 +752,18 @@ export function VolkorneGpsPage({ cheptel, objectif, setObjectif, generationCibl
         {session.raisonRestants && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{session.raisonRestants}</div>}
         {session.groupes.map((g) => (
           <div key={g.key} style={{ padding: "10px 0", borderTop: "1px solid rgba(255,255,255,.06)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <span><b>× {g.quantite}</b>{" "}♂ <VolkorneBadge couleur={g.male.couleur} taille={16} /> {g.male.couleur} × ♀ <VolkorneBadge couleur={g.femelle.couleur} taille={16} /> {g.femelle.couleur}</span>
-            <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>{g.raison}</span>
+            <span>
+              <b>× {g.quantite}</b>{" "}
+              ♂ <VolkorneBadge couleur={g.male.couleur} taille={16} /> <b>{g.male.nom || g.male.couleur}</b>
+              {" × "}
+              ♀ <VolkorneBadge couleur={g.femelle.couleur} taille={16} /> <b>{g.femelle.nom || g.femelle.couleur}</b>
+            </span>
+            <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>
+              {g.raison}
+              {g.generationCible && (
+                <div>🎯 Génération cible : G{g.generationCible} (~{g.chanceGenerationCible}% de chance) · couleurs possibles : {(g.couleursGenerationCible || []).join(", ") || "—"}</div>
+              )}
+            </span>
             <button className="btn btn-coral" onClick={() => onRealiserUn(g)}>✓ 1 réalisé</button>
           </div>
         ))}

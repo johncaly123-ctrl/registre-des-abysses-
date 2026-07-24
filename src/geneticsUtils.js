@@ -60,6 +60,63 @@ export function affectationMaximale(matrice) {
   return out;
 }
 
+// ---------- Génération cible (mécanique de reproduction Dofus) ----------
+// Remonte les parentIds sur `profondeur` niveaux (par défaut parents +
+// grands-parents, l'arbre généalogique du jeu s'arrête là) et renvoie la
+// génération de chaque ancêtre trouvé. `generationDeCouleurFn` est la
+// fonction propre à chaque créature (couleur -> numéro de génération).
+export function ancetresAvecGeneration(muldo, byId, generationDeCouleurFn, profondeur = 2) {
+  const resultats = [];
+  let front = [muldo];
+  for (let distance = 1; distance <= profondeur; distance += 1) {
+    const suivant = [];
+    front.forEach((m) => {
+      (m?.parentIds || []).forEach((id) => {
+        const parent = byId?.[id];
+        if (!parent || !parent.couleur) return;
+        resultats.push({ couleur: parent.couleur, generation: generationDeCouleurFn(parent.couleur), distance });
+        suivant.push(parent);
+      });
+    });
+    front = suivant;
+    if (!front.length) break;
+  }
+  return resultats;
+}
+
+// Génération cible d'un couple : la génération la plus haute atteignable
+// compte tenu de la généalogie connue (parents + grands-parents). Par
+// défaut (aucun ancêtre plus haut que les parents), c'est un cran au-dessus
+// des parents ; si un ancêtre appartient déjà à une génération supérieure ou
+// égale à cette cible naïve, la cible devient la génération de cet ancêtre.
+export function calculerGenerationCible(a, b, byId, generationDeCouleurFn) {
+  const genA = generationDeCouleurFn(a?.couleur);
+  const genB = generationDeCouleurFn(b?.couleur);
+  const cibleNaive = Math.max(genA, genB) + 1;
+
+  const ancetres = [
+    ...ancetresAvecGeneration(a, byId, generationDeCouleurFn),
+    ...ancetresAvecGeneration(b, byId, generationDeCouleurFn),
+  ];
+  const genAncetreMax = ancetres.reduce((max, anc) => Math.max(max, anc.generation), 0);
+
+  if (genAncetreMax >= cibleNaive) {
+    return { generationCible: genAncetreMax, viaAncetre: true };
+  }
+  return { generationCible: cibleNaive, viaAncetre: false };
+}
+
+// Bonus de chance d'obtenir la génération cible : 30% de base (mécanique du
+// jeu), + 0.15% par niveau cumulé des deux parents, + 10% avec une
+// Optimakina. Les niveaux inconnus (null/0) ne contribuent simplement rien —
+// pas de saisie obligatoire sur tout le cheptel.
+export function bonusProbabiliteGenerationCible({ niveauA = 0, niveauB = 0, optimakina = false } = {}) {
+  const base = 30;
+  const bonusNiveau = ((Number(niveauA) || 0) + (Number(niveauB) || 0)) * 0.15;
+  const bonusOptimakina = optimakina ? 10 : 0;
+  return Math.min(100, Math.round((base + bonusNiveau + bonusOptimakina) * 10) / 10);
+}
+
 export function distanceLevenshtein(a, b) {
   if (a === b) return 0;
   const la = a.length;

@@ -86,6 +86,7 @@ export default function App() {
   const [generationCollectionMin, setGenerationCollectionMin] = useState(2);
   const [generationCollectionMax, setGenerationCollectionMax] = useState(10);
   const [modePurification, setModePurification] = useState(false);
+  const [optimakina, setOptimakina] = useState(false);
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState({});
   const [page, setPage] = useState("dashboard");
   // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
@@ -395,8 +396,8 @@ export default function App() {
   }, [cheptel, gpsSuiviActif.consommes]);
 
   const sessionGps = useMemo(
-    () => optimiserSessionAccouplements(cheptelGpsDisponible, objectifGpsActif, modePurification),
-    [cheptelGpsDisponible, objectifGpsActif, modePurification]
+    () => optimiserSessionAccouplements(cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina),
+    [cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina]
   );
 
   const sauvegarderSuiviGps = useCallback((next) => {
@@ -1509,6 +1510,8 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
                   progressionGenerations={progressionGps}
                   purification={modePurification}
                   setPurification={setModePurification}
+                  optimakina={optimakina}
+                  setOptimakina={setOptimakina}
                   suivi={gpsSuiviActif}
                   naissances={naissances}
                   journal={journal}
@@ -2061,6 +2064,18 @@ function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
           >
             {muldoReproductible(muldo) ? "1 reproduction disponible" : "Stérile — remettre fertile"}
           </button>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 4, fontFamily: "Inter, sans-serif" }}>Niveau (optionnel, pour la génération cible)</div>
+          <input
+            className="field"
+            type="number"
+            min={0}
+            max={200}
+            placeholder="?"
+            value={muldo.niveau ?? ""}
+            onChange={(e) => onPatch({ niveau: e.target.value === "" ? null : Number(e.target.value) })}
+          />
         </div>
       </div>
 
@@ -5298,6 +5313,8 @@ function GpsDofusPage({
   progressionGenerations,
   purification,
   setPurification,
+  optimakina,
+  setOptimakina,
   suivi,
   naissances,
   journal,
@@ -5726,6 +5743,20 @@ function GpsDofusPage({
             />
             Mode purification
           </label>
+          <label style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--muted)",
+            fontSize: 12,
+          }}>
+            <input
+              type="checkbox"
+              checked={optimakina}
+              onChange={(e) => setOptimakina(e.target.checked)}
+            />
+            Optimakina utilisée
+          </label>
         </div>
       </div>
 
@@ -5809,6 +5840,13 @@ function GpsDofusPage({
                 </>
               ) : null}
               {g.raison}
+              {g.generationCible && (
+                <div style={{ marginTop: 4 }}>
+                  🎯 Génération cible : G{g.generationCible} (~{g.chanceGenerationCible}% de chance)
+                  <br />
+                  couleurs possibles : {(g.couleursGenerationCible || []).join(", ") || "—"}
+                </div>
+              )}
             </div>
             <div style={{
               display: "flex",
