@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { chargerJSON, sauvegarderJSON, creerEcritureDebattue, flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
-import { CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel, BebesARenommerPanel, copierPressePapiers, exporterFicheImage, GpsDofusPage } from "./panneauxElevage.jsx";
+import { CorbeillePanel, ArbreGenealogiquePanel, StatsCroisementsPanel, BebesARenommerPanel, copierPressePapiers, exporterFicheImage, BoutonFiche, GpsDofusPage } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON } from "./configSupabase.js";
 import { Plus, Trash2, Waves, Heart, Zap, Sparkles, Droplets, AlertTriangle, X, Skull, Baby, Save } from "lucide-react";

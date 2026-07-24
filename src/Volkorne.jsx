@@ -1188,6 +1188,14 @@ export function useVolkorneElevage() {
     });
   }, [cheptel, modeGps, objectifGpsActif, purification, sauvegarderSuiviGps]);
 
+  const updateCheptel = useCallback((updater) => {
+    setCheptel((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      localStorage.setItem(STORAGE_KEY_VOLKORNE, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   // Raccourci de début de session : bascule en masse tous les "Féconde"
   // (repos terminé côté jeu) vers "Fertile", puis relance le plan GPS.
   const demarrerNouvelleSessionAccouplement = useCallback(() => {
@@ -1228,14 +1236,6 @@ export function useVolkorneElevage() {
 
     reinitialiserSessionGps();
   }, [cheptel, updateCheptel, reinitialiserSessionGps]);
-
-  const updateCheptel = useCallback((updater) => {
-    setCheptel((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem(STORAGE_KEY_VOLKORNE, JSON.stringify(next));
-      return next;
-    });
-  }, []);
 
   const patchMuldo = useCallback((id, patch) => updateCheptel((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m))), [updateCheptel]);
   const deleteMuldo = useCallback((id) => {
