@@ -19,4 +19,13 @@ export const LIEN_DON = "https://paypal.me/caly191";
 // Le webhook supabase/functions/stripe-webhook/index.ts attribue le palier
 // dès réception du paiement, sans étape manuelle — voir son commentaire
 // d'en-tête pour la configuration (secret webhook, déploiement).
-export const LIENS_DON_STRIPE = ["", "", "", "", ""];
+//
+// ⚠️ Liens de TEST Stripe (préfixe test_) — à remplacer par les liens en
+// mode production avant d'annoncer les dons publiquement (voir mémo projet).
+export const LIENS_DON_STRIPE = [
+  "https://buy.stripe.com/test_28E5kD2CM8Yc5zc7gF9Ve01", // palier 1 — 5 €
+  "https://buy.stripe.com/test_fZu14n0uEeiwe5I7gF9Ve02", // palier 2 — 8 €
+  "https://buy.stripe.com/test_7sY28r6T2a2g9Ps8kJ9Ve03", // palier 3 — 12 €
+  "https://buy.stripe.com/test_5kQ14n1yIa2g7HkbwV9Ve04", // palier 4 — 16 €
+  "https://buy.stripe.com/test_00wbJ16T2eiwe5IfNb9Ve05", // palier 5 — 20 €
+];
