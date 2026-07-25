@@ -583,7 +583,7 @@ export default function App() {
           <div>
             <div className="brand-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               Registre des Abysses
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#1f8f88", borderRadius: 999, padding: "2px 8px", letterSpacing: 0.4 }}>{VERSION_APP}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", WebkitTextFillColor: "#fff", background: "#1f8f88", borderRadius: 999, padding: "2px 8px", letterSpacing: 0.4 }}>{VERSION_APP}</span>
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>Élevage de Muldos · GPS génération · Succès</div>
           </div>
