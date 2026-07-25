@@ -75,6 +75,9 @@ export default function App() {
   // Cheptel public en lecture seule (?voir=pseudo) : lu une fois au montage,
   // ne change jamais après (un partage de lien recharge la page).
   const [pseudoPublic] = useState(() => new URLSearchParams(window.location.search).get("voir") || null);
+  // Pseudo du parrain capturé sur un lien ?parrain=<pseudo> — transmis à
+  // l'inscription (metadata signUp), sans lien avec les paliers d'ailes payants.
+  const [parrainCapture] = useState(() => new URLSearchParams(window.location.search).get("parrain") || null);
   const [toast, setToast] = useState(null);
   const showToast = (msg, opts = {}) => {
     setToast({ msg, type: opts.type });
@@ -658,6 +661,7 @@ export default function App() {
                 showToast={showToast}
                 onPartagerTaverne={partagerDansTaverne}
               />
+              <ParrainagePanel session={compte.session} pseudo={compte.profil?.pseudo} showToast={showToast} />
               <MemoElevagePanel />
               <CorbeillePanel corbeille={eleveMuldo.corbeille} onRestaurer={eleveMuldo.restaurerMuldo} onPurger={eleveMuldo.purgerCorbeilleEntree} onVider={eleveMuldo.viderCorbeille} dureeJours={CORBEILLE_DUREE_JOURS} />
               <SauvegardePanel showToast={showToast} />
@@ -886,7 +890,7 @@ export default function App() {
       <OnboardingOverlay open={onboardingGpsOuvert} onClose={fermerOnboardingGps} />
 
       {profilOuvert && (
-        <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} />
+        <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} parrainCapture={parrainCapture} />
       )}
 
       {eleveMuldo.ficheRapide && (
@@ -1151,6 +1155,53 @@ function PartagePublicPanel({ session, pseudo, cheptelMuldo, cheptelDragodinde, 
   );
 }
 
+// Programme de parrainage leger : indépendant du système d'ailes payant (pas
+// de récompense automatique attribuée ici) — juste un lien personnel et un
+// compteur de filleuls inscrits / actifs (ayant posté au moins un message
+// dans la Taverne), affiché comme un badge de plus sur le profil.
+function ParrainagePanel({ session, pseudo, showToast }) {
+  const [filleuls, setFilleuls] = useState(null); // null = pas encore chargé
+  const [actifs, setActifs] = useState(0);
+
+  useEffect(() => {
+    if (!supabase || !session?.user) return;
+    (async () => {
+      const { data: liste } = await supabase.from("profils").select("id").eq("parrain_id", session.user.id);
+      setFilleuls(liste || []);
+      if (liste?.length) {
+        const { data: messages } = await supabase.from("messages").select("auteur").in("auteur", liste.map((f) => f.id));
+        setActifs(new Set((messages || []).map((m) => m.auteur)).size);
+      }
+    })();
+  }, [session?.user?.id]);
+
+  if (!supabase || !session?.user) return null;
+
+  const lienParrainage = pseudo ? `${window.location.origin}/?parrain=${encodeURIComponent(pseudo)}` : null;
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <h2 style={{ marginTop: 0 }}>🤝 Parrainage</h2>
+      <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
+        Partage ton lien : chaque nouvel éleveur inscrit via ce lien est compté ci-dessous. Purement
+        indicatif pour l'instant — aucun palier d'ailes n'est attribué automatiquement.
+      </div>
+      {lienParrainage && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <code style={{ fontSize: 12, color: "var(--gold2)", wordBreak: "break-all" }}>{lienParrainage}</code>
+          <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={async () => { if (await copierPressePapiers(lienParrainage)) showToast?.("Lien copié !"); }}>Copier le lien</button>
+        </div>
+      )}
+      <div style={{ fontSize: 13 }}>
+        {filleuls === null ? "Chargement…" : `${filleuls.length} filleul(s) inscrit(s) · ${actifs} actif(s) (ont posté dans la Taverne)`}
+      </div>
+      {actifs > 0 && (
+        <div className="success-chip success-ok" style={{ display: "inline-block", marginTop: 10 }}>🤝 Parrain actif</div>
+      )}
+    </div>
+  );
+}
+
 function CheptelPublicPage({ pseudo, cheptelViewer }) {
   const [etat, setEtat] = useState("chargement"); // chargement | introuvable | ok
   const [cheptels, setCheptels] = useState({});
@@ -1302,7 +1353,7 @@ function useCompte() {
 }
 
 // ---------- Panneau d'authentification (connexion / inscription / oubli) ----------
-function AuthPanel({ profilLocal, pretMdp, onFini }) {
+function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
   const [pseudo, setPseudo] = useState(profilLocal?.pseudo || "");
   const [email, setEmail] = useState("");
   const [identifiant, setIdentifiant] = useState("");
@@ -1335,7 +1386,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini }) {
         if (motDePasse.length < 6) throw new Error("Mot de passe : 6 caractères minimum.");
         const { data: existant } = await supabase.from("profils").select("id").ilike("pseudo", p).maybeSingle();
         if (existant) throw new Error("Ce pseudo est déjà pris.");
-        const { error } = await supabase.auth.signUp({ email: mail, password: motDePasse, options: { data: { pseudo: p } } });
+        const { error } = await supabase.auth.signUp({ email: mail, password: motDePasse, options: { data: { pseudo: p, parrain: parrainCapture || undefined } } });
         if (error) throw new Error(/already/i.test(error.message) ? "Un compte existe déjà avec cet email." : error.message);
         setInfo(`Email de confirmation envoyé à ${mail} — clique le lien, puis connecte-toi.`);
         setMode("connexion"); setIdentifiant(p); setMotDePasse("");
@@ -1421,7 +1472,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini }) {
 }
 
 // ---------- Modale Profil (ouverte depuis le bouton d'en-tête) ----------
-function ProfilModal({ compte, profilLocal, setProfilLocal, onClose }) {
+function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapture }) {
   const { session, profil, pretMdp, rafraichirProfil } = compte;
   const [description, setDescription] = useState("");
   const [nouveauMdp, setNouveauMdp] = useState("");
@@ -1469,7 +1520,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose }) {
             <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 12 }}>
               {pretMdp ? "Choisis ton nouveau mot de passe." : "Connecte-toi ou crée ton compte d'éleveur pour discuter dans la Taverne et gagner tes ailes."}
             </div>
-            <AuthPanel profilLocal={profilLocal} pretMdp={pretMdp} onFini={rafraichirProfil} />
+            <AuthPanel profilLocal={profilLocal} pretMdp={pretMdp} onFini={rafraichirProfil} parrainCapture={parrainCapture} />
           </div>
         ) : !profil ? (
           <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 12 }}>Chargement du profil…</div>

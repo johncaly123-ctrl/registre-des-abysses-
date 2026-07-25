@@ -277,3 +277,29 @@ drop policy if exists "mettre a jour son propre cheptel publie" on cheptels_publ
 create policy "mettre a jour son propre cheptel publie" on cheptels_publics for update using (auth.uid() = utilisateur) with check (auth.uid() = utilisateur);
 drop policy if exists "depublier son propre cheptel" on cheptels_publics;
 create policy "depublier son propre cheptel" on cheptels_publics for delete using (auth.uid() = utilisateur);
+
+-- v15 : programme de parrainage leger. parrain_id capture, au moment de
+-- l'inscription, le pseudo transmis via le lien ?parrain=<pseudo> (metadata
+-- signUp) -- volontairement independant du systeme d'ailes payant : aucune
+-- recompense automatique n'est attribuee ici, juste un compteur cote client
+-- (filleuls inscrits / actifs) affiche sur le profil.
+alter table profils add column if not exists parrain_id uuid references profils(id) on delete set null;
+create index if not exists idx_profils_parrain on profils(parrain_id);
+
+create or replace function creer_profil_inscription() returns trigger as $$
+declare
+  parrain_pseudo text := nullif(trim(new.raw_user_meta_data ->> 'parrain'), '');
+  parrain_uuid uuid;
+begin
+  if parrain_pseudo is not null then
+    select id into parrain_uuid from public.profils where lower(pseudo) = lower(parrain_pseudo) limit 1;
+  end if;
+  insert into public.profils (id, pseudo, parrain_id)
+  values (
+    new.id,
+    coalesce(nullif(trim(new.raw_user_meta_data ->> 'pseudo'), ''), 'Eleveur-' || left(new.id::text, 6)),
+    parrain_uuid
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
