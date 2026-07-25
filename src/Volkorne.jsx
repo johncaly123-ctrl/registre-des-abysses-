@@ -419,7 +419,7 @@ function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purific
   const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleurVolkorne);
   const generationBase = Math.max(generationDeCouleurVolkorne(male.couleur), generationDeCouleurVolkorne(femelle.couleur));
   score += (generationCible - generationBase) * 15;
-  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina, genMax: generationBase });
+  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina });
   return {
     score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
     generationCible, viaAncetre, chanceGenerationCible,

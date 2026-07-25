@@ -1005,7 +1005,6 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
     niveauA: Math.max(male.niveau || 0, niveauMinimum),
     niveauB: Math.max(femelle.niveau || 0, niveauMinimum),
     optimakina,
-    genMax: generationBase,
   });
 
   return {

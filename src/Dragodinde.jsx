@@ -356,7 +356,7 @@ function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purif
   const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleurDragodinde);
   const generationBase = Math.max(generationDeCouleurDragodinde(male.couleur), generationDeCouleurDragodinde(femelle.couleur));
   score += (generationCible - generationBase) * 15;
-  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina, genMax: generationBase });
+  const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina });
   return {
     score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
     generationCible, viaAncetre, chanceGenerationCible,

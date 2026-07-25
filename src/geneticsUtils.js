@@ -133,16 +133,17 @@ export function calculerGenerationCible(a, b, byId, generationDeCouleurFn) {
   return { generationCible: cibleNaive, viaAncetre: false };
 }
 
-// Bonus de chance d'obtenir la génération cible : vérifié in-game sur 6
-// accouplements (2026-07-25, captures avec % affiché) — base 30% si les DEUX
-// parents sont de génération 1 ("pure race"), 40% dès qu'au moins un parent
-// est déjà de génération ≥ 2 (porteur de génétique composite), toujours
-// + 0.15% par niveau cumulé des deux parents, + 10% avec une Optimakina
-// (non observé dans l'échantillon, conservé tel quel). Les niveaux inconnus
-// (null/0) ne contribuent simplement rien — pas de saisie obligatoire sur
-// tout le cheptel.
-export function bonusProbabiliteGenerationCible({ niveauA = 0, niveauB = 0, optimakina = false, genMax = 1 } = {}) {
-  const base = Number(genMax) >= 2 ? 40 : 30;
+// Bonus de chance d'obtenir la génération cible : reverifie in-game sur 6
+// accouplements (2026-07-25, captures avec % affiché) — base 30% toujours,
+// + 0.15% par niveau cumulé des deux parents, + 10% avec une Optimakina.
+// Les 4 captures à 40% de base apparente correspondaient en fait à un
+// accouplement fait avec une Makina active (30 + 10 Optimakina), pas à une
+// génération de parent plus élevée — piste initialement explorée puis
+// invalidée une fois cette précision obtenue. Formule confirmée exacte sur
+// les 6 cas avec cette lecture. Les niveaux inconnus (null/0) ne
+// contribuent simplement rien — pas de saisie obligatoire sur tout le cheptel.
+export function bonusProbabiliteGenerationCible({ niveauA = 0, niveauB = 0, optimakina = false } = {}) {
+  const base = 30;
   const bonusNiveau = ((Number(niveauA) || 0) + (Number(niveauB) || 0)) * 0.15;
   const bonusOptimakina = optimakina ? 10 : 0;
   return Math.min(100, Math.round((base + bonusNiveau + bonusOptimakina) * 100) / 100);
