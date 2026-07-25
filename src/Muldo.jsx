@@ -17,7 +17,7 @@ import {
 import {
   COLORS, COULEURS_MULDO, CAPACITES_MULDO,
   capacitesMuldo, normaliserMuldo,
-  GENERATIONS_MULDO, couleursGenerationJusqua, plierCouleur,
+  GENERATIONS_MULDO, plierCouleur,
   canonicaliserCouleur,
   generationDeCouleur,
   CHEPTEL_INITIAL_AUTO, sexeMuldo, muldoReproductible,
@@ -1349,75 +1349,71 @@ export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
 }
 
 
+// Pensé pour la création en série (screen d'un enclos entier) : génération
+// et couleur restent en place après chaque création — la modale ne se ferme
+// plus toute seule — et le nom généré est copié automatiquement, prêt à
+// coller dans le renommage en jeu, pour enchaîner sans ressaisir. Capacités
+// et généalogie restent disponibles mais repliées, pour ne pas ralentir le
+// cas courant.
 export function NewMuldoModal({ cheptel, onClose, onCreate }) {
+  const [filtreGeneration, setFiltreGeneration] = useState("1");
+  const couleursProposees = GENERATIONS_MULDO[Number(filtreGeneration)] || [];
   const [form, setForm] = useState(() => ({
-    nom: genererNomCourt(COULEURS_MULDO[0]),
-    sexe: "F", couleur: COULEURS_MULDO[0], generation: generationDeCouleur(COULEURS_MULDO[0]), statut: "Féconde",
+    nom: genererNomCourt(couleursProposees[0] || COULEURS_MULDO[0]),
+    sexe: "F", couleur: couleursProposees[0] || COULEURS_MULDO[0], statut: "Féconde",
     capacite1: "Aucune", capacite2: "Aucune", pere: "", mere: "",
   }));
   // Tant que l'utilisateur n'a pas saisi son propre nom, on suit la couleur.
   const [nomPersonnalise, setNomPersonnalise] = useState(false);
-  // Filtre optionnel : choisir d'abord la génération restreint les couleurs
-  // proposées ; sans filtre, toute la liste (G1 → G10) est disponible.
-  const [filtreGeneration, setFiltreGeneration] = useState("");
-  const couleursProposees = filtreGeneration
-    ? (GENERATIONS_MULDO[Number(filtreGeneration)] || [])
-    : couleursGenerationJusqua(10);
+  const [optionsOuvertes, setOptionsOuvertes] = useState(false);
+  const [dernierNom, setDernierNom] = useState("");
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const changerCouleur = (couleur) => {
     setForm((f) => ({
       ...f,
       couleur,
-      generation: generationDeCouleur(couleur),
       nom: nomPersonnalise && f.nom ? f.nom : genererNomCourt(couleur),
     }));
   };
   const changerFiltreGeneration = (valeur) => {
     setFiltreGeneration(valeur);
-    if (valeur) {
-      const liste = GENERATIONS_MULDO[Number(valeur)] || [];
-      if (liste.length && !liste.includes(form.couleur)) changerCouleur(liste[0]);
-    }
+    const liste = GENERATIONS_MULDO[Number(valeur)] || [];
+    if (liste.length && !liste.includes(form.couleur)) changerCouleur(liste[0]);
   };
   const males = cheptel.filter((m) => m.sexe === "M");
   const femelles = cheptel.filter((m) => m.sexe === "F");
+
+  const creer = () => {
+    const nom = form.nom.trim() || genererNomCourt(form.couleur);
+    onCreate({ ...form, nom, generation: generationDeCouleur(form.couleur), capacites: [form.capacite1, form.capacite2], parentIds: [form.pere || null, form.mere || null] });
+    copierPressePapiers(nom);
+    setDernierNom(nom);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(5,15,19,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}
       onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.panel, border: `1px solid ${COLORS.line}`, borderRadius: 12, padding: 22, width: 380, color: COLORS.text }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 16, fontFamily: "'Iowan Old Style', Georgia, serif" }}>Nouveau spécimen</div>
           <X size={16} style={{ cursor: "pointer", color: COLORS.muted }} onClick={onClose} />
         </div>
+        <div style={{ fontSize: 12, color: COLORS.muted, marginBottom: 14 }}>
+          Génération + couleur + sexe, puis Créer : le nom est copié automatiquement. La sélection reste en place pour enchaîner sur le suivant.
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              className="field"
-              placeholder="Nom du muldo"
-              value={form.nom}
-              onChange={(e) => { set("nom", e.target.value); setNomPersonnalise(e.target.value.trim() !== ""); }}
-              title="Nom proposé automatiquement (valide pour le renommage en jeu) — modifie-le librement"
-            />
-            <button
-              type="button"
-              className="btn btn-ghost"
-              title="Proposer un autre nom"
-              style={{ padding: "0 12px", flexShrink: 0 }}
-              onClick={() => { set("nom", genererNomCourt(form.couleur)); setNomPersonnalise(false); }}
-            >
-              ↻
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              title="Copier ce nom pour le renommage en jeu"
-              style={{ padding: "0 12px", flexShrink: 0 }}
-              onClick={() => copierPressePapiers(form.nom)}
-            >
-              📋
-            </button>
-          </div>
+          <LabeledSelect
+            label="Génération"
+            value={filtreGeneration}
+            options={Array.from({ length: 10 }, (_, i) => [String(i + 1), `Génération ${i + 1}`])}
+            onChange={changerFiltreGeneration}
+          />
+          <LabeledSelect
+            label={`Couleur (${couleursProposees.length} choix)`}
+            value={form.couleur}
+            options={couleursProposees.map((c) => [c, c])}
+            onChange={changerCouleur}
+          />
           <div>
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 4, fontFamily: "Inter, sans-serif" }}>Sexe</div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1439,27 +1435,41 @@ export function NewMuldoModal({ cheptel, onClose, onCreate }) {
               </button>
             </div>
           </div>
-          <LabeledSelect
-            label="Génération (filtre les couleurs)"
-            value={filtreGeneration}
-            options={[["", "Toutes les générations"], ...Array.from({ length: 10 }, (_, i) => [String(i + 1), `Génération ${i + 1}`])]}
-            onChange={changerFiltreGeneration}
-          />
-          <LabeledSelect
-            label={`Couleur${filtreGeneration ? ` (G${filtreGeneration} · ${couleursProposees.length} choix)` : ""}`}
-            value={form.couleur}
-            options={couleursProposees.map((c) => [c, c])}
-            onChange={changerCouleur}
-          />
-          <LabeledSelect label="Capacité 1" value={form.capacite1} options={CAPACITES_MULDO.map((c) => [c, c])} onChange={(v) => set("capacite1", v)} />
-          <LabeledSelect label="Capacité 2" value={form.capacite2} options={CAPACITES_MULDO.map((c) => [c, c])} onChange={(v) => set("capacite2", v)} />
-          <LabeledSelect label="Père (optionnel)" value={form.pere} options={[["", "Inconnu / sauvage"], ...males.map((m) => [m.id, m.nom])]} onChange={(v) => set("pere", v)} />
-          <LabeledSelect label="Mère (optionnel)" value={form.mere} options={[["", "Inconnue / sauvage"], ...femelles.map((m) => [m.id, m.nom])]} onChange={(v) => set("mere", v)} />
         </div>
-        <button className="btn btn-coral" style={{ width: "100%", justifyContent: "center", marginTop: 18 }}
-          onClick={() => onCreate({ ...form, nom: form.nom.trim() || genererNomCourt(form.couleur), capacites: [form.capacite1, form.capacite2], parentIds: [form.pere || null, form.mere || null] })}>
-          <Plus size={14} /> Ajouter au cheptel
+        <button className="btn btn-coral" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={creer}>
+          <Plus size={14} /> Créer (copie le nom)
         </button>
+        {dernierNom && <div style={{ marginTop: 8, fontSize: 12, color: "var(--green)" }}>✓ « {dernierNom} » créé et copié — colle-le en jeu, puis clique à nouveau.</div>}
+
+        <button type="button" className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 14, fontSize: 12 }} onClick={() => setOptionsOuvertes((o) => !o)}>
+          {optionsOuvertes ? "▾" : "▸"} Options avancées (nom, capacités, généalogie)
+        </button>
+        {optionsOuvertes && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                className="field"
+                placeholder="Nom du muldo"
+                value={form.nom}
+                onChange={(e) => { set("nom", e.target.value); setNomPersonnalise(e.target.value.trim() !== ""); }}
+                title="Nom proposé automatiquement (valide pour le renommage en jeu) — modifie-le librement"
+              />
+              <button
+                type="button"
+                className="btn btn-ghost"
+                title="Proposer un autre nom"
+                style={{ padding: "0 12px", flexShrink: 0 }}
+                onClick={() => { set("nom", genererNomCourt(form.couleur)); setNomPersonnalise(false); }}
+              >
+                ↻
+              </button>
+            </div>
+            <LabeledSelect label="Capacité 1" value={form.capacite1} options={CAPACITES_MULDO.map((c) => [c, c])} onChange={(v) => set("capacite1", v)} />
+            <LabeledSelect label="Capacité 2" value={form.capacite2} options={CAPACITES_MULDO.map((c) => [c, c])} onChange={(v) => set("capacite2", v)} />
+            <LabeledSelect label="Père (optionnel)" value={form.pere} options={[["", "Inconnu / sauvage"], ...males.map((m) => [m.id, m.nom])]} onChange={(v) => set("pere", v)} />
+            <LabeledSelect label="Mère (optionnel)" value={form.mere} options={[["", "Inconnue / sauvage"], ...femelles.map((m) => [m.id, m.nom])]} onChange={(v) => set("mere", v)} />
+          </div>
+        )}
       </div>
     </div>
   );

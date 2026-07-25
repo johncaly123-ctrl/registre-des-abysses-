@@ -5,9 +5,9 @@
 // C:\Users\Caly\.claude\plans\dazzling-painting-shamir.md pour le contexte.
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
-import { Trash2, Baby, Heart, Zap, Sparkles, Droplets } from "lucide-react";
+import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
-import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect } from "./panneauxElevage.jsx";
+import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
 const JAUGES_VOLKORNE = [
@@ -652,29 +652,56 @@ function VolkorneDetail({ m, byId, onPatch, onDelete }) {
   );
 }
 
-function NewVolkorneModal({ onClose, onCreate }) {
-  const [form, setForm] = useState({ nom: "", couleur: COULEURS_VOLKORNE[0], sexe: "Femelle", statut: "Féconde" });
+// Pensé pour la création en série (screen d'un enclos entier) : la sélection
+// génération/couleur/sexe reste en place après chaque création — la modale
+// ne se ferme plus toute seule — et le nom généré est copié automatiquement,
+// prêt à coller dans le renommage en jeu, pour enchaîner sans ressaisir.
+export function NewVolkorneModal({ onClose, onCreate }) {
+  const [filtreGeneration, setFiltreGeneration] = useState("1");
+  const couleursProposees = GENERATIONS_VOLKORNE[Number(filtreGeneration)] || [];
+  const [couleur, setCouleur] = useState(couleursProposees[0] || COULEURS_VOLKORNE[0]);
+  const [sexe, setSexe] = useState("Femelle");
+  const [dernierNom, setDernierNom] = useState("");
+
+  const changerGeneration = (v) => {
+    setFiltreGeneration(v);
+    const liste = GENERATIONS_VOLKORNE[Number(v)] || [];
+    if (liste.length && !liste.includes(couleur)) setCouleur(liste[0]);
+  };
+
+  const creer = () => {
+    const nom = genererNomCourtVolkorne(couleur);
+    onCreate({ nom, couleur, sexe, statut: "Féconde" });
+    copierPressePapiers(nom);
+    setDernierNom(nom);
+  };
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(10,8,6,.65)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel-card" style={{ width: "min(420px,92vw)" }}>
-        <h3 style={{ marginTop: 0 }}>Nouveau volkorne</h3>
-        <label style={{ fontSize: 11, color: "var(--muted)" }}>Nom
-          <input className="field" value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} placeholder="Optionnel" />
-        </label>
-        <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginTop: 8 }}>Couleur
-          <select className="field" value={form.couleur} onChange={(e) => setForm({ ...form, couleur: e.target.value })}>
-            {COULEURS_VOLKORNE.map((c) => <option key={c} value={c}>{c} (G{generationDeCouleurVolkorne(c)})</option>)}
-          </select>
-        </label>
-        <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginTop: 8 }}>Sexe
-          <select className="field" value={form.sexe} onChange={(e) => setForm({ ...form, sexe: e.target.value })}>
-            <option value="Femelle">Femelle</option><option value="Mâle">Mâle</option>
-          </select>
-        </label>
-        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-          <button className="btn btn-coral" onClick={() => { onCreate(form); onClose(); }}>Ajouter</button>
-          <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>Nouveau volkorne</h3>
+          <X size={16} style={{ cursor: "pointer", color: "var(--muted)" }} onClick={onClose} />
         </div>
+        <div style={{ color: "var(--muted)", fontSize: 12, margin: "6px 0 12px" }}>
+          Génération + couleur + sexe, puis Créer : le nom est copié automatiquement. La sélection reste en place pour enchaîner sur le suivant.
+        </div>
+        <LabeledSelect label="Génération" value={filtreGeneration} onChange={changerGeneration}
+          options={Array.from({ length: 10 }, (_, i) => [String(i + 1), `Génération ${i + 1}`])} />
+        <div style={{ marginTop: 8 }}>
+          <LabeledSelect label={`Couleur (${couleursProposees.length} choix)`} value={couleur} onChange={setCouleur}
+            options={couleursProposees.map((c) => [c, c])} />
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Sexe</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn btn-ghost" style={{ flex: 1, justifyContent: "center", ...(sexe === "Mâle" ? { borderColor: "#6fa8dc", color: "#6fa8dc" } : {}) }} onClick={() => setSexe("Mâle")}>♂ Mâle</button>
+            <button type="button" className="btn btn-ghost" style={{ flex: 1, justifyContent: "center", ...(sexe === "Femelle" ? { borderColor: "#d98ec0", color: "#d98ec0" } : {}) }} onClick={() => setSexe("Femelle")}>♀ Femelle</button>
+          </div>
+        </div>
+        <button className="btn btn-coral" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={creer}>+ Créer (copie le nom)</button>
+        {dernierNom && <div style={{ marginTop: 8, fontSize: 12, color: "var(--green)" }}>✓ « {dernierNom} » créé et copié — colle-le en jeu, puis clique à nouveau.</div>}
+        <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={onClose}>Fermer</button>
       </div>
     </div>
   );
@@ -729,7 +756,7 @@ export function VolkorneCheptelListPane({ cheptel, filter, setFilter, selectedId
   );
 }
 
-export function VolkorneCheptelMainPane({ cheptel, selectedId, setSelectedId, byId, onPatch, onDelete, showNew, setShowNew, onCreate }) {
+export function VolkorneCheptelMainPane({ cheptel, selectedId, setSelectedId, byId, onPatch, onDelete, setShowNew }) {
   const selected = selectedId ? byId[selectedId] : null;
   return (
     <>
@@ -754,7 +781,6 @@ export function VolkorneCheptelMainPane({ cheptel, selectedId, setSelectedId, by
           </div>
         )}
       </div>
-      {showNew && <NewVolkorneModal onClose={() => setShowNew(false)} onCreate={onCreate} />}
     </>
   );
 }
@@ -1440,7 +1466,7 @@ export function useVolkorneElevage() {
   }, [persisterNaissances]);
 
   return {
-    cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, byId, historiqueCouleurs, journal, naissances, corbeille,
+    cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, addMuldo, byId, historiqueCouleurs, journal, naissances, corbeille,
     cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId },
     cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
     syncProps: { cheptel, updateCheptel },

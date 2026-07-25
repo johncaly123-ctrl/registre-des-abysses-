@@ -8,13 +8,13 @@ import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2, X } from "lucide-react";
 import {
-  useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane,
+  useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane, NewDragodindeModal,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
   CLES_SAUVEGARDE_DRAGODINDE, generationDeCouleurDragodinde, sexeDragodinde, plierCouleurDragodinde,
   GENERATIONS_DRAGODINDE,
 } from "./Dragodinde.jsx";
 import {
-  useVolkorneElevage, VolkorneCheptelListPane, VolkorneCheptelMainPane,
+  useVolkorneElevage, VolkorneCheptelListPane, VolkorneCheptelMainPane, NewVolkorneModal,
   VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
   CLES_SAUVEGARDE_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
   GENERATIONS_VOLKORNE,
@@ -605,6 +605,8 @@ export default function App() {
                 : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>}
             </button>
             <button className="btn btn-coral" onClick={() => eleveMuldo.setShowNew(true)}><Plus size={15} /> Nouveau muldo</button>
+            <button className="btn btn-coral" onClick={() => eleveDragodinde.setShowNew(true)}><Plus size={15} /> Nouveau dragodinde</button>
+            <button className="btn btn-coral" onClick={() => eleveVolkorne.setShowNew(true)}><Plus size={15} /> Nouveau volkorne</button>
           </div>
         </div>
       </div>
@@ -886,6 +888,8 @@ export default function App() {
       </div>
 
       {eleveMuldo.showNew && <NewMuldoModal cheptel={eleveMuldo.cheptel} onClose={() => eleveMuldo.setShowNew(false)} onCreate={eleveMuldo.addMuldo} />}
+      {eleveDragodinde.showNew && <NewDragodindeModal onClose={() => eleveDragodinde.setShowNew(false)} onCreate={eleveDragodinde.addMuldo} />}
+      {eleveVolkorne.showNew && <NewVolkorneModal onClose={() => eleveVolkorne.setShowNew(false)} onCreate={eleveVolkorne.addMuldo} />}
 
       <OnboardingOverlay open={onboardingGpsOuvert} onClose={fermerOnboardingGps} />
 
