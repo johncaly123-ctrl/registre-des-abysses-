@@ -61,7 +61,7 @@ const STORAGE_PARCOURS_GUIDE = "muldo-parcours-guide-v1";
 
 // Bandeau de version visible dans l'en-tête. Reste "BETA vX.Y" tant que le
 // site n'est pas poussé/déployé publiquement — passera à "V1" ce jour-là.
-const VERSION_APP = "BETA v0.1";
+const VERSION_APP = "BETA v0.2";
 
 // Parcours guidé pas-à-pas (au-delà du simple overlay explicatif du GPS) :
 // accompagne un nouveau joueur à travers une vraie première session muldo
