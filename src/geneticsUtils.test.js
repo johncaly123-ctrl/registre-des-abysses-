@@ -65,4 +65,24 @@ describe("bonusProbabiliteGenerationCible", () => {
   it("ignore les niveaux non renseignés (null)", () => {
     expect(bonusProbabiliteGenerationCible({ niveauA: null, niveauB: null })).toBe(30);
   });
+
+  it("40% de base dès qu'un parent est au moins de génération 2 (vérifié in-game)", () => {
+    expect(bonusProbabiliteGenerationCible({ genMax: 2 })).toBe(40);
+    expect(bonusProbabiliteGenerationCible({ genMax: 5 })).toBe(40);
+  });
+
+  it("reproduit exactement les 6 accouplements observés en jeu (2026-07-25)", () => {
+    // Doré et Amande (G4, niv 62) x Roux et Pourpre (G4, niv 64) -> Turquoise 58,9%
+    expect(bonusProbabiliteGenerationCible({ niveauA: 62, niveauB: 64, genMax: 4 })).toBeCloseTo(58.9, 1);
+    // Turquoise (G5, niv 70) x Indigo (G1, niv 53) -> Turquoise et Indigo 58,45%
+    expect(bonusProbabiliteGenerationCible({ niveauA: 70, niveauB: 53, genMax: 5 })).toBeCloseTo(58.45, 1);
+    // Orchidée (G1, niv 54) x Turquoise (G5, niv 65) -> Turquoise et Orchidée 57,85%
+    expect(bonusProbabiliteGenerationCible({ niveauA: 54, niveauB: 65, genMax: 5 })).toBeCloseTo(57.85, 1);
+    // Doré et Indigo (G2, niv 67) x Doré et Ébène (G2, niv 62) -> Roux 59,35%
+    expect(bonusProbabiliteGenerationCible({ niveauA: 67, niveauB: 62, genMax: 2 })).toBeCloseTo(59.35, 1);
+    // Ébène (G1, niv 64) x Orchidée (G1, niv 57) -> Ébène et Orchidée 48,15%
+    expect(bonusProbabiliteGenerationCible({ niveauA: 64, niveauB: 57, genMax: 1 })).toBeCloseTo(48.15, 1);
+    // Orchidée (G1, niv 54) x Doré (G1, niv 65) -> Doré et Orchidée 47,85%
+    expect(bonusProbabiliteGenerationCible({ niveauA: 54, niveauB: 65, genMax: 1 })).toBeCloseTo(47.85, 1);
+  });
 });
