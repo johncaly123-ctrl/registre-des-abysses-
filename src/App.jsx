@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers } from "./panneauxElevage.jsx";
-import { GuidePage } from "./GuidePage.jsx";
+import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
 import { OnboardingOverlay } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
@@ -84,7 +84,7 @@ export default function App() {
   // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
   const [page, setPage] = useState(() => {
     const demandee = new URLSearchParams(window.location.search).get("page");
-    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "taverne", "succes", "guide"];
+    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "taverne", "succes", "guide", "nouveautes"];
     return pagesValides.includes(demandee) ? demandee : "dashboard";
   });
   // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
@@ -255,6 +255,7 @@ export default function App() {
     else if (page === "taverne") titre = "Taverne";
     else if (page === "succes") titre = "Succès";
     else if (page === "guide") titre = "Guide";
+    else if (page === "nouveautes") titre = "Quoi de neuf";
     else if (NOMS_CREATURE[page]) titre = `${NOMS_SOUS_PAGE[sousPage] || ""} ${NOMS_CREATURE[page]}`.trim();
     else titre = "Registre des Abysses";
     document.title = `${titre} — Registre des Abysses`;
@@ -710,6 +711,7 @@ export default function App() {
           )}
 
           {page === "guide" && <GuidePage />}
+          {page === "nouveautes" && <NouveautesPage />}
 
           {page === "muldo" && (
             <>
@@ -917,6 +919,8 @@ export default function App() {
         )}
         <br />
         <a href="#" onClick={(e) => { e.preventDefault(); relancerParcoursGuide(); }} style={{ color: "var(--gold)" }}>🎓 Relancer le parcours guidé</a>
+        {" · "}
+        <a href="#" onClick={(e) => { e.preventDefault(); setPage("nouveautes"); }} style={{ color: "var(--gold)" }}>🆕 Quoi de neuf</a>
       </footer>
 
       {toast && (

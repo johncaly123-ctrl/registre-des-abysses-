@@ -121,3 +121,59 @@ export function GuidePage() {
     </div>
   );
 }
+
+// ---------- Nouveautés (changelog public) ----------
+// Contenu statique tenu à jour manuellement, dans le même esprit que le
+// Guide : une raison légitime de revenir régulièrement + du texte indexable.
+const NOUVEAUTES = [
+  {
+    date: "25 juillet 2026",
+    items: [
+      "Comparateur de cheptels publics : sur un lien partagé, comparez vos couleurs à celles de l'éleveur visité.",
+      "Parcours guidé pas-à-pas pour découvrir le GPS en le vivant (au-delà du simple tutoriel explicatif).",
+      "Filtre combiné (génération, couleur, sexe, statut) sur la page Cheptel des 3 créatures.",
+      "Score de confiance sur les couleurs corrigées automatiquement par l'OCR, pour repérer les corrections douteuses.",
+      "Notification à l'écran quand une naissance atteint l'objectif GPS suivi.",
+      "Nouveaux jalons (100 naissances, 10 clonages, premier cheptel publié) sur la page Succès.",
+      "Section \"comment obtenir les couleurs rares\" dans le Guide, générée depuis les recettes du GPS.",
+      "Lien d'invitation Discord de la communauté.",
+    ],
+  },
+  {
+    date: "24 juillet 2026",
+    items: [
+      "Thème clair/sombre, base SEO (sitemap, meta Open Graph) et onboarding GPS pour les nouveaux joueurs.",
+      "Prix communautaires par serveur pour l'estimation de la valeur du cheptel.",
+      "Cheptel public partageable via un lien, et partage rapide d'un plan GPS ou d'un message vers la Taverne.",
+      "Correctif de performance : le GPS ne recalculait plus en continu en arrière-plan (CPU/ventilateur).",
+    ],
+  },
+  {
+    date: "Juillet 2026",
+    items: [
+      "Attribution automatique du palier d'ailes de soutien après un don Stripe.",
+      "Parité complète Dragodinde et Volkorne avec Muldo : cheptel, synchronisation, GPS, clonage, succès.",
+      "Tests automatisés (unitaires + parcours critiques) pour fiabiliser les évolutions futures.",
+    ],
+  },
+];
+
+export function NouveautesPage() {
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ margin: 0 }}>Quoi de neuf</h1>
+        <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>
+          Les dernières évolutions du Registre des Abysses, dans l'ordre chronologique.
+        </div>
+      </div>
+      {NOUVEAUTES.map((bloc) => (
+        <Section titre={bloc.date} key={bloc.date}>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {bloc.items.map((texte) => <li key={texte} style={{ marginBottom: 6 }}>{texte}</li>)}
+          </ul>
+        </Section>
+      ))}
+    </div>
+  );
+}
