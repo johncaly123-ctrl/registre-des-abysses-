@@ -12,7 +12,7 @@ export const LIEN_DON = "https://paypal.me/caly191";
 
 // Lien d'invitation Discord de la communauté, affiché dans le pied de page.
 // Laisse vide tant que le serveur Discord n'existe pas (le lien est masqué).
-export const LIEN_DISCORD = "https://discord.gg/XNtf3eeC2";
+export const LIEN_DISCORD = "https://discord.gg/wfHrGAzErb";
 
 // Payment Links Stripe (Dashboard Stripe -> Payment Links -> "+ Créer") pour
 // l'attribution AUTOMATIQUE du palier d'ailes : un lien "paiement unique"
