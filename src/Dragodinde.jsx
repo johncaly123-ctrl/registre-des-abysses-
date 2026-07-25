@@ -198,6 +198,11 @@ function dragodindeReproductible(m) {
   if (statut.startsWith("steril") || statut.startsWith("senile")) return false;
   return reproRestantesDragodinde(m) > 0;
 }
+// Un bébé tout juste né a une jauge de maturité à 0 : pas réellement
+// utilisable tout de suite, même s'il compte déjà comme "Fertile".
+function dragodindePretPourGps(m) {
+  return dragodindeReproductible(m) && Number(m?.maturite ?? 100) >= 100;
+}
 function ancestorSetDragodinde(m, byId, depth = 8, seen = new Set()) {
   if (!m || depth <= 0) return seen;
   (m.parentIds || []).forEach((id) => {
@@ -364,7 +369,7 @@ function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purif
   };
 }
 function optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
-  const fertiles = cheptel.filter(dragodindeReproductible);
+  const fertiles = cheptel.filter(dragodindePretPourGps);
   const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectifDragodinde(objectif);
   let malesRestants = fertiles.filter((m) => sexeDragodinde(m) === "M");
@@ -1005,7 +1010,7 @@ export function useDragodindeElevage() {
       cheptel,
       historiqueCouleurs,
       generationsTable: GENERATIONS_DRAGODINDE,
-      reproductibleFn: dragodindeReproductible,
+      reproductibleFn: dragodindePretPourGps,
       meilleureRecetteFn: meilleureRecettePourCouleurDragodinde,
       generationDeCouleurFn: generationDeCouleurDragodinde,
     }),

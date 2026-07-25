@@ -610,6 +610,16 @@ export function muldoReproductible(m) {
   return reproRestantesMuldo(m) > 0;
 }
 
+// Un bébé tout juste né est créé "Fertile" (il a bien un accouplement en
+// réserve) mais sa jauge de maturité démarre à 0 : il n'est pas réellement
+// utilisable tout de suite en jeu. muldoReproductible() reste inchangée
+// (statut affiché, compteurs "fertiles") ; cette variante plus stricte est
+// celle à utiliser pour la sélection de candidats du GPS, afin de ne pas
+// proposer un bébé qui vient de naître comme partenaire immédiat.
+export function muldoPretPourGps(m) {
+  return muldoReproductible(m) && Number(m?.maturite ?? 100) >= 100;
+}
+
 export function couleurPresenteCheptel(cheptel, couleur) {
   return cheptel.some((m) => m.couleur === couleur);
 }
@@ -617,8 +627,8 @@ export function couleurPresenteCheptel(cheptel, couleur) {
 
 export function chercherCouplePourRecette(recette, cheptel, byId) {
   const [a, b] = recette;
-  const candidatsA = cheptel.filter((m) => m.couleur === a && muldoReproductible(m));
-  const candidatsB = cheptel.filter((m) => m.couleur === b && muldoReproductible(m));
+  const candidatsA = cheptel.filter((m) => m.couleur === a && muldoPretPourGps(m));
+  const candidatsB = cheptel.filter((m) => m.couleur === b && muldoPretPourGps(m));
   const couples = [];
 
   candidatsA.forEach((ma) => {
@@ -1021,7 +1031,7 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
 }
 
 export function optimiserSessionAccouplements(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
-  const fertiles = cheptel.filter(muldoReproductible);
+  const fertiles = cheptel.filter(muldoPretPourGps);
   const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectif(objectif);
 
@@ -1159,7 +1169,7 @@ export function choisirObjectifGpsAutomatique(params) {
   return choisirObjectifGpsAutomatiqueGenerique({
     ...params,
     generationsTable: GENERATIONS_MULDO,
-    reproductibleFn: muldoReproductible,
+    reproductibleFn: muldoPretPourGps,
     meilleureRecetteFn: meilleureRecettePourCouleur,
     generationDeCouleurFn: generationDeCouleur,
   });

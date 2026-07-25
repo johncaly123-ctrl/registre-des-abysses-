@@ -262,6 +262,11 @@ function volkorneReproductible(m) {
   if (statut.startsWith("steril") || statut.startsWith("senile")) return false;
   return reproRestantesVolkorne(m) > 0;
 }
+// Un bébé tout juste né a une jauge de maturité à 0 : pas réellement
+// utilisable tout de suite, même s'il compte déjà comme "Fertile".
+function volkornePretPourGps(m) {
+  return volkorneReproductible(m) && Number(m?.maturite ?? 100) >= 100;
+}
 function ancestorSetVolkorne(m, byId, depth = 8, seen = new Set()) {
   if (!m || depth <= 0) return seen;
   (m.parentIds || []).forEach((id) => {
@@ -427,7 +432,7 @@ function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purific
   };
 }
 function optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
-  const fertiles = cheptel.filter(volkorneReproductible);
+  const fertiles = cheptel.filter(volkornePretPourGps);
   const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
   const { distances, parentDe } = distancesEtParentsVersObjectifVolkorne(objectif);
   let malesRestants = fertiles.filter((m) => sexeVolkorne(m) === "M");
@@ -1069,7 +1074,7 @@ export function useVolkorneElevage() {
       cheptel,
       historiqueCouleurs,
       generationsTable: GENERATIONS_VOLKORNE,
-      reproductibleFn: volkorneReproductible,
+      reproductibleFn: volkornePretPourGps,
       meilleureRecetteFn: meilleureRecettePourCouleurVolkorne,
       generationDeCouleurFn: generationDeCouleurVolkorne,
     }),
