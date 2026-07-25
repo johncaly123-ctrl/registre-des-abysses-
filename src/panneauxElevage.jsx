@@ -739,7 +739,6 @@ export function GpsDofusPage({
   const toggleEtapes = (key) => {
     setEtapesOuvertes((prev) => ({ ...prev, [key]: !prev[key] }));
   };
-  const [forcerJaugesNettoyage, setForcerJaugesNettoyage] = useState(false);
   const [planCopie, setPlanCopie] = useState(false);
 
   // Détecte, après confirmation d'une naissance, si la couleur obtenue est
@@ -1109,25 +1108,17 @@ export function GpsDofusPage({
             <button
               className="btn btn-coral"
               onClick={onDemarrerNouvelleSession}
-              title="Repasse tous les Féconde en Fertile (repos terminé) puis relance la session"
+              title="Repasse tous les Fertile en Féconde (prêts à s'accoupler, jauges forcées à 100) puis relance la session"
             >
-              🌱 Tous fertiles → nouvelle session
+              🌱 Tous fécondes → nouvelle session
             </button>
             <button
               className="btn btn-ghost"
-              onClick={() => onNettoyerSterilesPuisDemarrer(forcerJaugesNettoyage)}
-              title="Met tous les montures Stérile à la corbeille (récupérable) et repasse tout le reste en Fertile — pratique après un suivi de clonage mal tenu"
+              onClick={onNettoyerSterilesPuisDemarrer}
+              title="Met toutes les montures Stérile à la corbeille (récupérable) et repasse tout le reste en Féconde — pratique après un suivi de clonage mal tenu"
             >
-              🧹 Nettoyer stériles → tout fertile
+              🧹 Nettoyer stériles → tout féconde
             </button>
-            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)" }}>
-              <input
-                type="checkbox"
-                checked={forcerJaugesNettoyage}
-                onChange={(e) => setForcerJaugesNettoyage(e.target.checked)}
-              />
-              forcer jauges à 100 (fictif)
-            </label>
           </div>
         </div>
       </div>

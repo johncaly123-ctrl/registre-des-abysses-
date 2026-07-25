@@ -106,8 +106,8 @@ describe("construirePlanPourCouleur", () => {
 
   it("propose un couple exploitable quand les deux parents sont présents", () => {
     const cheptel = [
-      { id: "1", couleur: "Doré et Pourpre", sexe: "M", statut: "Fertile", reproRestantes: 1 },
-      { id: "2", couleur: "Doré et Indigo", sexe: "F", statut: "Fertile", reproRestantes: 1 },
+      { id: "1", couleur: "Doré et Pourpre", sexe: "M", statut: "Féconde", reproRestantes: 1 },
+      { id: "2", couleur: "Doré et Indigo", sexe: "F", statut: "Féconde", reproRestantes: 1 },
     ];
     const byId = Object.fromEntries(cheptel.map((m) => [m.id, m]));
     const plan = construirePlanPourCouleur("Roux", cheptel, byId, {});

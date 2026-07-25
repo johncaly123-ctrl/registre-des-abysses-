@@ -32,7 +32,7 @@ import {
 import { analyserTexteCaptureMuldo } from "./muldoOCR.js";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
-const STATUTS = ["Fertile", "Féconde", "Stérile", "Sénile"];
+const STATUTS = ["Fertile", "Féconde", "Stérile"];
 const JAUGES = [
   { key: "amour", label: "Amour", icon: Heart },
   { key: "endurance", label: "Endurance", icon: Zap },
@@ -227,7 +227,7 @@ export function useMuldoElevage(showToast, setToast) {
           sexe,
           couleur: ligne.couleur,
           generation: generationDeCouleur(ligne.couleur),
-          statut: "Fertile",
+          statut: "Féconde",
           sterile: false,
           capacites: [],
           capacite1: "Aucune",
@@ -766,13 +766,16 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
       sexe: data.sexe || "F",
       couleur: data.couleur || COULEURS_MULDO[0],
       generation: Number(data.generation) || 1,
-      statut: data.statut || "Fertile",
+      statut: data.statut || "Féconde",
       sterile: data.statut === "Stérile",
       capacites: (data.capacites || []).filter((c) => c && c !== "Aucune").slice(0, 2),
       capacite1: data.capacites?.[0] || "Aucune",
       capacite2: data.capacites?.[1] || "Aucune",
       reproductrice: (data.capacites || []).includes("Reproductrice"),
-      amour: 0, endurance: 0, maturite: 0, serenite: 50, fatigue: 0,
+      ...((data.statut || "Féconde") === "Féconde"
+        ? { amour: 100, endurance: 100, maturite: 100 }
+        : { amour: 0, endurance: 0, maturite: 0 }),
+      serenite: 50, fatigue: 0,
       reproDone: data.statut === "Stérile" ? 1 : 0,
       reproMax: 1,
       reproRestantes: data.statut === "Stérile" ? 0 : 1,
@@ -850,22 +853,26 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     });
   };
 
-  // Raccourci de début de session : bascule en masse tous les "Féconde"
-  // (repos terminé côté jeu) vers "Fertile", puis relance le plan GPS —
-  // évite de repasser un par un sur chaque fiche avant chaque session.
+  // Raccourci de début de session : bascule en masse tous les "Fertile"
+  // (bébés/montures pas encore marquées prêtes) vers "Féconde" — le statut
+  // qui rend réellement une monture disponible pour le GPS — avec les
+  // jauges amour/endurance/maturité forcées à 100 (elles n'ont pas d'usage
+  // manuel indépendant : "Féconde" = prêt, point). Puis relance le plan GPS.
   const demarrerNouvelleSessionAccouplement = () => {
-    const nb = cheptel.filter((m) => m.statut === "Féconde").length;
+    const nb = cheptel.filter((m) => m.statut === "Fertile" && !m.sterile).length;
     if (nb > 0) {
-      updateCheptel((prev) => prev.map((m) => (m.statut === "Féconde" ? { ...m, statut: "Fertile" } : m)));
+      updateCheptel((prev) => prev.map((m) => (m.statut === "Fertile" && !m.sterile
+        ? { ...m, statut: "Féconde", amour: 100, endurance: 100, maturite: 100 }
+        : m)));
     }
     reinitialiserSessionGps();
-    showToast(nb > 0 ? `${nb} muldo(s) passé(s) en Fertile — nouvelle session lancée.` : "Nouvelle session lancée.");
+    showToast(nb > 0 ? `${nb} muldo(s) passé(s) en Féconde — nouvelle session lancée.` : "Nouvelle session lancée.");
   };
 
   // Remise à zéro après un suivi de clonage/session mal tenu : les stériles
   // partent à la corbeille (jamais de suppression définitive directe, comme
-  // pour deleteMuldo) et tout le reste repasse Fertile, prêt à s'accoupler.
-  const nettoyerSterilesPuisDemarrerSession = (forcerJauges = false) => {
+  // pour deleteMuldo) et tout le reste repasse Féconde, prêt à s'accoupler.
+  const nettoyerSterilesPuisDemarrerSession = () => {
     const steriles = cheptel.filter((m) => m.sterile === true || m.statut === "Stérile");
     const restants = cheptel.filter((m) => !(m.sterile === true || m.statut === "Stérile"));
 
@@ -883,20 +890,21 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
 
     updateCheptel(() => restants.map((m) => ({
       ...m,
-      statut: "Fertile",
+      statut: "Féconde",
       sterile: false,
       reproDone: 0,
       reproRestantes: 1,
       reproductionsRestantes: 1,
-      ...(forcerJauges ? { amour: 100, endurance: 100, maturite: 100 } : {}),
+      amour: 100,
+      endurance: 100,
+      maturite: 100,
     })));
 
     reinitialiserSessionGps();
-    const suffixeJauges = forcerJauges ? " (jauges amour/endurance/maturité forcées à 100 — donnée fictive, à corriger si besoin)" : "";
     showToast(
       steriles.length
-        ? `${steriles.length} muldo(s) stérile(s) mis à la corbeille, ${restants.length} repassé(s) Fertile${suffixeJauges} — nouvelle session lancée.`
-        : `${restants.length} muldo(s) repassé(s) Fertile${suffixeJauges} — nouvelle session lancée.`
+        ? `${steriles.length} muldo(s) stérile(s) mis à la corbeille, ${restants.length} repassé(s) Féconde — nouvelle session lancée.`
+        : `${restants.length} muldo(s) repassé(s) Féconde — nouvelle session lancée.`
     );
   };
 
@@ -1199,7 +1207,7 @@ export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
         <LabeledSelect label="Sexe" value={muldo.sexe} options={[["F", "♀ Femelle"], ["M", "♂ Mâle"]]} onChange={(v) => onPatch({ sexe: v })} />
         <LabeledSelect label="Couleur" value={muldo.couleur} options={COULEURS_MULDO.map((c) => [c, c])} onChange={(v) => onPatch({ couleur: v })} />
-        <LabeledSelect label="Statut" value={muldo.statut} options={STATUTS.map((s) => [s, s])} onChange={(v) => onPatch({ statut: v })} />
+        <LabeledSelect label="Statut" value={muldo.statut} options={STATUTS.map((s) => [s, s])} onChange={(v) => onPatch({ statut: v, ...(v === "Féconde" ? { amour: 100, endurance: 100, maturite: 100 } : {}) })} />
         <div>
           <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 4, fontFamily: "Inter, sans-serif" }}>Reproduction 3.5</div>
           <button
@@ -1344,7 +1352,7 @@ export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
 export function NewMuldoModal({ cheptel, onClose, onCreate }) {
   const [form, setForm] = useState(() => ({
     nom: genererNomCourt(COULEURS_MULDO[0]),
-    sexe: "F", couleur: COULEURS_MULDO[0], generation: generationDeCouleur(COULEURS_MULDO[0]), statut: "Fertile",
+    sexe: "F", couleur: COULEURS_MULDO[0], generation: generationDeCouleur(COULEURS_MULDO[0]), statut: "Féconde",
     capacite1: "Aucune", capacite2: "Aucune", pere: "", mere: "",
   }));
   // Tant que l'utilisateur n'a pas saisi son propre nom, on suit la couleur.
@@ -2428,7 +2436,7 @@ export function creerMuldoSynchronise(couleur, sexe, index) {
     sexe,
     couleur,
     generation: generationDeCouleur(couleur),
-    statut: "Fertile",
+    statut: "Féconde",
     sterile: false,
     reproDone: 0,
     reproMax: 1,

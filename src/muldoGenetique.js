@@ -565,7 +565,7 @@ export const CHEPTEL_INITIAL_AUTO = (() => {
         sexe: i % 2 === 0 ? "Mâle" : "Femelle",
         couleur,
         generation: generationDeCouleur(couleur),
-        statut: "Fertile",
+        statut: "Féconde",
         sterile: false,
         capacites: [],
         capacite1: "Aucune",
@@ -611,13 +611,13 @@ export function muldoReproductible(m) {
 }
 
 // Un bébé tout juste né est créé "Fertile" (il a bien un accouplement en
-// réserve) mais sa jauge de maturité démarre à 0 : il n'est pas réellement
-// utilisable tout de suite en jeu. muldoReproductible() reste inchangée
-// (statut affiché, compteurs "fertiles") ; cette variante plus stricte est
-// celle à utiliser pour la sélection de candidats du GPS, afin de ne pas
-// proposer un bébé qui vient de naître comme partenaire immédiat.
+// réserve) mais n'est pas encore "Féconde" (prêt à s'accoupler, jeu
+// réel) — il ne doit pas apparaître comme partenaire immédiat dans le GPS
+// tant qu'il n'a pas explicitement basculé Féconde (bouton "Tous fécondes"
+// ou modification manuelle du statut). muldoReproductible() reste plus
+// permissive (juste "pas stérile") pour les compteurs/badges généraux.
 export function muldoPretPourGps(m) {
-  return muldoReproductible(m) && Number(m?.maturite ?? 100) >= 100;
+  return muldoReproductible(m) && m?.statut === "Féconde";
 }
 
 export function couleurPresenteCheptel(cheptel, couleur) {

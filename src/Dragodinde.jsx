@@ -201,7 +201,7 @@ function dragodindeReproductible(m) {
 // Un bébé tout juste né a une jauge de maturité à 0 : pas réellement
 // utilisable tout de suite, même s'il compte déjà comme "Fertile".
 function dragodindePretPourGps(m) {
-  return dragodindeReproductible(m) && Number(m?.maturite ?? 100) >= 100;
+  return dragodindeReproductible(m) && m?.statut === "Féconde";
 }
 function ancestorSetDragodinde(m, byId, depth = 8, seen = new Set()) {
   if (!m || depth <= 0) return seen;
@@ -515,8 +515,8 @@ function DragodindeDetail({ m, byId, onPatch, onDelete }) {
           </select>
         </label>
         <label style={{ fontSize: 11, color: "var(--muted)" }}>Statut
-          <select className="field" value={m.statut || (m.sterile ? "Stérile" : "Fertile")} onChange={(e) => onPatch({ sterile: e.target.value === "Stérile" || e.target.value === "Sénile", statut: e.target.value })}>
-            <option value="Fertile">Fertile</option><option value="Féconde">Féconde</option><option value="Stérile">Stérile</option><option value="Sénile">Sénile</option>
+          <select className="field" value={m.statut || (m.sterile ? "Stérile" : "Fertile")} onChange={(e) => onPatch({ sterile: e.target.value === "Stérile", statut: e.target.value, ...(e.target.value === "Féconde" ? { amour: 100, endurance: 100, maturite: 100 } : {}) })}>
+            <option value="Fertile">Fertile</option><option value="Féconde">Féconde</option><option value="Stérile">Stérile</option>
           </select>
         </label>
         <label style={{ fontSize: 11, color: "var(--muted)" }}>Niveau (optionnel, pour la génération cible)
@@ -589,7 +589,7 @@ function DragodindeDetail({ m, byId, onPatch, onDelete }) {
 }
 
 function NewDragodindeModal({ onClose, onCreate }) {
-  const [form, setForm] = useState({ nom: "", couleur: COULEURS_DRAGODINDE[0], sexe: "Femelle", statut: "Fertile" });
+  const [form, setForm] = useState({ nom: "", couleur: COULEURS_DRAGODINDE[0], sexe: "Femelle", statut: "Féconde" });
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(10,8,6,.65)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel-card" style={{ width: "min(420px,92vw)" }}>
@@ -617,7 +617,7 @@ function NewDragodindeModal({ onClose, onCreate }) {
 }
 
 // ---------- Pages exportées ----------
-const STATUTS_DRAGODINDE = ["Fertile", "Féconde", "Stérile", "Sénile"];
+const STATUTS_DRAGODINDE = ["Fertile", "Féconde", "Stérile"];
 
 export function DragodindeCheptelListPane({ cheptel, filter, setFilter, selectedId, onSelect }) {
   const [filtreGeneration, setFiltreGeneration] = useState("");
@@ -706,7 +706,7 @@ export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToas
         nouveaux.push({
           id: crypto.randomUUID(), nom: `${ligne.couleur} #${index}`, couleur: ligne.couleur,
           generation: generationDeCouleurDragodinde(ligne.couleur), sexe: i % 2 === 0 ? "Mâle" : "Femelle",
-          statut: "Fertile", sterile: false, reproRestantes: 1, reproductionsRestantes: 1,
+          statut: "Féconde", sterile: false, reproRestantes: 1, reproductionsRestantes: 1,
           amour: 100, endurance: 100, maturite: 100, serenite: 50,
           note: "Créé automatiquement depuis le screen du cheptel dragodinde.",
         });
@@ -1198,19 +1198,22 @@ export function useDragodindeElevage() {
     });
   }, []);
 
-  // Raccourci de début de session : bascule en masse tous les "Féconde"
-  // (repos terminé côté jeu) vers "Fertile", puis relance le plan GPS.
+  // Raccourci de début de session : bascule en masse tous les "Fertile"
+  // (bébés/pas encore marqués prêts) vers "Féconde" (prêt à s'accoupler),
+  // jauges forcées à 100, puis relance le plan GPS.
   const demarrerNouvelleSessionAccouplement = useCallback(() => {
-    const nb = cheptel.filter((m) => m.statut === "Féconde").length;
+    const nb = cheptel.filter((m) => m.statut === "Fertile" && !m.sterile).length;
     if (nb > 0) {
-      updateCheptel((prev) => prev.map((m) => (m.statut === "Féconde" ? { ...m, statut: "Fertile", sterile: false } : m)));
+      updateCheptel((prev) => prev.map((m) => (m.statut === "Fertile" && !m.sterile
+        ? { ...m, statut: "Féconde", amour: 100, endurance: 100, maturite: 100 }
+        : m)));
     }
     reinitialiserSessionGps();
   }, [cheptel, updateCheptel, reinitialiserSessionGps]);
 
   // Remise à zéro après un suivi de clonage/session mal tenu : les stériles
-  // partent à la corbeille (récupérable) et tout le reste repasse Fertile.
-  const nettoyerSterilesPuisDemarrerSession = useCallback((forcerJauges = false) => {
+  // partent à la corbeille (récupérable) et tout le reste repasse Féconde.
+  const nettoyerSterilesPuisDemarrerSession = useCallback(() => {
     const steriles = cheptel.filter((m) => m.sterile === true || m.statut === "Stérile");
     const restants = cheptel.filter((m) => !(m.sterile === true || m.statut === "Stérile"));
 
@@ -1228,12 +1231,14 @@ export function useDragodindeElevage() {
 
     updateCheptel(() => restants.map((m) => ({
       ...m,
-      statut: "Fertile",
+      statut: "Féconde",
       sterile: false,
       reproDone: 0,
       reproRestantes: 1,
       reproductionsRestantes: 1,
-      ...(forcerJauges ? { amour: 100, endurance: 100, maturite: 100 } : {}),
+      amour: 100,
+      endurance: 100,
+      maturite: 100,
     })));
 
     reinitialiserSessionGps();
@@ -1284,7 +1289,8 @@ export function useDragodindeElevage() {
       id: crypto.randomUUID(), nom: form.nom || genererNomCourtDragodinde(form.couleur), couleur: form.couleur,
       generation: generationDeCouleurDragodinde(form.couleur), sexe: form.sexe, statut: form.statut, sterile: form.statut === "Stérile",
       reproRestantes: form.statut === "Stérile" ? 0 : 1, reproductionsRestantes: form.statut === "Stérile" ? 0 : 1,
-      amour: 0, endurance: 0, maturite: 0, serenite: 50,
+      ...(form.statut === "Féconde" ? { amour: 100, endurance: 100, maturite: 100 } : { amour: 0, endurance: 0, maturite: 0 }),
+      serenite: 50,
     }]);
   }, [updateCheptel]);
 
