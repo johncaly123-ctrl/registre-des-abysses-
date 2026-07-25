@@ -480,13 +480,14 @@ function RechercheDragodindeDeroulante({ muldos, valeurId, onChoisir, placeholde
   );
 }
 
-function DragodindeMiniCard({ m, selected, onClick }) {
+function DragodindeMiniCard({ m, selected, onClick, modeSelection, coche }) {
   const sterile = !dragodindeReproductible(m);
   return (
-    <div onClick={onClick} className="panel-card" style={{ padding: 10, marginBottom: 8, cursor: "pointer", border: selected ? "1px solid var(--gold)" : sterile ? "1px solid rgba(232,137,106,.4)" : "1px solid var(--line)" }}>
+    <div onClick={onClick} className="panel-card" style={{ padding: 10, marginBottom: 8, cursor: "pointer", border: (modeSelection ? coche : selected) ? "1px solid var(--gold)" : sterile ? "1px solid rgba(232,137,106,.4)" : "1px solid var(--line)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {sexeDragodinde(m) === "F" ? "♀" : sexeDragodinde(m) === "M" ? "♂" : "?"} <DragodindeBadge couleur={m.couleur} taille={16} /> {m.nom || m.couleur}
+        <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          {modeSelection && <input type="checkbox" checked={!!coche} readOnly style={{ pointerEvents: "none", flexShrink: 0 }} />}
+          {sexeDragodinde(m) === "F" ? "♀" : sexeDragodinde(m) === "M" ? "♂" : "?"} <DragodindeBadge couleur={m.couleur} taille={16} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.nom || m.couleur}</span>
         </span>
         <span className="pill" style={{ fontSize: 11 }}>G{generationDeCouleurDragodinde(m.couleur)}</span>
       </div>
@@ -646,11 +647,29 @@ export function NewDragodindeModal({ onClose, onCreate }) {
 // ---------- Pages exportées ----------
 const STATUTS_DRAGODINDE = ["Fertile", "Féconde", "Stérile"];
 
-export function DragodindeCheptelListPane({ cheptel, filter, setFilter, selectedId, onSelect }) {
+export function DragodindeCheptelListPane({ cheptel, filter, setFilter, selectedId, onSelect, onSupprimerPlusieurs }) {
   const [filtreGeneration, setFiltreGeneration] = useState("");
   const [filtreSexe, setFiltreSexe] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreCouleur, setFiltreCouleur] = useState("");
+  const [modeSelection, setModeSelection] = useState(false);
+  const [idsSelectionnes, setIdsSelectionnes] = useState(() => new Set());
+
+  const toggleSelection = (id) => {
+    setIdsSelectionnes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const quitterModeSelection = () => { setModeSelection(false); setIdsSelectionnes(new Set()); };
+  const supprimerSelection = () => {
+    if (!idsSelectionnes.size) return;
+    if (window.confirm(`Supprimer ${idsSelectionnes.size} dragodinde(s) sélectionné(s) ? (ils partent à la corbeille, récupérables)`)) {
+      onSupprimerPlusieurs(Array.from(idsSelectionnes));
+      quitterModeSelection();
+    }
+  };
 
   const filtres = useMemo(() => {
     const p = plierCouleurDragodinde(filter);
@@ -671,6 +690,17 @@ export function DragodindeCheptelListPane({ cheptel, filter, setFilter, selected
     <div className="tech-column">
       <div style={{ padding: 14, borderBottom: "1px solid var(--line)" }}>
         <input className="field" placeholder="Rechercher un dragodinde…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <button className="btn btn-ghost" style={{ width: "100%", marginTop: 8, fontSize: 12 }} onClick={() => (modeSelection ? quitterModeSelection() : setModeSelection(true))}>
+          {modeSelection ? "✕ Annuler la sélection" : "☑️ Sélection multiple"}
+        </button>
+        {modeSelection && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>{idsSelectionnes.size} sélectionné(s)</div>
+            <button className="btn btn-coral" style={{ width: "100%", fontSize: 12 }} disabled={!idsSelectionnes.size} onClick={supprimerSelection}>
+              🗑️ Supprimer la sélection ({idsSelectionnes.size})
+            </button>
+          </div>
+        )}
       </div>
       <div style={{ padding: "0 14px 14px", borderBottom: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <LabeledSelect label="Génération" value={filtreGeneration} onChange={setFiltreGeneration}
@@ -686,7 +716,16 @@ export function DragodindeCheptelListPane({ cheptel, filter, setFilter, selected
         )}
       </div>
       <div style={{ overflowY: "auto", flex: 1, padding: 12 }}>
-        {filtres.map((m) => <DragodindeMiniCard key={m.id} m={m} selected={selectedId === m.id} onClick={() => onSelect(m.id)} />)}
+        {filtres.map((m) => (
+          <DragodindeMiniCard
+            key={m.id}
+            m={m}
+            selected={selectedId === m.id}
+            onClick={() => (modeSelection ? toggleSelection(m.id) : onSelect(m.id))}
+            modeSelection={modeSelection}
+            coche={idsSelectionnes.has(m.id)}
+          />
+        ))}
       </div>
     </div>
   );
@@ -1287,6 +1326,26 @@ export function useDragodindeElevage() {
     });
     setSelectedId((s) => (s === id ? null : s));
   }, []);
+  // Suppression en masse (sélection multiple dans le Cheptel) : même
+  // sécurité que la suppression individuelle, tout part à la corbeille.
+  const deleteMuldos = useCallback((ids) => {
+    const idsSet = new Set(ids);
+    setCheptel((prev) => {
+      const muldos = prev.filter((m) => idsSet.has(m.id));
+      const next = prev.filter((m) => !idsSet.has(m.id));
+      if (muldos.length) {
+        localStorage.setItem(STORAGE_KEY_DRAGODINDE, JSON.stringify(next));
+        setCorbeille((prevCorbeille) => {
+          const supprimeLe = new Date().toISOString();
+          const nextCorbeille = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prevCorbeille].slice(0, 100);
+          localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(nextCorbeille));
+          return nextCorbeille;
+        });
+      }
+      return next;
+    });
+    setSelectedId((s) => (s && idsSet.has(s) ? null : s));
+  }, []);
   const restaurerMuldo = useCallback((id) => {
     setCorbeille((prev) => {
       const entree = prev.find((e) => e.muldo.id === id);
@@ -1403,7 +1462,7 @@ export function useDragodindeElevage() {
 
   return {
     cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, addMuldo, byId, historiqueCouleurs, journal, naissances, corbeille,
-    cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId },
+    cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId, onSupprimerPlusieurs: deleteMuldos },
     cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
     syncProps: { cheptel, updateCheptel },
     gpsProps: {
