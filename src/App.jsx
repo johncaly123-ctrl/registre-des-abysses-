@@ -217,7 +217,12 @@ export default function App() {
   }, [page, sousPage]);
 
   if (pseudoPublic) {
-    return <CheptelPublicPage pseudo={pseudoPublic} />;
+    return (
+      <CheptelPublicPage
+        pseudo={pseudoPublic}
+        cheptelViewer={{ muldo: eleveMuldo.cheptel, dragodinde: eleveDragodinde.cheptel, volkorne: eleveVolkorne.cheptel }}
+      />
+    );
   }
 
   if (eleveMuldo.loading) {
@@ -1084,9 +1089,11 @@ function PartagePublicPanel({ session, pseudo, cheptelMuldo, cheptelDragodinde, 
   );
 }
 
-function CheptelPublicPage({ pseudo }) {
+function CheptelPublicPage({ pseudo, cheptelViewer }) {
   const [etat, setEtat] = useState("chargement"); // chargement | introuvable | ok
   const [cheptels, setCheptels] = useState({});
+  const viewerADuCheptel = CREATURES_PARTAGE.some((c) => (cheptelViewer?.[c.cle] || []).length > 0);
+  const [comparer, setComparer] = useState(false);
 
   useEffect(() => {
     document.title = `Cheptel de ${pseudo} — Registre des Abysses`;
@@ -1109,37 +1116,88 @@ function CheptelPublicPage({ pseudo }) {
     <div className="app-shell" style={{ padding: "24px 28px" }}>
       <style>{`
         :root {
-          --bg: #17130f; --panel: #2b241d; --panel2: #352b22; --line: #5b4733;
+          --bg: #17130f; --panel: #2b241d; --panel2: #352b22; --panel3: #403225; --line: #5b4733;
           --gold: #d6a64a; --gold2: #f0cf72; --accent: #c97935; --text: #f4ead7; --muted: #a9967c;
           --font-display: 'Fraunces', Georgia, serif; --font-ui: 'Inter', sans-serif;
         }
-        body { margin: 0; background: #0c0a08; }
+        body { margin: 0; background: #0c0a08; color: var(--text); font-family: var(--font-ui); }
+        .panel-card {
+          background:linear-gradient(180deg, var(--panel3), var(--panel2));
+          border:1px solid var(--line); border-radius:18px; padding:18px 20px;
+          box-shadow:0 14px 36px rgba(0,0,0,.22);
+        }
+        .pill {
+          display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border-radius:999px;
+          background:rgba(0,0,0,.18); border:1px solid var(--line); color:var(--text); font-weight:700; font-size:12px;
+        }
+        .muldo-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+        .muldo-card {
+          border-radius:16px; padding:14px; border:1px solid var(--line);
+          background:linear-gradient(145deg, var(--panel3), var(--panel2));
+        }
       `}</style>
-      <h1 style={{ fontFamily: "var(--font-display)", color: "var(--gold2)" }}>Cheptel public de {pseudo}</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={{ fontFamily: "var(--font-display)", color: "var(--gold2)" }}>Cheptel public de {pseudo}</h1>
+        {viewerADuCheptel && etat === "ok" && (
+          <button
+            type="button"
+            onClick={() => setComparer((v) => !v)}
+            style={{ background: comparer ? "var(--gold)" : "transparent", color: comparer ? "#17130f" : "var(--gold2)", border: "1px solid var(--gold)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+          >
+            🔍 {comparer ? "Masquer la comparaison" : "Comparer avec mon cheptel"}
+          </button>
+        )}
+      </div>
       {etat === "chargement" && <div style={{ color: "var(--muted)" }}>Chargement…</div>}
       {etat === "introuvable" && <div style={{ color: "var(--muted)" }}>Éleveur introuvable, ou fonctionnalité non disponible.</div>}
       {etat === "ok" && CREATURES_PARTAGE.every((c) => !cheptels[c.cle]) && (
         <div style={{ color: "var(--muted)" }}>Cet éleveur n'a encore rien publié.</div>
       )}
-      {etat === "ok" && CREATURES_PARTAGE.map((c) => cheptels[c.cle] && (
-        <div className="panel-card" key={c.cle} style={{ marginTop: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-            <h2 style={{ margin: 0 }}>{c.icone} {c.label}</h2>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>publié le {new Date(cheptels[c.cle].maj_le).toLocaleString("fr-FR")}</span>
-          </div>
-          <div className="muldo-grid" style={{ marginTop: 12 }}>
-            {(cheptels[c.cle].contenu || []).map((m, i) => (
-              <div className="muldo-card" key={i} style={{ cursor: "default" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <b>{m.sexe === "F" ? "♀" : "♂"} {m.couleur}</b>
-                  <span className="pill">G{m.generation}</span>
+      {etat === "ok" && CREATURES_PARTAGE.map((c) => {
+        if (!cheptels[c.cle]) return null;
+        const couleursPubliees = new Set((cheptels[c.cle].contenu || []).map((m) => m.couleur));
+        const couleursViewer = new Set((cheptelViewer?.[c.cle] || []).map((m) => m.couleur));
+        const communes = [...couleursPubliees].filter((x) => couleursViewer.has(x)).sort((a, b) => a.localeCompare(b, "fr"));
+        const seulementLui = [...couleursPubliees].filter((x) => !couleursViewer.has(x)).sort((a, b) => a.localeCompare(b, "fr"));
+        const seulementMoi = [...couleursViewer].filter((x) => !couleursPubliees.has(x)).sort((a, b) => a.localeCompare(b, "fr"));
+        return (
+          <div className="panel-card" key={c.cle} style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+              <h2 style={{ margin: 0 }}>{c.icone} {c.label}</h2>
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>publié le {new Date(cheptels[c.cle].maj_le).toLocaleString("fr-FR")}</span>
+            </div>
+            {comparer && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginTop: 12, marginBottom: 4 }}>
+                <div style={{ fontSize: 12 }}>
+                  <b style={{ color: "var(--gold2)" }}>En commun ({communes.length})</b>
+                  <div style={{ color: "var(--muted)", marginTop: 4 }}>{communes.join(", ") || "—"}</div>
                 </div>
-                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{m.statut}</div>
+                <div style={{ fontSize: 12 }}>
+                  <b style={{ color: "var(--gold2)" }}>Seulement {pseudo} ({seulementLui.length})</b>
+                  <div style={{ color: "var(--muted)", marginTop: 4 }}>{seulementLui.join(", ") || "—"}</div>
+                </div>
+                <div style={{ fontSize: 12 }}>
+                  <b style={{ color: "var(--gold2)" }}>Seulement vous ({seulementMoi.length})</b>
+                  <div style={{ color: "var(--muted)", marginTop: 4 }}>{seulementMoi.join(", ") || "—"}</div>
+                </div>
               </div>
-            ))}
+            )}
+            <div className="muldo-grid" style={{ marginTop: 12 }}>
+              {(cheptels[c.cle].contenu || []).map((m, i) => (
+                <div className="muldo-card" key={i} style={comparer && couleursViewer.has(m.couleur) ? { cursor: "default", borderColor: "var(--gold)" } : { cursor: "default" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <b>{m.sexe === "F" ? "♀" : "♂"} {m.couleur}</b>
+                    <span className="pill">G{m.generation}</span>
+                  </div>
+                  <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
+                    {m.statut}{comparer && couleursViewer.has(m.couleur) && <span style={{ color: "var(--gold)" }}> · vous l'avez aussi</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       <div style={{ marginTop: 24, textAlign: "center" }}>
         <a href="/" style={{ color: "var(--gold)" }}>← Retour au Registre des Abysses</a>
       </div>
