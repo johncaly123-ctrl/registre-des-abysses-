@@ -204,6 +204,9 @@ export default function App() {
   // sous-onglet) affichée — plus lisible dans l'historique/les favoris du
   // navigateur qu'un titre statique unique.
   useEffect(() => {
+    // La page cheptel public (?voir=pseudo) gère son propre titre — cet effet
+    // tourne quand même (hooks inconditionnels) mais ne doit pas l'écraser.
+    if (pseudoPublic) return;
     const NOMS_CREATURE = { muldo: "Muldos", dragodinde: "Dragodindes", volkorne: "Volkornes" };
     const NOMS_SOUS_PAGE = { cheptel: "Cheptel", synchro: "Synchronisation", gps: "GPS", clonage: "Clonage" };
     let titre;
@@ -214,7 +217,7 @@ export default function App() {
     else if (NOMS_CREATURE[page]) titre = `${NOMS_SOUS_PAGE[sousPage] || ""} ${NOMS_CREATURE[page]}`.trim();
     else titre = "Registre des Abysses";
     document.title = `${titre} — Registre des Abysses`;
-  }, [page, sousPage]);
+  }, [page, sousPage, pseudoPublic]);
 
   if (pseudoPublic) {
     return (
