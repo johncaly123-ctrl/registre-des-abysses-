@@ -59,7 +59,7 @@ export const COULEURS_DRAGODINDE = Object.values(GENERATIONS_DRAGODINDE).flat();
 // (dofuspourlesnoobs.com) ; gén.7/9 (Ivoire/Turquoise/Émeraude/Prune)
 // ajoutées le 2026-07-24 à partir de captures d'écran de l'arbre de
 // croisement complet fournies par l'utilisateur.
-const RECETTES_SPECIALES_DRAGODINDE = {
+export const RECETTES_SPECIALES_DRAGODINDE = {
   "Ébène": [["Amande et Dorée", "Dorée et Rousse"]],
   "Indigo": [["Amande et Dorée", "Amande et Rousse"]],
   "Pourpre": [["Ébène et Indigo", "Amande et Rousse"]],

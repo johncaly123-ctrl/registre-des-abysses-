@@ -57,7 +57,7 @@ export const COULEURS_VOLKORNE = Object.values(GENERATIONS_VOLKORNE).flat();
 // (2026-07-24) — comptes de recettes cohérents avec ceux annoncés par le site
 // (Roux/Amande/Ivoire/Turquoise : 3 · Prune/Émeraude : 12 · Doré : 8 ·
 // Jade/Rubis/Saphir/Améthyste : 2).
-const RECETTES_SPECIALES_VOLKORNE = {
+export const RECETTES_SPECIALES_VOLKORNE = {
   "Roux": [
     ["Pourpre et Orchidée", "Pourpre et Indigo"],
     ["Pourpre et Orchidée", "Pourpre et Ébène"],

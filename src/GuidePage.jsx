@@ -1,4 +1,7 @@
 import React from "react";
+import { RECETTES_SPECIALES_MULDO, generationDeCouleur } from "./muldoGenetique.js";
+import { RECETTES_SPECIALES_DRAGODINDE, generationDeCouleurDragodinde } from "./Dragodinde.jsx";
+import { RECETTES_SPECIALES_VOLKORNE, generationDeCouleurVolkorne } from "./Volkorne.jsx";
 
 // Page de contenu statique (guide/blog) : pas de CMS, du texte en dur, dans le
 // même langage visuel que le reste de l'app (.panel-card + variables CSS).
@@ -11,6 +14,33 @@ function Section({ titre, children }) {
       <h2 style={{ marginTop: 0, color: "var(--gold)" }}>{titre}</h2>
       <div style={{ color: "var(--text)", fontSize: 14, lineHeight: 1.7 }}>{children}</div>
     </div>
+  );
+}
+
+// Recettes tirées directement des tables qui alimentent le GPS de l'outil
+// (pas de contenu inventé) — les couleurs rares/spéciales sont celles que les
+// joueurs recherchent le plus quand ils cherchent "comment obtenir [couleur]".
+function SectionRecettes({ titre, recettes, generationFn }) {
+  const entrees = Object.entries(recettes);
+  if (!entrees.length) return null;
+  return (
+    <Section titre={titre}>
+      <p>
+        Recettes vérifiées, telles qu'utilisées par le GPS de l'outil pour calculer le chemin le
+        plus court vers ces couleurs recherchées.
+      </p>
+      {entrees.map(([couleur, options]) => (
+        <div key={couleur} style={{ marginBottom: 10 }}>
+          <b style={{ color: "var(--gold2)" }}>{couleur}</b>{" "}
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>(génération {generationFn(couleur)})</span>
+          <div style={{ fontSize: 13, marginTop: 3 }}>
+            {options.map((o, i) => (
+              <span key={i}>{i > 0 && " · "}{o[0]} × {o[1]}</span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </Section>
   );
 }
 
@@ -77,6 +107,10 @@ export function GuidePage() {
           par serveur, quand suffisamment de joueurs l'ont renseigné.
         </p>
       </Section>
+
+      <SectionRecettes titre="Comment obtenir les couleurs rares de muldo" recettes={RECETTES_SPECIALES_MULDO} generationFn={generationDeCouleur} />
+      <SectionRecettes titre="Comment obtenir les couleurs rares de dragodinde" recettes={RECETTES_SPECIALES_DRAGODINDE} generationFn={generationDeCouleurDragodinde} />
+      <SectionRecettes titre="Comment obtenir les couleurs rares de volkorne" recettes={RECETTES_SPECIALES_VOLKORNE} generationFn={generationDeCouleurVolkorne} />
 
       <Section titre="Rejoindre la communauté">
         <p>
