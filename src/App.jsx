@@ -59,6 +59,10 @@ const STORAGE_THEME = "muldo-theme-v1";
 const STORAGE_ONBOARDING_GPS = "muldo-onboarding-gps-v1";
 const STORAGE_PARCOURS_GUIDE = "muldo-parcours-guide-v1";
 
+// Bandeau de version visible dans l'en-tête. Reste "BETA vX.Y" tant que le
+// site n'est pas poussé/déployé publiquement — passera à "V1" ce jour-là.
+const VERSION_APP = "BETA v0.1";
+
 // Parcours guidé pas-à-pas (au-delà du simple overlay explicatif du GPS) :
 // accompagne un nouveau joueur à travers une vraie première session muldo
 // (aller au GPS, réaliser un couple, confirmer la naissance obtenue), en
@@ -577,7 +581,10 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div className="brand-mark"><Waves size={22} color="#f0cf72" /></div>
           <div>
-            <div className="brand-title">Registre des Abysses</div>
+            <div className="brand-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              Registre des Abysses
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#17130f", background: "var(--gold)", borderRadius: 999, padding: "2px 8px", letterSpacing: 0.4 }}>{VERSION_APP}</span>
+            </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>Élevage de Muldos · GPS génération · Succès</div>
           </div>
         </div>
