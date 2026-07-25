@@ -6,7 +6,7 @@ import { GuidePage } from "./GuidePage.jsx";
 import { OnboardingOverlay } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
-import { Waves, Save, Plus, Trash2 } from "lucide-react";
+import { Waves, Save, Plus, Trash2, X } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
@@ -57,6 +57,17 @@ const STORAGE_PRIX_KAMAS_VOLKORNE = "volkorne-prix-kamas-v1";
 const STORAGE_PROFIL = "muldo-profil-v1";
 const STORAGE_THEME = "muldo-theme-v1";
 const STORAGE_ONBOARDING_GPS = "muldo-onboarding-gps-v1";
+const STORAGE_PARCOURS_GUIDE = "muldo-parcours-guide-v1";
+
+// Parcours guidé pas-à-pas (au-delà du simple overlay explicatif du GPS) :
+// accompagne un nouveau joueur à travers une vraie première session muldo
+// (aller au GPS, réaliser un couple, confirmer la naissance obtenue), en
+// détectant la progression réelle plutôt qu'un simple "Suivant" cliqué.
+const ETAPES_PARCOURS_GUIDE = [
+  { texte: "Direction Muldo → GPS pour lancer ta première session d'accouplements.", estFait: (ctx) => ctx.page === "muldo" && ctx.sousPage === "gps" },
+  { texte: "Clique sur \"Réaliser\" pour un couple du plan proposé.", estFait: (ctx) => ctx.naissancesCount > 0 },
+  { texte: "Confirme la couleur et le sexe réellement obtenus pour valider la naissance.", estFait: (ctx) => ctx.journalCount > 0 },
+];
 
 
 // ---------- composant principal ----------
@@ -135,6 +146,36 @@ export default function App() {
   const eleveMuldo = useMuldoElevage(showToast, setToast);
   const eleveDragodinde = useDragodindeElevage();
   const eleveVolkorne = useVolkorneElevage();
+  // null = jamais démarré (auto-proposé une fois) ; nombre = étape en cours ;
+  // "termine"/"saute" = ne plus proposer automatiquement, relançable manuellement.
+  const [parcoursGuideEtape, setParcoursGuideEtape] = useState(() => {
+    const v = localStorage.getItem(STORAGE_PARCOURS_GUIDE);
+    return v === null ? null : (Number.isFinite(Number(v)) ? Number(v) : v);
+  });
+  useEffect(() => {
+    if (localStorage.getItem(STORAGE_PARCOURS_GUIDE) === null) setParcoursGuideEtape(0);
+  }, []);
+  useEffect(() => {
+    if (typeof parcoursGuideEtape !== "number") return;
+    const ctx = { page, sousPage, naissancesCount: eleveMuldo.naissances.length, journalCount: eleveMuldo.journal.length };
+    if (ETAPES_PARCOURS_GUIDE[parcoursGuideEtape]?.estFait(ctx)) {
+      const suivante = parcoursGuideEtape + 1;
+      const valeur = suivante >= ETAPES_PARCOURS_GUIDE.length ? "termine" : suivante;
+      setParcoursGuideEtape(valeur);
+      localStorage.setItem(STORAGE_PARCOURS_GUIDE, String(valeur));
+      if (valeur === "termine") {
+        showToast("🎉 Parcours guidé terminé ! Tu maîtrises maintenant le cycle GPS → accouplement → naissance.", { type: "objectif", duration: 5000 });
+      }
+    }
+  }, [parcoursGuideEtape, page, sousPage, eleveMuldo.naissances.length, eleveMuldo.journal.length]);
+  const sauterParcoursGuide = () => {
+    setParcoursGuideEtape("saute");
+    localStorage.setItem(STORAGE_PARCOURS_GUIDE, "saute");
+  };
+  const relancerParcoursGuide = () => {
+    setParcoursGuideEtape(0);
+    localStorage.setItem(STORAGE_PARCOURS_GUIDE, "0");
+  };
   const [profilOuvert, setProfilOuvert] = useState(false);
   useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
   // Pousse la génération muldo la plus haute validée vers le profil Supabase
@@ -874,11 +915,25 @@ export default function App() {
             <a href={LIEN_DISCORD} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>💬 Rejoindre la communauté sur Discord</a>
           </>
         )}
+        <br />
+        <a href="#" onClick={(e) => { e.preventDefault(); relancerParcoursGuide(); }} style={{ color: "var(--gold)" }}>🎓 Relancer le parcours guidé</a>
       </footer>
 
       {toast && (
         <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "min(92vw, 640px)", pointerEvents: "none", background: "var(--panel)", border: `1px solid ${toast.type === "objectif" ? "var(--cyan)" : "var(--gold)"}`, color: "var(--text)", padding: "10px 16px", borderRadius: 12, fontSize: 13, boxShadow: toast.type === "objectif" ? "0 12px 30px rgba(0,0,0,.45), 0 0 24px var(--cyan)" : "0 12px 30px rgba(0,0,0,.45)", animation: "fondu .15s ease" }}>
           {typeof toast === "string" ? toast : toast.msg}
+        </div>
+      )}
+
+      {typeof parcoursGuideEtape === "number" && (
+        <div style={{ position: "fixed", left: 16, bottom: 16, zIndex: 88, maxWidth: 320, background: "var(--panel)", border: "1px solid var(--gold)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 14px 36px rgba(0,0,0,.4)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>
+              🎓 Parcours guidé · {parcoursGuideEtape + 1}/{ETAPES_PARCOURS_GUIDE.length}
+            </span>
+            <X size={14} style={{ cursor: "pointer", color: "var(--muted)" }} onClick={sauterParcoursGuide} />
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{ETAPES_PARCOURS_GUIDE[parcoursGuideEtape].texte}</div>
         </div>
       )}
     </div>
