@@ -822,6 +822,22 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     }
   };
 
+  // Suppression en masse (sélection multiple dans le Cheptel) : même
+  // sécurité que la suppression individuelle, tout part à la corbeille.
+  const deleteMuldos = (ids) => {
+    const idsSet = new Set(ids);
+    const muldos = cheptel.filter((m) => idsSet.has(m.id));
+    if (!muldos.length) return;
+    updateCheptel((prev) => prev.filter((m) => !idsSet.has(m.id)));
+    if (selectedId && idsSet.has(selectedId)) setSelectedId(null);
+    setCorbeille((prev) => {
+      const supprimeLe = new Date().toISOString();
+      const next = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prev].slice(0, 100);
+      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+      return next;
+    });
+  };
+
   const restaurerMuldo = (id) => {
     const entree = corbeille.find((e) => e.muldo.id === id);
     if (!entree) return;
@@ -1066,6 +1082,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     addMuldo,
     patchMuldo,
     deleteMuldo,
+    deleteMuldos,
     restaurerMuldo,
     purgerCorbeilleEntree,
     viderCorbeille,
@@ -2291,7 +2308,7 @@ export function LegendeCheptel() {
 }
 
 
-export function CheptelCards({ items, selectedId, onSelect }) {
+export function CheptelCards({ items, selectedId, onSelect, modeSelection, idsSelectionnes, onToggleSelection }) {
   if (!items.length) {
     return <div style={{ color: "var(--muted)", textAlign: "center", padding: 18 }}>Aucun muldo trouvé.</div>;
   }
@@ -2299,23 +2316,35 @@ export function CheptelCards({ items, selectedId, onSelect }) {
     <>
     <LegendeCheptel />
     <div className="muldo-grid">
-      {items.map((m) => <MuldoMiniCard key={m.id} m={m} selected={selectedId === m.id} onClick={() => onSelect(m.id)} />)}
+      {items.map((m) => (
+        <MuldoMiniCard
+          key={m.id}
+          m={m}
+          selected={selectedId === m.id}
+          onClick={() => (modeSelection ? onToggleSelection(m.id) : onSelect(m.id))}
+          modeSelection={modeSelection}
+          coche={idsSelectionnes?.has(m.id)}
+        />
+      ))}
     </div>
     </>
   );
 }
 
 
-export function MuldoMiniCard({ m, selected, onClick }) {
+export function MuldoMiniCard({ m, selected, onClick, modeSelection, coche }) {
   const action = getNextAction(m);
   const sterile = !muldoReproductible(m);
   const ready = action.key === "pret";
   const sexe = sexeMuldo(m) === "F" ? "♀" : "♂";
 
   return (
-    <div className={`muldo-card ${ready ? "muldo-ready" : ""} ${sterile ? "muldo-sterile" : ""} ${selected ? "muldo-selected" : ""}`} onClick={onClick}>
+    <div className={`muldo-card ${ready ? "muldo-ready" : ""} ${sterile ? "muldo-sterile" : ""} ${(modeSelection ? coche : selected) ? "muldo-selected" : ""}`} onClick={onClick}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <b>{sexe} {m.nom}</b>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          {modeSelection && <input type="checkbox" checked={!!coche} readOnly style={{ pointerEvents: "none", flexShrink: 0 }} />}
+          <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sexe} {m.nom}</b>
+        </span>
         <span className="pill">G{m.generation}</span>
       </div>
       <div style={{ color: "var(--gold2)", fontWeight: 900, marginTop: 7 }}>{m.couleur}</div>
@@ -2336,11 +2365,29 @@ export function MuldoMiniCard({ m, selected, onClick }) {
 }
 
 
-export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter, setFilter, actionsDuJour, importProps }) {
+export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter, setFilter, actionsDuJour, importProps, onSupprimerPlusieurs }) {
   const [filtreGeneration, setFiltreGeneration] = useState("");
   const [filtreSexe, setFiltreSexe] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreCouleur, setFiltreCouleur] = useState("");
+  const [modeSelection, setModeSelection] = useState(false);
+  const [idsSelectionnes, setIdsSelectionnes] = useState(() => new Set());
+
+  const toggleSelection = (id) => {
+    setIdsSelectionnes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const quitterModeSelection = () => { setModeSelection(false); setIdsSelectionnes(new Set()); };
+  const supprimerSelection = () => {
+    if (!idsSelectionnes.size) return;
+    if (window.confirm(`Supprimer ${idsSelectionnes.size} muldo(s) sélectionné(s) ? (ils partent à la corbeille, récupérables)`)) {
+      onSupprimerPlusieurs(Array.from(idsSelectionnes));
+      quitterModeSelection();
+    }
+  };
 
   // Combine les 4 critères (ET logique) au-dessus de la recherche texte déjà
   // appliquée en amont (eleveMuldo.filtered) — vide = pas de restriction.
@@ -2363,10 +2410,27 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
           <div style={{ color: "var(--gold)", fontSize: 12, fontWeight: 950, letterSpacing: 1.6, textTransform: "uppercase" }}>Cheptel</div>
           <h1 style={{ margin: "6px 0 0", fontSize: 34 }}>Cartes de muldos</h1>
         </div>
-        <div style={{ width: 280 }}>
-          <input className="field" placeholder="Rechercher…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ width: 280 }}>
+            <input className="field" placeholder="Rechercher…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          </div>
+          <button
+            className="btn btn-ghost"
+            onClick={() => (modeSelection ? quitterModeSelection() : setModeSelection(true))}
+          >
+            {modeSelection ? "✕ Annuler la sélection" : "☑️ Sélection multiple"}
+          </button>
         </div>
       </div>
+
+      {modeSelection && (
+        <div className="panel-card" style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>{idsSelectionnes.size} muldo(s) sélectionné(s) — clique sur une carte pour la cocher/décocher.</span>
+          <button className="btn btn-coral" disabled={!idsSelectionnes.size} onClick={supprimerSelection}>
+            🗑️ Supprimer la sélection ({idsSelectionnes.size})
+          </button>
+        </div>
+      )}
 
       <div className="panel-card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -2419,7 +2483,14 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
         </div>
       </div>
 
-      <CheptelCards items={cheptelFiltre} selectedId={selectedId} onSelect={setSelectedId} />
+      <CheptelCards
+        items={cheptelFiltre}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        modeSelection={modeSelection}
+        idsSelectionnes={idsSelectionnes}
+        onToggleSelection={toggleSelection}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
         <ImportCapturePanel {...importProps} />

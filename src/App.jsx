@@ -806,6 +806,10 @@ export default function App() {
                       filter={eleveMuldo.filter}
                       setFilter={eleveMuldo.setFilter}
                       actionsDuJour={eleveMuldo.actionsDuJour}
+                      onSupprimerPlusieurs={(ids) => {
+                        eleveMuldo.deleteMuldos(ids);
+                        showToast(`${ids.length} muldo(s) mis à la corbeille.`);
+                      }}
                       importProps={{
                         captureText: eleveMuldo.captureText,
                         setCaptureText: eleveMuldo.setCaptureText,
