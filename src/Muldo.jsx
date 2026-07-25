@@ -785,8 +785,6 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
       dateAjout: new Date().toISOString(),
     };
     updateCheptel((prev) => [...prev, m]);
-    setSelectedId(m.id);
-    copierPressePapiers(m.nom);
     setJournal((prev) => {
       const next = [...prev, {
         date: new Date().toISOString(),
@@ -805,8 +803,6 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
       }
       return next;
     });
-    showToast(`${m.nom} ajouté au cheptel — nom copié pour le renommage en jeu (Ctrl+V).`);
-    setShowNew(false);
   };
 
   const patchMuldo = (id, patch) => {
