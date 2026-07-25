@@ -65,9 +65,9 @@ export default function App() {
   // ne change jamais après (un partage de lien recharge la page).
   const [pseudoPublic] = useState(() => new URLSearchParams(window.location.search).get("voir") || null);
   const [toast, setToast] = useState(null);
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+  const showToast = (msg, opts = {}) => {
+    setToast({ msg, type: opts.type });
+    setTimeout(() => setToast(null), opts.duration || 2600);
   };
   // Permet d'atterrir directement sur une page via ?page=guide (utile pour le
   // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
@@ -806,7 +806,7 @@ export default function App() {
                 </>
               )}
               {sousPage === "synchro" && <DragodindeSynchronisationPage {...eleveDragodinde.syncProps} showToast={showToast} />}
-              {sousPage === "gps" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} {...eleveDragodinde.naissancesProps} onPartagerTaverne={partagerDansTaverne} />}
+              {sousPage === "gps" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} {...eleveDragodinde.naissancesProps} onPartagerTaverne={partagerDansTaverne} onObjectifAtteint={(couleur, sexe) => showToast(`🎯 Objectif GPS atteint ! ${couleur} ${sexe === "F" ? "♀" : "♂"} obtenu(e).`, { type: "objectif", duration: 5000 })} />}
               {sousPage === "clonage" && <DragodindeClonagePage {...eleveDragodinde.clonageProps} />}
             </>
           )}
@@ -823,7 +823,7 @@ export default function App() {
                 </>
               )}
               {sousPage === "synchro" && <VolkorneSynchronisationPage {...eleveVolkorne.syncProps} showToast={showToast} />}
-              {sousPage === "gps" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} {...eleveVolkorne.naissancesProps} onPartagerTaverne={partagerDansTaverne} />}
+              {sousPage === "gps" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} {...eleveVolkorne.naissancesProps} onPartagerTaverne={partagerDansTaverne} onObjectifAtteint={(couleur, sexe) => showToast(`🎯 Objectif GPS atteint ! ${couleur} ${sexe === "F" ? "♀" : "♂"} obtenu(e).`, { type: "objectif", duration: 5000 })} />}
               {sousPage === "clonage" && <VolkorneClonagePage {...eleveVolkorne.clonageProps} />}
             </>
           )}
@@ -869,7 +869,7 @@ export default function App() {
       </footer>
 
       {toast && (
-        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "min(92vw, 640px)", pointerEvents: "none", background: "var(--panel)", border: "1px solid var(--gold)", color: "var(--text)", padding: "10px 16px", borderRadius: 12, fontSize: 13, boxShadow: "0 12px 30px rgba(0,0,0,.45)", animation: "fondu .15s ease" }}>
+        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "min(92vw, 640px)", pointerEvents: "none", background: "var(--panel)", border: `1px solid ${toast.type === "objectif" ? "var(--cyan)" : "var(--gold)"}`, color: "var(--text)", padding: "10px 16px", borderRadius: 12, fontSize: 13, boxShadow: toast.type === "objectif" ? "0 12px 30px rgba(0,0,0,.45), 0 0 24px var(--cyan)" : "0 12px 30px rgba(0,0,0,.45)", animation: "fondu .15s ease" }}>
           {typeof toast === "string" ? toast : toast.msg}
         </div>
       )}

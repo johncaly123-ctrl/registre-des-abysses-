@@ -807,7 +807,7 @@ export function VolkorneGpsPage({
   choixObjectif, progressionGenerations, purification, setPurification, optimakina, setOptimakina,
   niveauMinimumSession, setNiveauMinimumSession, suivi, realiserCouplesGps, onAnnuler, onReinitialiser,
   onDemarrerNouvelleSession, onNettoyerSterilesPuisDemarrer, onVoirMuldo,
-  naissances, onConfirmer, onSupprimer, journal, onPartagerTaverne,
+  naissances, onConfirmer, onSupprimer, journal, onPartagerTaverne, onObjectifAtteint,
 }) {
   return (
     <GpsDofusPage
@@ -857,6 +857,7 @@ export function VolkorneGpsPage({
       nomEntitePluriel="Volkornes"
       supporteReproducteur={false}
       onPartagerTaverne={onPartagerTaverne}
+      onObjectifAtteint={onObjectifAtteint}
     />
   );
 }

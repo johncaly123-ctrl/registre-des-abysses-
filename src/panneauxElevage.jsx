@@ -733,6 +733,7 @@ export function GpsDofusPage({
   nomEntitePluriel = "Muldos",
   supporteReproducteur = true,
   onPartagerTaverne,
+  onObjectifAtteint,
 }) {
   const [etapesOuvertes, setEtapesOuvertes] = useState({});
   const toggleEtapes = (key) => {
@@ -740,6 +741,16 @@ export function GpsDofusPage({
   };
   const [forcerJaugesNettoyage, setForcerJaugesNettoyage] = useState(false);
   const [planCopie, setPlanCopie] = useState(false);
+
+  // Détecte, après confirmation d'une naissance, si la couleur obtenue est
+  // celle actuellement visée par le GPS — permet à l'appelant (App.jsx) de
+  // déclencher une notification, sans dupliquer cette logique par créature.
+  const confirmerNaissanceEtDetecterObjectif = (id, couleur, sexe, encoreUnBebe) => {
+    onConfirmerNaissance(id, couleur, sexe, encoreUnBebe);
+    if (onObjectifAtteint && objectif && couleur === objectif) {
+      onObjectifAtteint(couleur, sexe);
+    }
+  };
 
   const resumeTextePlan = () => {
     const lignes = (session.groupes || []).map((g) =>
@@ -1212,7 +1223,7 @@ export function GpsDofusPage({
 
       <NaissancesEnAttentePanel
         naissances={naissances}
-        onConfirmer={onConfirmerNaissance}
+        onConfirmer={confirmerNaissanceEtDetecterObjectif}
         onSupprimer={onSupprimerNaissance}
         BadgeComponent={BadgeComponent}
         generationDeCouleurFn={generationDeCouleurFn}

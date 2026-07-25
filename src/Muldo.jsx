@@ -740,7 +740,11 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
       return next;
     });
     copierPressePapiers(nomCourt);
-    showToast(`${encoreUnBebe ? "Bébé 1/2 enregistré" : "Naissance enregistrée"} : ${couleur} ${sexe === "F" ? "♀" : "♂"} — renomme-le « ${nomCourt} » en jeu (déjà copié)${encoreUnBebe ? ". Confirme maintenant le 2e bébé." : ""}`);
+    if (objectifGpsActif && couleur === objectifGpsActif) {
+      showToast(`🎯 Objectif GPS atteint ! ${couleur} ${sexe === "F" ? "♀" : "♂"} obtenu(e) — renomme-le « ${nomCourt} » en jeu (déjà copié).`, { type: "objectif", duration: 5000 });
+    } else {
+      showToast(`${encoreUnBebe ? "Bébé 1/2 enregistré" : "Naissance enregistrée"} : ${couleur} ${sexe === "F" ? "♀" : "♂"} — renomme-le « ${nomCourt} » en jeu (déjà copié)${encoreUnBebe ? ". Confirme maintenant le 2e bébé." : ""}`);
+    }
   };
 
   const supprimerNaissance = (naissanceId) => {

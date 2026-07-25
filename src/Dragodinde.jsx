@@ -743,7 +743,7 @@ export function DragodindeGpsPage({
   choixObjectif, progressionGenerations, purification, setPurification, optimakina, setOptimakina,
   niveauMinimumSession, setNiveauMinimumSession, suivi, realiserCouplesGps, onAnnuler, onReinitialiser,
   onDemarrerNouvelleSession, onNettoyerSterilesPuisDemarrer, onVoirMuldo,
-  naissances, onConfirmer, onSupprimer, journal, onPartagerTaverne,
+  naissances, onConfirmer, onSupprimer, journal, onPartagerTaverne, onObjectifAtteint,
 }) {
   return (
     <GpsDofusPage
@@ -793,6 +793,7 @@ export function DragodindeGpsPage({
       nomEntitePluriel="Dragodindes"
       supporteReproducteur={false}
       onPartagerTaverne={onPartagerTaverne}
+      onObjectifAtteint={onObjectifAtteint}
     />
   );
 }
