@@ -7,7 +7,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
-import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage } from "./panneauxElevage.jsx";
+import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
 const JAUGES_DRAGODINDE = [
@@ -607,16 +607,46 @@ function NewDragodindeModal({ onClose, onCreate }) {
 }
 
 // ---------- Pages exportées ----------
+const STATUTS_DRAGODINDE = ["Fertile", "Féconde", "Stérile", "Sénile"];
+
 export function DragodindeCheptelListPane({ cheptel, filter, setFilter, selectedId, onSelect }) {
+  const [filtreGeneration, setFiltreGeneration] = useState("");
+  const [filtreSexe, setFiltreSexe] = useState("");
+  const [filtreStatut, setFiltreStatut] = useState("");
+  const [filtreCouleur, setFiltreCouleur] = useState("");
+
   const filtres = useMemo(() => {
     const p = plierCouleurDragodinde(filter);
-    if (!p) return cheptel;
-    return cheptel.filter((m) => plierCouleurDragodinde(m.nom || "").includes(p) || plierCouleurDragodinde(m.couleur || "").includes(p));
-  }, [cheptel, filter]);
+    const parTexte = !p
+      ? cheptel
+      : cheptel.filter((m) => plierCouleurDragodinde(m.nom || "").includes(p) || plierCouleurDragodinde(m.couleur || "").includes(p));
+    return parTexte.filter((m) =>
+      (!filtreGeneration || generationDeCouleurDragodinde(m.couleur) === Number(filtreGeneration)) &&
+      (!filtreSexe || sexeDragodinde(m) === filtreSexe) &&
+      (!filtreStatut || m.statut === filtreStatut) &&
+      (!filtreCouleur || m.couleur === filtreCouleur)
+    );
+  }, [cheptel, filter, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur]);
+
+  const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur;
+
   return (
     <div className="tech-column">
       <div style={{ padding: 14, borderBottom: "1px solid var(--line)" }}>
         <input className="field" placeholder="Rechercher un dragodinde…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      </div>
+      <div style={{ padding: "0 14px 14px", borderBottom: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <LabeledSelect label="Génération" value={filtreGeneration} onChange={setFiltreGeneration}
+          options={[["", "Toutes"], ...Object.keys(GENERATIONS_DRAGODINDE).map((g) => [g, `Gén. ${g}`])]} />
+        <LabeledSelect label="Couleur" value={filtreCouleur} onChange={setFiltreCouleur}
+          options={[["", "Toutes"], ...COULEURS_DRAGODINDE.map((c) => [c, c])]} />
+        <LabeledSelect label="Sexe" value={filtreSexe} onChange={setFiltreSexe}
+          options={[["", "Tous"], ["M", "Mâle"], ["F", "Femelle"]]} />
+        <LabeledSelect label="Statut" value={filtreStatut} onChange={setFiltreStatut}
+          options={[["", "Tous"], ...STATUTS_DRAGODINDE.map((s) => [s, s])]} />
+        {filtresActifs && (
+          <button className="btn btn-ghost" style={{ gridColumn: "1 / -1", padding: "4px 10px", fontSize: 12 }} onClick={() => { setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); }}>✕ Réinitialiser</button>
+        )}
       </div>
       <div style={{ overflowY: "auto", flex: 1, padding: 12 }}>
         {filtres.map((m) => <DragodindeMiniCard key={m.id} m={m} selected={selectedId === m.id} onClick={() => onSelect(m.id)} />)}

@@ -2311,6 +2311,25 @@ export function MuldoMiniCard({ m, selected, onClick }) {
 
 
 export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter, setFilter, actionsDuJour, importProps }) {
+  const [filtreGeneration, setFiltreGeneration] = useState("");
+  const [filtreSexe, setFiltreSexe] = useState("");
+  const [filtreStatut, setFiltreStatut] = useState("");
+  const [filtreCouleur, setFiltreCouleur] = useState("");
+
+  // Combine les 4 critères (ET logique) au-dessus de la recherche texte déjà
+  // appliquée en amont (eleveMuldo.filtered) — vide = pas de restriction.
+  const cheptelFiltre = useMemo(() => cheptel.filter((m) =>
+    (!filtreGeneration || generationDeCouleur(m.couleur) === Number(filtreGeneration)) &&
+    (!filtreSexe || sexeMuldo(m) === filtreSexe) &&
+    (!filtreStatut || m.statut === filtreStatut) &&
+    (!filtreCouleur || m.couleur === filtreCouleur)
+  ), [cheptel, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur]);
+
+  const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur;
+  const reinitialiserFiltres = () => {
+    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur("");
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", marginBottom: 18 }}>
@@ -2321,6 +2340,44 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
         <div style={{ width: 280 }}>
           <input className="field" placeholder="Rechercher…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
+      </div>
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h2 style={{ margin: 0 }}>Filtres</h2>
+          {filtresActifs && (
+            <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={reinitialiserFiltres}>✕ Réinitialiser</button>
+          )}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+          <LabeledSelect
+            label="Génération"
+            value={filtreGeneration}
+            onChange={setFiltreGeneration}
+            options={[["", "Toutes"], ...Object.keys(GENERATIONS_MULDO).map((g) => [g, `Génération ${g}`])]}
+          />
+          <LabeledSelect
+            label="Couleur"
+            value={filtreCouleur}
+            onChange={setFiltreCouleur}
+            options={[["", "Toutes"], ...COULEURS_MULDO.map((c) => [c, c])]}
+          />
+          <LabeledSelect
+            label="Sexe"
+            value={filtreSexe}
+            onChange={setFiltreSexe}
+            options={[["", "Tous"], ["M", "Mâle"], ["F", "Femelle"]]}
+          />
+          <LabeledSelect
+            label="Statut"
+            value={filtreStatut}
+            onChange={setFiltreStatut}
+            options={[["", "Tous"], ...STATUTS.map((s) => [s, s])]}
+          />
+        </div>
+        {filtresActifs && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>{cheptelFiltre.length} / {cheptel.length} muldo(s) affiché(s)</div>
+        )}
       </div>
 
       <div className="panel-card" style={{ marginBottom: 16 }}>
@@ -2336,7 +2393,7 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
         </div>
       </div>
 
-      <CheptelCards items={cheptel} selectedId={selectedId} onSelect={setSelectedId} />
+      <CheptelCards items={cheptelFiltre} selectedId={selectedId} onSelect={setSelectedId} />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
         <ImportCapturePanel {...importProps} />
