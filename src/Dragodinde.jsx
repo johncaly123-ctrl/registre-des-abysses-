@@ -122,22 +122,25 @@ function correspondanceFloueDragodinde(plie, candidats) {
 export function couleurEstCanoniqueDragodinde(couleur) {
   return indexCouleursDragodinde().has(plierCouleurDragodinde(couleur));
 }
-export function canonicaliserCouleurDragodinde(brut) {
+export function canonicaliserCouleurDetailDragodinde(brut) {
   const texte = String(brut || "").trim();
-  if (!texte) return texte;
+  if (!texte) return { couleur: texte, confiance: "inconnue" };
   const index = indexCouleursDragodinde();
   const plie = plierCouleurDragodinde(texte);
   const direct = index.get(plie);
-  if (direct) return direct;
+  if (direct) return { couleur: direct, confiance: "exacte" };
   const parties = plie.split(" et ").map((p) => p.trim()).filter(Boolean);
   if (parties.length === 2) {
     const [a, b] = parties;
     const endroit = index.get(`${a} et ${b}`) || index.get(`${b} et ${a}`);
-    if (endroit) return endroit;
+    if (endroit) return { couleur: endroit, confiance: "exacte" };
   }
   const flouEntier = correspondanceFloueDragodinde(plie, [...index.keys()]);
-  if (flouEntier) return index.get(flouEntier);
-  return texte;
+  if (flouEntier) return { couleur: index.get(flouEntier), confiance: "corrigee" };
+  return { couleur: texte, confiance: "inconnue" };
+}
+export function canonicaliserCouleurDragodinde(brut) {
+  return canonicaliserCouleurDetailDragodinde(brut).couleur;
 }
 function analyserTexteCaptureDragodinde(texte) {
   const lignes = String(texte || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
@@ -155,11 +158,13 @@ function analyserTexteCaptureDragodinde(texte) {
     }
     const matchInline = ligne.match(/^Dragodinde\s+(.+?)\s+(\d+)$/i);
     if (matchInline) {
-      entrees.push({ couleur: canonicaliserCouleurDragodinde(matchInline[1].trim()), quantite: Number(matchInline[2]) });
+      const { couleur, confiance } = canonicaliserCouleurDetailDragodinde(matchInline[1].trim());
+      entrees.push({ couleur, confiance, quantite: Number(matchInline[2]) });
       continue;
     }
     if (/^Dragodinde/i.test(ligne)) {
-      entrees.push({ couleur: canonicaliserCouleurDragodinde(ligne.replace(/^Dragodinde\s+/i, "").trim()), quantite: null });
+      const { couleur, confiance } = canonicaliserCouleurDetailDragodinde(ligne.replace(/^Dragodinde\s+/i, "").trim());
+      entrees.push({ couleur, confiance, quantite: null });
       continue;
     }
     if (/^[0-9OolI]+$/.test(ligne)) {
@@ -168,8 +173,8 @@ function analyserTexteCaptureDragodinde(texte) {
   }
   let k = 0;
   entrees.forEach((e) => { if (e.quantite === null) { e.quantite = k < quantitesEnBloc.length ? quantitesEnBloc[k] : 0; k += 1; } });
-  return entrees.map(({ couleur, quantite }) => ({
-    couleur, reconnu: couleurEstCanoniqueDragodinde(couleur), male: 0, femelle: 0, inconnu: quantite, total: quantite,
+  return entrees.map(({ couleur, confiance, quantite }) => ({
+    couleur, reconnu: confiance !== "inconnue", confiance, male: 0, femelle: 0, inconnu: quantite, total: quantite,
   })).sort((a, b) => a.couleur.localeCompare(b.couleur, "fr"));
 }
 
@@ -721,8 +726,8 @@ export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToas
       {analyse.length > 0 && (
         <div style={{ marginTop: 8 }}>
           {analyse.map((a) => (
-            <div key={a.couleur} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0", color: a.reconnu ? "inherit" : "#e8896a" }}>
-              <span><DragodindeBadge couleur={a.couleur} taille={14} /> {a.couleur}{!a.reconnu && " (non reconnu)"}</span>
+            <div key={a.couleur} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0", color: !a.reconnu ? "#e8896a" : a.confiance === "corrigee" ? "#e0a94e" : "inherit" }} title={a.confiance === "corrigee" ? "Couleur corrigée automatiquement (lecture OCR incertaine) — vérifie qu'elle est correcte." : undefined}>
+              <span><DragodindeBadge couleur={a.couleur} taille={14} /> {a.couleur}{!a.reconnu && " (non reconnu)"}{a.confiance === "corrigee" && " ⚠️"}</span>
               <span>{a.total}</span>
             </div>
           ))}

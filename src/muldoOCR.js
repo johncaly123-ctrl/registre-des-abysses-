@@ -3,7 +3,7 @@
 // malgré les défauts OCR (colonnes séparées, mots coupés, chiffres/lettres
 // confondus), plus quelques utilitaires de stock dérivés du cheptel.
 
-import { distanceLevenshtein, plierCouleur, canonicaliserCouleur, couleurEstCanonique, RECETTES_COULEURS } from "./muldoGenetique.js";
+import { distanceLevenshtein, plierCouleur, canonicaliserCouleurDetail, RECETTES_COULEURS } from "./muldoGenetique.js";
 
 export function normaliserTexteOCR(value) {
   return String(value || "")
@@ -63,18 +63,14 @@ export function analyserTexteCaptureMuldo(texte) {
 
     const matchInline = ligne.match(/^Muldo\s+(.+?)\s+(\d+)$/i);
     if (matchInline) {
-      entrees.push({
-        couleur: canonicaliserCouleur(matchInline[1].trim()),
-        quantite: Number(matchInline[2]),
-      });
+      const { couleur, confiance } = canonicaliserCouleurDetail(matchInline[1].trim());
+      entrees.push({ couleur, confiance, quantite: Number(matchInline[2]) });
       continue;
     }
 
     if (/^Muldo/i.test(ligne)) {
-      entrees.push({
-        couleur: canonicaliserCouleur(ligne.replace(/^Muldo\s+/i, "").trim()),
-        quantite: null,
-      });
+      const { couleur, confiance } = canonicaliserCouleurDetail(ligne.replace(/^Muldo\s+/i, "").trim());
+      entrees.push({ couleur, confiance, quantite: null });
       continue;
     }
 
@@ -93,9 +89,10 @@ export function analyserTexteCaptureMuldo(texte) {
     }
   });
 
-  return entrees.map(({ couleur, quantite }) => ({
+  return entrees.map(({ couleur, confiance, quantite }) => ({
     couleur,
-    reconnu: couleurEstCanonique(couleur),
+    reconnu: confiance !== "inconnue",
+    confiance,
     male: 0,
     femelle: 0,
     inconnu: quantite,

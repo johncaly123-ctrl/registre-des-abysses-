@@ -1113,8 +1113,8 @@ export function ImportCapturePanel({ captureText, setCaptureText, capturePreview
       {importCapture.length > 0 && (
         <div style={{ marginTop: 8, maxHeight: 90, overflow: "auto", borderTop: `1px solid ${COLORS.line}`, paddingTop: 6 }}>
           {importCapture.map((l) => (
-            <div key={l.couleur} style={{ fontSize: 11, color: COLORS.text, fontFamily: "Inter, sans-serif", marginBottom: 3 }}>
-              {l.couleur} — ♂ {l.male} / ♀ {l.femelle} / ? {l.inconnu} / total {l.total}
+            <div key={l.couleur} style={{ fontSize: 11, color: l.confiance === "corrigee" ? "#e0a94e" : COLORS.text, fontFamily: "Inter, sans-serif", marginBottom: 3 }} title={l.confiance === "corrigee" ? "Couleur corrigée automatiquement (lecture OCR incertaine) — vérifie qu'elle est correcte." : undefined}>
+              {l.couleur}{l.confiance === "corrigee" && " ⚠️"} — ♂ {l.male} / ♀ {l.femelle} / ? {l.inconnu} / total {l.total}
             </div>
           ))}
         </div>
@@ -2737,6 +2737,11 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
         {lignes.some((l) => l.reconnu === false) && (
           <div style={{ color: "#e8896a", fontSize: 12, marginTop: 8 }}>
             ⚠ Couleur(s) non reconnue(s) : {lignes.filter((l) => l.reconnu === false).map((l) => `« ${l.couleur} »`).join(", ")} — corrige-les dans le texte ci-dessus (l'enregistrement est bloqué tant qu'il en reste).
+          </div>
+        )}
+        {lignes.some((l) => l.confiance === "corrigee") && (
+          <div style={{ color: "#e0a94e", fontSize: 12, marginTop: 8 }}>
+            ⚠️ Couleur(s) corrigée(s) automatiquement (lecture OCR incertaine, vérifie avant d'enregistrer) : {lignes.filter((l) => l.confiance === "corrigee").map((l) => `« ${l.couleur} »`).join(", ")}.
           </div>
         )}
       </div>

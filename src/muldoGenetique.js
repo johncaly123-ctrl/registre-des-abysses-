@@ -428,27 +428,31 @@ export function indexCouleursCanoniques() {
   return INDEX_COULEURS_CANONIQUES;
 }
 
-export function canonicaliserCouleur(brut) {
+// Variante avec détail : distingue une correspondance exacte ("exacte") d'une
+// correspondance retrouvée par tolérance aux fautes OCR ("corrigee"), pour
+// que l'UI puisse signaler les corrections douteuses sans bloquer l'import
+// (contrairement à "inconnue", qui elle reste bloquante en amont).
+export function canonicaliserCouleurDetail(brut) {
   const texte = String(brut || "").trim();
-  if (!texte) return texte;
+  if (!texte) return { couleur: texte, confiance: "inconnue" };
   const index = indexCouleursCanoniques();
   const plie = plierCouleur(texte);
   const direct = index.get(plie);
-  if (direct) return direct;
+  if (direct) return { couleur: direct, confiance: "exacte" };
 
   // Nom bicolore dans le mauvais ordre.
   const parties = plie.split(" et ").map((p) => p.trim()).filter(Boolean);
   if (parties.length === 2) {
     const [a, b] = parties;
     const endroit = index.get(`${a} et ${b}`) || index.get(`${b} et ${a}`);
-    if (endroit) return endroit;
+    if (endroit) return { couleur: endroit, confiance: "exacte" };
   }
 
   // Correction floue : le vocabulaire des couleurs est minuscule, donc une
   // distance d'édition ≤ 2 identifie sans ambiguïté le nom visé malgré les
   // erreurs de lecture OCR ("Orchidce", "lndigo", "Ëbéne"…).
   const flouEntier = correspondanceFloue(plie, [...index.keys()]);
-  if (flouEntier) return index.get(flouEntier);
+  if (flouEntier) return { couleur: index.get(flouEntier), confiance: "corrigee" };
 
   // …et partie par partie pour les bicolores très abîmés.
   if (parties.length === 2) {
@@ -457,11 +461,15 @@ export function canonicaliserCouleur(brut) {
     const pb = correspondanceFloue(parties[1], monos);
     if (pa && pb) {
       const combine = index.get(`${pa} et ${pb}`) || index.get(`${pb} et ${pa}`);
-      if (combine) return combine;
+      if (combine) return { couleur: combine, confiance: "corrigee" };
     }
   }
 
-  return texte; // couleur vraiment inconnue : conservée telle quelle, signalée par le diagnostic
+  return { couleur: texte, confiance: "inconnue" }; // couleur vraiment inconnue : conservée telle quelle, signalée par le diagnostic
+}
+
+export function canonicaliserCouleur(brut) {
+  return canonicaliserCouleurDetail(brut).couleur;
 }
 
 export function toleranceOCR(mot) {
