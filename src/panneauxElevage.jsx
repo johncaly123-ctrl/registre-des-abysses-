@@ -46,7 +46,7 @@ export function CouleurCopiable({ couleur, gras = true, BadgeComponent }) {
     <button
       type="button"
       onClick={onClick}
-      title={`Copier « ${couleur} » pour la recherche HDV`}
+      title={`🛒 Copier la couleur seule « ${couleur} » (recherche HDV)`}
       style={{
         background: "none",
         border: "none",
@@ -77,7 +77,7 @@ export function NomCopiable({ nom, gras = true }) {
     <button
       type="button"
       onClick={onClick}
-      title={`Copier « ${nom} »`}
+      title={`🏷️ Copier le nom en jeu « ${nom} » (pour retrouver cette monture précise, distincte des autres de même couleur)`}
       style={{
         background: "none",
         border: "none",
@@ -1287,7 +1287,7 @@ export function GpsDofusPage({
               <b>♀ <NomCopiable nom={g.femelle.nom || g.femelle.couleur} /></b>{" "}
               <BoutonFiche id={g.femelle.id} onVoir={onVoirMuldo} label={g.femelle.nom || g.femelle.couleur} />
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                <CouleurCopiable couleur={g.male.couleur} gras={false} BadgeComponent={BadgeComponent} />
+                🛒 couleur seule (HDV) : <CouleurCopiable couleur={g.male.couleur} gras={false} BadgeComponent={BadgeComponent} />
                 <span style={{ margin: "0 5px" }}>×</span>
                 <CouleurCopiable couleur={g.femelle.couleur} gras={false} BadgeComponent={BadgeComponent} />
               </div>

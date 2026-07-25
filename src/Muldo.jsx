@@ -690,6 +690,10 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     if (!n || !couleurChoisie || !sexe) return;
     const couleur = canonicaliserCouleur(couleurChoisie);
     const nomCourt = genererNomCourt(couleur);
+    // La couleur d'un parent doit rester visible même s'il a un nom (le nom
+    // seul, ex. "DE-4F7", ne permet pas de déduire la couleur d'un coup d'œil).
+    const maleLabel = n.maleNom && n.maleNom !== n.maleCouleur ? `${n.maleNom} (${n.maleCouleur})` : n.maleCouleur;
+    const femelleLabel = n.femelleNom && n.femelleNom !== n.femelleCouleur ? `${n.femelleNom} (${n.femelleCouleur})` : n.femelleCouleur;
     const bebe = normaliserMuldo({
       id: uid(),
       nom: nomCourt,
@@ -704,7 +708,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
       maturite: 0,
       serenite: 50,
       parentIds: [n.maleId, n.femelleId],
-      notes: `Né(e) ${new Date().toLocaleDateString("fr-FR")} · parents : ${n.maleNom} × ${n.femelleNom}${n.resultatEspere && n.resultatEspere !== couleur ? ` · résultat espéré : ${n.resultatEspere}` : ""}`,
+      notes: `Né(e) ${new Date().toLocaleDateString("fr-FR")} · parents : ${maleLabel} × ${femelleLabel}${n.resultatEspere && n.resultatEspere !== couleur ? ` · résultat espéré : ${n.resultatEspere}` : ""}`,
       dateAjout: new Date().toISOString(),
     });
     updateCheptel((prev) => [
