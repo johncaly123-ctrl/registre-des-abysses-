@@ -2141,9 +2141,13 @@ export function SuccesDofusPage({
   const totalSeen = allColors.filter(seen).length;
   const totalPct = allColors.length ? Math.round((totalSeen / allColors.length) * 100) : 0;
   const couleursRares = [...(GENERATIONS_MULDO[9] || []), ...(GENERATIONS_MULDO[10] || [])];
+  const nbNaissances = (journal || []).filter((j) => j.type !== "clonage").length;
+  const nbClonages = (journal || []).filter((j) => j.type === "clonage").length;
   const jalons = [
-    { label: "Première naissance", atteint: (journal || []).some((j) => j.type !== "clonage") },
-    { label: "Premier clonage", atteint: (journal || []).some((j) => j.type === "clonage") },
+    { label: "Première naissance", atteint: nbNaissances >= 1 },
+    { label: "Premier clonage", atteint: nbClonages >= 1 },
+    { label: "100 naissances", atteint: nbNaissances >= 100 },
+    { label: "10 clonages réussis", atteint: nbClonages >= 10 },
     { label: "Couleur rare (G9-G10)", atteint: couleursRares.some(seen) },
     { label: "25% du pokédex", atteint: totalPct >= 25 },
     { label: "50% du pokédex", atteint: totalPct >= 50 },

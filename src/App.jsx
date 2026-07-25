@@ -1052,6 +1052,9 @@ function PartagePublicPanel({ session, pseudo, cheptelMuldo, cheptelDragodinde, 
         tes notes ni tes jauges) pour le montrer à ta guilde via un lien. Republier met à jour
         l'instantané ; rien ne se synchronise automatiquement.
       </div>
+      {Object.values(statuts).some((s) => s && s !== "absent") && (
+        <div className="success-chip success-ok" style={{ display: "inline-block", marginBottom: 12 }}>🏅 Premier cheptel publié</div>
+      )}
       {lienPublic && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <code style={{ fontSize: 12, color: "var(--gold2)", wordBreak: "break-all" }}>{lienPublic}</code>

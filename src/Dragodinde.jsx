@@ -881,12 +881,30 @@ export function DragodindeClonagePage({ cheptel, fusionA, fusionB, setFusionA, s
   );
 }
 
-export function DragodindeSuccesPage({ historiqueCouleurs, cheptel, onToggleCouleur, onValidateGeneration }) {
+export function DragodindeSuccesPage({ historiqueCouleurs, cheptel, onToggleCouleur, onValidateGeneration, journal }) {
   const presentes = new Set(cheptel.map((m) => m.couleur));
   const seen = (c) => Boolean(historiqueCouleurs[c]) || presentes.has(c);
+  const nbNaissances = (journal || []).filter((j) => j.type !== "clonage").length;
+  const nbClonages = (journal || []).filter((j) => j.type === "clonage").length;
+  const jalons = [
+    { label: "Première naissance", atteint: nbNaissances >= 1 },
+    { label: "Premier clonage", atteint: nbClonages >= 1 },
+    { label: "100 naissances", atteint: nbNaissances >= 100 },
+    { label: "10 clonages réussis", atteint: nbClonages >= 10 },
+  ];
   return (
     <div>
       <h1 style={{ fontSize: 28 }}>Succès Dragodinde</h1>
+      <div className="panel-card" style={{ marginBottom: 12 }}>
+        <b>Jalons</b>
+        <div className="success-grid" style={{ marginTop: 10 }}>
+          {jalons.map((j) => (
+            <div key={j.label} className={`success-chip ${j.atteint ? "success-ok" : "success-miss"}`}>
+              {j.atteint ? "🏅" : "⬜"} {j.label}
+            </div>
+          ))}
+        </div>
+      </div>
       {Object.entries(GENERATIONS_DRAGODINDE).map(([gen, couleurs]) => {
         const decouvertes = couleurs.filter(seen).length;
         const pct = couleurs.length ? Math.round(decouvertes / couleurs.length * 100) : 0;
@@ -1381,7 +1399,7 @@ export function useDragodindeElevage() {
       journal,
     },
     clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion },
-    succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration },
+    succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration, journal },
     naissancesProps: { naissances, onConfirmer: confirmerNaissance, onSupprimer: supprimerNaissance },
     corbeilleProps: { corbeille, onRestaurer: restaurerMuldo, onPurger: purgerCorbeilleEntree, onVider: viderCorbeille, dureeJours: CORBEILLE_DUREE_JOURS_DRAGODINDE },
   };
