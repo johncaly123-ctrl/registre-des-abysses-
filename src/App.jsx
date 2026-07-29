@@ -3,6 +3,7 @@ import { flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers } from "./panneauxElevage.jsx";
 import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
+import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
 import { OnboardingOverlay } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
@@ -91,7 +92,7 @@ export default function App() {
   // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
   const [page, setPage] = useState(() => {
     const demandee = new URLSearchParams(window.location.search).get("page");
-    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "taverne", "succes", "guide", "nouveautes"];
+    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "mangeoire", "taverne", "succes", "guide", "nouveautes"];
     return pagesValides.includes(demandee) ? demandee : "dashboard";
   });
   // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
@@ -259,6 +260,7 @@ export default function App() {
     const NOMS_SOUS_PAGE = { cheptel: "Cheptel", synchro: "Synchronisation", gps: "GPS", clonage: "Clonage" };
     let titre;
     if (page === "dashboard") titre = "Tableau de bord";
+    else if (page === "mangeoire") titre = "Mangeoire";
     else if (page === "taverne") titre = "Taverne";
     else if (page === "succes") titre = "Succès";
     else if (page === "guide") titre = "Guide";
@@ -725,6 +727,7 @@ export default function App() {
 
           {page === "guide" && <GuidePage />}
           {page === "nouveautes" && <NouveautesPage />}
+          {page === "mangeoire" && <MangeoirePage />}
 
           {page === "muldo" && (
             <>
@@ -997,6 +1000,7 @@ function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discover
     ["dragodinde", "🐲", "Dragodinde"],
     ["muldo", "🐴", "Muldo"],
     ["volkorne", "🐎", "Volkorne"],
+    ["mangeoire", "🍽️", "Mangeoire"],
     ["taverne", "🍻", "Taverne"],
     ["succes", "🏆", "Succès"],
     ["guide", "📖", "Guide"],
@@ -2609,6 +2613,7 @@ const CLES_SAUVEGARDE = [
   STORAGE_PRIX_KAMAS_VOLKORNE,
   ...CLES_SAUVEGARDE_DRAGODINDE,
   ...CLES_SAUVEGARDE_VOLKORNE,
+  ...CLES_SAUVEGARDE_MANGEOIRE,
 ];
 
 function SauvegardePanel({ showToast }) {

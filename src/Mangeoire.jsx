@@ -1,0 +1,522 @@
+import React, { useState, useEffect } from "react";
+import { chargerJSON, sauvegarderJSON } from "./stockage.js";
+import { formatKamas } from "./panneauxElevage.jsx";
+
+// Mangeoire d'enclos : 6 jauges à monter (Dragofesse, Mangeoire, Foudroyeur,
+// Baffeur, Abreuvoir, Caresseur), chacune nourrie par 4 paliers de consommables
+// (Extrait jusqu'à 40 000, Philtre jusqu'à 70 000, Potion jusqu'à 90 000,
+// Élixir jusqu'au max), eux-mêmes déclinés en 5 tailles (Minuscule à
+// Gigantesque, 1000 à 5000 points). Le nombre d'ingrédients augmente d'un par
+// palier (2 pour un extrait, jusqu'à 5 pour un élixir).
+//
+// La composition des recettes (noms/quantités d'ingrédients, points par
+// recette) est fixée par le jeu et ne change jamais : elle vit dans
+// `structure`, indépendamment des prix kamas qui eux fluctuent selon le
+// serveur/moment et vivent dans `prix` (map ingredientId -> prix unitaire).
+// Les sauvegardes nommées ne figent donc que des jeux de prix, jamais la
+// structure des recettes.
+export const STORAGE_MANGEOIRE_STRUCTURE = "mangeoire-structure-v1";
+export const STORAGE_MANGEOIRE_PRIX = "mangeoire-prix-v2";
+export const STORAGE_MANGEOIRE_SAUVEGARDES = "mangeoire-sauvegardes-v2";
+export const CLES_SAUVEGARDE_MANGEOIRE = [STORAGE_MANGEOIRE_STRUCTURE, STORAGE_MANGEOIRE_PRIX, STORAGE_MANGEOIRE_SAUVEGARDES];
+
+const JAUGES = ["Dragofesse", "Mangeoire", "Foudroyeur", "Baffeur", "Abreuvoir", "Caresseur"];
+
+const PALIERS = [
+  { cle: "extrait", label: "Extrait", jaugeMax: 40000, nbIngredients: 2 },
+  { cle: "philtre", label: "Philtre", jaugeMax: 70000, nbIngredients: 3 },
+  { cle: "potion", label: "Potion", jaugeMax: 90000, nbIngredients: 4 },
+  { cle: "elixir", label: "Élixir", jaugeMax: null, nbIngredients: 5 },
+];
+
+const TAILLES = [
+  { cle: "minuscule", nom: "Minuscule", points: 1000 },
+  { cle: "petit", nom: "Petit", points: 2000 },
+  { cle: "moyen", nom: "Moyen", points: 3000 },
+  { cle: "grand", nom: "Grand", points: 4000 },
+  { cle: "gigantesque", nom: "Gigantesque", points: 5000 },
+];
+
+function uid() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function preposition(nom) {
+  return /^[aeiouhAEIOUHÀÂÄÉÈÊËÎÏÔÖÙÛÜàâäéèêëîïôöùûü]/.test(nom) ? `d'${nom}` : `de ${nom}`;
+}
+
+function libelleRecette(jauge, palier, taille) {
+  return `${taille.nom} ${palier.label} ${preposition(jauge)}`;
+}
+
+function libelleCourt(palier, taille) {
+  return `${taille.nom} ${palier.label}`;
+}
+
+function creerIngredientsStructure(nb) {
+  return Array.from({ length: nb }, (_, i) => ({ id: uid(), nom: `Ingrédient ${i + 1}`, quantite: 1 }));
+}
+
+function creerStructureParDefaut() {
+  const structure = {};
+  JAUGES.forEach((jauge) => {
+    structure[jauge] = {};
+    PALIERS.forEach((palier) => {
+      structure[jauge][palier.cle] = TAILLES.map((taille) => ({
+        id: uid(),
+        tailleCle: taille.cle,
+        points: taille.points,
+        ingredients: creerIngredientsStructure(palier.nbIngredients),
+      }));
+    });
+  });
+  return structure;
+}
+
+function normaliserStructure(brut) {
+  const base = creerStructureParDefaut();
+  if (!brut || typeof brut !== "object") return base;
+
+  JAUGES.forEach((jauge) => {
+    PALIERS.forEach((palier) => {
+      const liste = brut?.[jauge]?.[palier.cle];
+      if (!Array.isArray(liste)) return;
+
+      base[jauge][palier.cle] = TAILLES.map((taille, index) => {
+        const existante = liste.find((r) => r.tailleCle === taille.cle) || liste[index];
+        if (!existante) return base[jauge][palier.cle][index];
+
+        const ingredients = Array.isArray(existante.ingredients) && existante.ingredients.length
+          ? existante.ingredients.map((ing, i) => ({
+              id: ing.id || uid(),
+              nom: ing.nom || `Ingrédient ${i + 1}`,
+              quantite: Number(ing.quantite) || 0,
+            }))
+          : creerIngredientsStructure(palier.nbIngredients);
+
+        return {
+          id: existante.id || uid(),
+          tailleCle: taille.cle,
+          points: Number(existante.points) || taille.points,
+          ingredients,
+        };
+      });
+    });
+  });
+
+  return base;
+}
+
+function normaliserPrix(brut) {
+  if (!brut || typeof brut !== "object") return {};
+  const propre = {};
+  Object.keys(brut).forEach((id) => {
+    const n = Number(brut[id]);
+    if (Number.isFinite(n)) propre[id] = n;
+  });
+  return propre;
+}
+
+function coutRecette(recette, prixParIngredient) {
+  return recette.ingredients.reduce(
+    (total, ing) => total + (Number(ing.quantite) || 0) * (Number(prixParIngredient[ing.id]) || 0),
+    0
+  );
+}
+
+function fmtRatio(n, decimales = 2) {
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: decimales }).format(n);
+}
+
+export function MangeoirePage() {
+  const [structure, setStructure] = useState(() => normaliserStructure(chargerJSON(STORAGE_MANGEOIRE_STRUCTURE, null)));
+  const [prix, setPrix] = useState(() => normaliserPrix(chargerJSON(STORAGE_MANGEOIRE_PRIX, null)));
+  const [sauvegardes, setSauvegardes] = useState(() => chargerJSON(STORAGE_MANGEOIRE_SAUVEGARDES, []));
+  const [jaugeActive, setJaugeActive] = useState(JAUGES[0]);
+  const [palierActif, setPalierActif] = useState(PALIERS[0].cle);
+  const [classementFiltre, setClassementFiltre] = useState("tous");
+  const [nomSauvegarde, setNomSauvegarde] = useState("");
+  const [rechercheSauvegarde, setRechercheSauvegarde] = useState("");
+  const [statut, setStatut] = useState("");
+  const [ingredientCopieId, setIngredientCopieId] = useState(null);
+
+  useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_STRUCTURE, structure); }, [structure]);
+  useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_PRIX, prix); }, [prix]);
+  useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_SAUVEGARDES, sauvegardes); }, [sauvegardes]);
+
+  const palier = PALIERS.find((p) => p.cle === palierActif);
+  const recettes = structure[jaugeActive][palierActif];
+
+  const majPoints = (tailleCle, valeur) => {
+    setStructure((prev) => {
+      const suivant = { ...prev };
+      suivant[jaugeActive] = { ...suivant[jaugeActive] };
+      suivant[jaugeActive][palierActif] = suivant[jaugeActive][palierActif].map((r) =>
+        r.tailleCle === tailleCle ? { ...r, points: Number(valeur) || 0 } : r
+      );
+      return suivant;
+    });
+  };
+
+  const majIngredientChamp = (tailleCle, ingredientId, champ, valeur) => {
+    setStructure((prev) => {
+      const suivant = { ...prev };
+      suivant[jaugeActive] = { ...suivant[jaugeActive] };
+      suivant[jaugeActive][palierActif] = suivant[jaugeActive][palierActif].map((r) => {
+        if (r.tailleCle !== tailleCle) return r;
+        return {
+          ...r,
+          ingredients: r.ingredients.map((ing) =>
+            ing.id === ingredientId
+              ? { ...ing, [champ]: champ === "nom" ? valeur : Number(valeur) || 0 }
+              : ing
+          ),
+        };
+      });
+      return suivant;
+    });
+  };
+
+  const majIngredientPrix = (ingredientId, valeur) => {
+    setPrix((prev) => ({ ...prev, [ingredientId]: Number(valeur) || 0 }));
+  };
+
+  const ajouterIngredient = (tailleCle) => {
+    setStructure((prev) => {
+      const suivant = { ...prev };
+      suivant[jaugeActive] = { ...suivant[jaugeActive] };
+      suivant[jaugeActive][palierActif] = suivant[jaugeActive][palierActif].map((r) =>
+        r.tailleCle === tailleCle
+          ? { ...r, ingredients: [...r.ingredients, { id: uid(), nom: `Ingrédient ${r.ingredients.length + 1}`, quantite: 1 }] }
+          : r
+      );
+      return suivant;
+    });
+  };
+
+  const supprimerIngredient = (tailleCle, ingredientId) => {
+    setStructure((prev) => {
+      const suivant = { ...prev };
+      suivant[jaugeActive] = { ...suivant[jaugeActive] };
+      suivant[jaugeActive][palierActif] = suivant[jaugeActive][palierActif].map((r) =>
+        r.tailleCle === tailleCle
+          ? { ...r, ingredients: r.ingredients.filter((ing) => ing.id !== ingredientId) }
+          : r
+      );
+      return suivant;
+    });
+    setPrix((prev) => {
+      const suivant = { ...prev };
+      delete suivant[ingredientId];
+      return suivant;
+    });
+  };
+
+  const copierNomIngredient = (ing) => {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      afficherStatut("Copie non supportée par ce navigateur.");
+      return;
+    }
+    navigator.clipboard.writeText(ing.nom).then(() => {
+      setIngredientCopieId(ing.id);
+      setTimeout(() => setIngredientCopieId((prev) => (prev === ing.id ? null : prev)), 1200);
+    }).catch(() => afficherStatut("Impossible de copier."));
+  };
+
+  const classement = PALIERS
+    .filter((p) => classementFiltre === "tous" || p.cle === classementFiltre)
+    .flatMap((p) =>
+      TAILLES.map((taille) => {
+        const recette = structure[jaugeActive][p.cle].find((r) => r.tailleCle === taille.cle);
+        const cout = coutRecette(recette, prix);
+        const points = Number(recette.points) || 0;
+        return {
+          label: libelleCourt(p, taille),
+          cout,
+          points,
+          coutParPoint: points > 0 ? cout / points : Infinity,
+          coutPour1000: points > 0 ? (cout / points) * 1000 : Infinity,
+        };
+      })
+    )
+    .sort((a, b) => a.coutParPoint - b.coutParPoint);
+
+  const meilleure = classement.find((r) => Number.isFinite(r.coutParPoint));
+
+  const afficherStatut = (msg) => {
+    setStatut(msg);
+    setTimeout(() => setStatut((prev) => (prev === msg ? "" : prev)), 1800);
+  };
+
+  const enregistrerSauvegarde = () => {
+    const nom = nomSauvegarde.trim();
+    if (!nom) { afficherStatut("Donne un nom à la sauvegarde."); return; }
+
+    const indexExistant = sauvegardes.findIndex((s) => s.nom.toLowerCase() === nom.toLowerCase());
+    if (indexExistant >= 0 && !confirm(`Une sauvegarde nommée « ${nom} » existe déjà. La remplacer ?`)) return;
+
+    const entree = {
+      id: indexExistant >= 0 ? sauvegardes[indexExistant].id : uid(),
+      nom,
+      enregistreLe: new Date().toISOString(),
+      prix: JSON.parse(JSON.stringify(prix)),
+    };
+
+    setSauvegardes((prev) => {
+      if (indexExistant >= 0) {
+        const copie = [...prev];
+        copie[indexExistant] = entree;
+        return copie;
+      }
+      return [entree, ...prev];
+    });
+    setNomSauvegarde("");
+    afficherStatut(`Sauvegarde « ${nom} » enregistrée.`);
+  };
+
+  const chargerSauvegarde = (id) => {
+    const entree = sauvegardes.find((s) => s.id === id);
+    if (!entree) return;
+    if (!confirm(`Charger « ${entree.nom} » ? Les prix actuellement affichés seront remplacés (les ingrédients ne bougent pas).`)) return;
+    setPrix(normaliserPrix(entree.prix));
+    afficherStatut(`Sauvegarde « ${entree.nom} » chargée.`);
+  };
+
+  const supprimerSauvegarde = (id) => {
+    const entree = sauvegardes.find((s) => s.id === id);
+    if (!entree) return;
+    if (!confirm(`Supprimer définitivement la sauvegarde « ${entree.nom} » ?`)) return;
+    setSauvegardes((prev) => prev.filter((s) => s.id !== id));
+    afficherStatut(`Sauvegarde « ${entree.nom} » supprimée.`);
+  };
+
+  const reinitialiserPrix = () => {
+    if (!confirm("Remettre tous les prix à 0 ? Les noms/quantités d'ingrédients et tes sauvegardes de prix nommées sont conservés.")) return;
+    setPrix({});
+  };
+
+  const sauvegardesFiltrees = sauvegardes
+    .filter((s) => s.nom.toLowerCase().includes(rechercheSauvegarde.trim().toLowerCase()))
+    .sort((a, b) => new Date(b.enregistreLe) - new Date(a.enregistreLe));
+
+  return (
+    <>
+      <div className="panel-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h2>Mangeoire d'enclos — Rentabilité</h2>
+          <button className="btn btn-ghost" onClick={reinitialiserPrix}>Réinitialiser les prix</button>
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6, marginBottom: 14 }}>
+          Compare le coût des recettes de mangeoire selon leur coût total et leurs points, pour les 6 jauges
+          et les 4 paliers de consommables. Les noms/quantités d'ingrédients sont fixes (recettes du jeu) et
+          se sauvegardent automatiquement ; seuls les prix kamas changent selon le serveur ou le moment.
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {JAUGES.map((jauge) => (
+            <button
+              key={jauge}
+              className="btn btn-ghost"
+              style={jauge === jaugeActive ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+              onClick={() => setJaugeActive(jauge)}
+            >
+              {jauge}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          {PALIERS.map((p) => (
+            <button
+              key={p.cle}
+              className="btn btn-ghost"
+              style={p.cle === palierActif ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined}
+              onClick={() => setPalierActif(p.cle)}
+            >
+              {p.label} <span style={{ opacity: 0.75, fontWeight: 500 }}>({p.jaugeMax ? `jusqu'à ${p.jaugeMax.toLocaleString("fr-FR")}` : "jusqu'au max"})</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {TAILLES.map((taille) => {
+            const recette = recettes.find((r) => r.tailleCle === taille.cle);
+            const cout = coutRecette(recette, prix);
+            return (
+              <div key={taille.cle} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,.12)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                  <b style={{ fontSize: 14 }}>{libelleRecette(jaugeActive, palier, taille)}</b>
+                  <label style={{ display: "grid", gap: 4, fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
+                    Points / utilisations
+                    <input
+                      className="field"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={recette.points}
+                      onChange={(e) => majPoints(taille.cle, e.target.value)}
+                      style={{ width: 140, textAlign: "right" }}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 110px auto", gap: 8, fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                    <div>Ingrédient</div>
+                    <div>Quantité</div>
+                    <div>Prix unitaire</div>
+                    <div></div>
+                  </div>
+                  {recette.ingredients.map((ing) => (
+                    <div key={ing.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 110px auto", gap: 8, alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input className="field" value={ing.nom} onChange={(e) => majIngredientChamp(taille.cle, ing.id, "nom", e.target.value)} style={{ flex: 1 }} />
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          title="Copier le nom de l'ingrédient"
+                          onClick={() => copierNomIngredient(ing)}
+                          style={{ padding: "8px 10px", color: ingredientCopieId === ing.id ? "var(--green)" : undefined }}
+                        >
+                          {ingredientCopieId === ing.id ? "✓" : "📋"}
+                        </button>
+                      </div>
+                      <input className="field" type="number" min="0" step="0.01" value={ing.quantite} onChange={(e) => majIngredientChamp(taille.cle, ing.id, "quantite", e.target.value)} style={{ textAlign: "right" }} />
+                      <input className="field" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
+                      <button className="btn btn-ghost" style={{ color: "var(--red)", padding: "8px 10px" }} title="Supprimer cet ingrédient" onClick={() => supprimerIngredient(taille.cle, ing.id)}>×</button>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                  <button className="btn btn-ghost" onClick={() => ajouterIngredient(taille.cle)}>+ Ajouter un ingrédient</button>
+                  <div style={{ color: "var(--muted)", fontSize: 13 }}>Coût total : <b style={{ color: "var(--text)" }}>{formatKamas(cout)}</b></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="panel-card" style={{ marginTop: 16 }}>
+        <h2>Classement — {jaugeActive}</h2>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
+          {classementFiltre === "tous"
+            ? "Toutes tailles et tous paliers confondus, pour la jauge sélectionnée."
+            : `Toutes tailles du palier ${PALIERS.find((p) => p.cle === classementFiltre).label}, pour la jauge sélectionnée.`}
+          {" "}La recette première est celle qui revient au moins cher pour 1 000 points.
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          <button
+            className="btn btn-ghost"
+            style={classementFiltre === "tous" ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined}
+            onClick={() => setClassementFiltre("tous")}
+          >
+            Tous types
+          </button>
+          {PALIERS.map((p) => (
+            <button
+              key={p.cle}
+              className="btn btn-ghost"
+              style={p.cle === classementFiltre ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined}
+              onClick={() => setClassementFiltre(p.cle)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 10, marginBottom: 16 }}>
+          <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Meilleure recette</span>
+            <span style={{ color: "var(--green)", fontWeight: 900, fontSize: 15 }}>{meilleure ? meilleure.label : "—"}</span>
+          </div>
+          <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Coût pour 1 000 points</span>
+            <span style={{ fontWeight: 900, fontSize: 15 }}>{meilleure ? formatKamas(meilleure.coutPour1000) : "—"}</span>
+          </div>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+            <thead>
+              <tr>
+                {["Recette", "Coût total", "Points", "K/point", "K/1 000"].map((h) => (
+                  <th key={h} style={{ textAlign: h === "Recette" ? "left" : "right", padding: "8px", borderBottom: "1px solid var(--line)", color: "var(--gold2)", fontSize: 12 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {classement.map((r, index) => {
+                const complet = Number.isFinite(r.coutParPoint);
+                return (
+                  <tr key={r.label} style={index === 0 && complet ? { background: "rgba(52,211,153,.07)" } : undefined}>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontWeight: 700 }}>{index + 1}. {r.label}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{formatKamas(r.cout)}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{r.points > 0 ? r.points.toLocaleString("fr-FR") : <span style={{ color: "var(--accent)", fontStyle: "italic" }}>à saisir</span>}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{complet ? fmtRatio(r.coutParPoint, 4) : "—"}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{complet ? fmtRatio(r.coutPour1000, 2) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel-card" style={{ marginTop: 16 }}>
+        <h2>Mes sauvegardes de prix</h2>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
+          Enregistre un jeu de prix nommé (ex. par serveur) pour le retrouver plus tard. Ça ne sauvegarde que
+          les prix — les noms/quantités d'ingrédients restent partagés et intacts quelle que soit la sauvegarde chargée.
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 8 }}>
+          <label style={{ display: "grid", gap: 4, fontSize: 11, color: "var(--muted)", fontWeight: 700, flex: 1, minWidth: 220 }}>
+            Nom de la sauvegarde
+            <input
+              className="field"
+              placeholder="Ex. Prix du 26 juillet, serveur Draconiros…"
+              value={nomSauvegarde}
+              onChange={(e) => setNomSauvegarde(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") enregistrerSauvegarde(); }}
+            />
+          </label>
+          <button className="btn btn-coral" onClick={enregistrerSauvegarde}>Enregistrer</button>
+        </div>
+        {statut && <div style={{ color: "var(--green)", fontSize: 12, marginBottom: 10 }}>{statut}</div>}
+
+        <input
+          className="field"
+          type="search"
+          placeholder="Rechercher une sauvegarde…"
+          value={rechercheSauvegarde}
+          onChange={(e) => setRechercheSauvegarde(e.target.value)}
+          style={{ marginBottom: 12 }}
+        />
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {!sauvegardesFiltrees.length && (
+            <div style={{ color: "var(--muted)", textAlign: "center", padding: 16 }}>
+              {sauvegardes.length ? "Aucune sauvegarde ne correspond à la recherche." : "Aucune sauvegarde nommée pour le moment."}
+            </div>
+          )}
+          {sauvegardesFiltrees.map((s) => (
+            <div key={s.id} className="row-item" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: 10, border: "1px solid var(--line)", borderRadius: 12, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontWeight: 800 }}>{s.nom}</div>
+                <div style={{ color: "var(--muted)", fontSize: 12 }}>Jeu de prix · {new Date(s.enregistreLe).toLocaleString("fr-FR")}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-ghost" onClick={() => chargerSauvegarde(s.id)}>Charger</button>
+                <button className="btn btn-ghost" style={{ color: "var(--red)" }} onClick={() => supprimerSauvegarde(s.id)}>Supprimer</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
