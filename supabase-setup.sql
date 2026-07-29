@@ -309,3 +309,39 @@ $$ language plpgsql security definer;
 -- liste figée proposée côté client peut évoluer sans migration) ; sert aussi
 -- de source pour les prix communautaires par serveur (v13).
 alter table profils add column if not exists serveur text;
+
+-- v17 : prix communautaires des ingrédients de mangeoire d'enclos, par
+-- serveur (page Mangeoire) -- même principe que prix_communautaires (v13)
+-- mais indexé par nom d'ingrédient plutôt que par couleur/créature, un
+-- ingrédient donné (ex. "Or") ayant le même prix quelle que soit la
+-- recette qui l'utilise. Table séparée plutôt que de réutiliser
+-- prix_communautaires : domaine différent (ingrédients, pas couleurs).
+create table if not exists prix_communautaires_ingredients (
+  id bigint generated always as identity primary key,
+  ingredient text not null check (char_length(ingredient) between 1 and 80),
+  serveur text not null check (char_length(serveur) between 1 and 40),
+  prix numeric not null check (prix >= 0 and prix <= 1000000),
+  auteur uuid not null references profils(id) on delete cascade,
+  cree_le timestamptz not null default now()
+);
+alter table prix_communautaires_ingredients enable row level security;
+drop policy if exists "prix ingredients visibles par tous" on prix_communautaires_ingredients;
+create policy "prix ingredients visibles par tous" on prix_communautaires_ingredients for select using (true);
+drop policy if exists "soumettre un prix ingredient connecte" on prix_communautaires_ingredients;
+create policy "soumettre un prix ingredient connecte" on prix_communautaires_ingredients for insert with check (auth.uid() = auteur);
+drop policy if exists "modifier son propre prix ingredient" on prix_communautaires_ingredients;
+create policy "modifier son propre prix ingredient" on prix_communautaires_ingredients for update using (auth.uid() = auteur) with check (auth.uid() = auteur);
+drop policy if exists "supprimer son propre prix ingredient" on prix_communautaires_ingredients;
+create policy "supprimer son propre prix ingredient" on prix_communautaires_ingredients for delete using (auth.uid() = auteur);
+do $$ begin
+  alter table prix_communautaires_ingredients add constraint prix_communautaires_ingredients_unique unique (ingredient, serveur, auteur);
+exception when duplicate_object then null; end $$;
+
+create or replace view prix_communautaires_ingredients_medianes as
+select
+  ingredient,
+  serveur,
+  percentile_cont(0.5) within group (order by prix) as prix_median,
+  count(*) as nb_soumissions
+from prix_communautaires_ingredients
+group by ingredient, serveur;

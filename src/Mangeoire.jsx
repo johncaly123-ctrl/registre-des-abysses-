@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { chargerJSON, sauvegarderJSON } from "./stockage.js";
 import { formatKamas } from "./panneauxElevage.jsx";
+import { supabase } from "./supabaseClient.js";
 
 // Mangeoire d'enclos : 6 jauges à monter (Dragofesse, Mangeoire, Foudroyeur,
 // Baffeur, Abreuvoir, Caresseur), chacune nourrie par 4 paliers de consommables
@@ -316,9 +317,9 @@ function normaliserPrix(brut) {
   return propre;
 }
 
-function coutRecette(recette, prixParIngredient) {
+function coutRecette(recette, resolvePrix) {
   return recette.ingredients.reduce(
-    (total, ing) => total + (Number(ing.quantite) || 0) * (Number(prixParIngredient[ing.id]) || 0),
+    (total, ing) => total + (Number(ing.quantite) || 0) * resolvePrix(ing),
     0
   );
 }
@@ -327,7 +328,7 @@ function fmtRatio(n, decimales = 2) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: decimales }).format(n);
 }
 
-export function MangeoirePage() {
+export function MangeoirePage({ userId, serveur }) {
   const [structure, setStructure] = useState(() => normaliserStructure(chargerJSON(STORAGE_MANGEOIRE_STRUCTURE, null)));
   const [prix, setPrix] = useState(() => normaliserPrix(chargerJSON(STORAGE_MANGEOIRE_PRIX, null)));
   const [sauvegardes, setSauvegardes] = useState(() => chargerJSON(STORAGE_MANGEOIRE_SAUVEGARDES, []));
@@ -339,9 +340,55 @@ export function MangeoirePage() {
   const [statut, setStatut] = useState("");
   const [ingredientCopieId, setIngredientCopieId] = useState(null);
 
+  // Prix communautaires : médiane par nom d'ingrédient et par serveur (un
+  // ingrédient a le même prix quelle que soit la recette qui l'utilise).
+  const [sourcePrix, setSourcePrix] = useState("perso");
+  const serveurNormalise = (serveur || "").trim();
+  const [communaute, setCommunaute] = useState({});
+  const [chargementCommunaute, setChargementCommunaute] = useState(false);
+  const [saisieCommunaute, setSaisieCommunaute] = useState({});
+
   useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_STRUCTURE, structure); }, [structure]);
   useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_PRIX, prix); }, [prix]);
   useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_SAUVEGARDES, sauvegardes); }, [sauvegardes]);
+
+  useEffect(() => {
+    if (!supabase || sourcePrix !== "communaute" || !serveurNormalise) { setCommunaute({}); return; }
+    let annule = false;
+    setChargementCommunaute(true);
+    supabase.from("prix_communautaires_ingredients_medianes")
+      .select("ingredient, prix_median, nb_soumissions")
+      .eq("serveur", serveurNormalise)
+      .then(({ data }) => {
+        if (annule) return;
+        const carte = {};
+        (data || []).forEach((l) => { carte[l.ingredient] = { median: Number(l.prix_median), nb: Number(l.nb_soumissions) }; });
+        setCommunaute(carte);
+        setChargementCommunaute(false);
+      });
+    return () => { annule = true; };
+  }, [sourcePrix, serveurNormalise]);
+
+  const proposerPrixCommunaute = async (nom) => {
+    const valeur = Number(saisieCommunaute[nom]);
+    if (!supabase || !userId || !serveurNormalise || !Number.isFinite(valeur) || valeur < 0) return;
+    await supabase.from("prix_communautaires_ingredients").upsert(
+      { ingredient: nom, serveur: serveurNormalise, prix: valeur, auteur: userId },
+      { onConflict: "ingredient,serveur,auteur" }
+    );
+    setSaisieCommunaute((prev) => ({ ...prev, [nom]: "" }));
+    setCommunaute((prev) => ({ ...prev, [nom]: { median: valeur, nb: (prev[nom]?.nb || 0) + (prev[nom] ? 0 : 1) } }));
+  };
+
+  // Prix effectif utilisé pour les calculs : médiane communauté si dispo et
+  // demandée, sinon repli sur le prix personnel (jamais bloquant).
+  const resolvePrix = (ing) => {
+    if (sourcePrix === "communaute") {
+      const c = communaute[ing.nom];
+      if (c && Number.isFinite(c.median)) return c.median;
+    }
+    return Number(prix[ing.id]) || 0;
+  };
 
   const palier = PALIERS.find((p) => p.cle === palierActif);
   const recettes = structure[jaugeActive][palierActif];
@@ -430,7 +477,7 @@ export function MangeoirePage() {
     .flatMap((p) =>
       TAILLES.map((taille) => {
         const recette = structure[jaugeActive][p.cle].find((r) => r.tailleCle === taille.cle);
-        const cout = coutRecette(recette, prix);
+        const cout = coutRecette(recette, resolvePrix);
         const points = Number(recette.points) || 0;
         return {
           label: libelleCourt(p, taille),
@@ -514,6 +561,24 @@ export function MangeoirePage() {
           se sauvegardent automatiquement ; seuls les prix kamas changent selon le serveur ou le moment.
         </div>
 
+        {supabase && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, fontSize: 12, color: "var(--muted)", flexWrap: "wrap" }}>
+            <span>Source des prix :</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className={`btn ${sourcePrix === "perso" ? "btn-coral" : "btn-ghost"}`} style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSourcePrix("perso")}>Personnel</button>
+              <button type="button" className={`btn ${sourcePrix === "communaute" ? "btn-coral" : "btn-ghost"}`} style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSourcePrix("communaute")}>Communauté (médiane serveur)</button>
+            </div>
+            {sourcePrix === "communaute" && (
+              <>
+                {serveurNormalise
+                  ? <span>Serveur : <b style={{ color: "var(--text)" }}>{serveurNormalise}</b></span>
+                  : <span>Choisis ton serveur en haut de la page pour voir les prix communautaires.</span>}
+                {chargementCommunaute && <span>chargement…</span>}
+              </>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           {JAUGES.map((jauge) => (
             <button
@@ -543,7 +608,7 @@ export function MangeoirePage() {
         <div style={{ display: "grid", gap: 12 }}>
           {TAILLES.map((taille) => {
             const recette = recettes.find((r) => r.tailleCle === taille.cle);
-            const cout = coutRecette(recette, prix);
+            const cout = coutRecette(recette, resolvePrix);
             const verrouille = estRecetteConnue(jaugeActive, palierActif, taille.cle);
             return (
               <div key={taille.cle} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,.12)" }}>
@@ -567,14 +632,14 @@ export function MangeoirePage() {
                 </div>
 
                 <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 110px auto", gap: 8, fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 140px auto", gap: 8, fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>
                     <div>Ingrédient</div>
                     <div>Quantité</div>
                     <div>Prix unitaire</div>
                     <div></div>
                   </div>
                   {recette.ingredients.map((ing) => (
-                    <div key={ing.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 110px auto", gap: 8, alignItems: "center" }}>
+                    <div key={ing.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 140px auto", gap: 8, alignItems: "center" }}>
                       <div style={{ display: "flex", gap: 6 }}>
                         <input
                           className="field"
@@ -603,7 +668,31 @@ export function MangeoirePage() {
                         onChange={(e) => majIngredientChamp(taille.cle, ing.id, "quantite", e.target.value)}
                         style={{ textAlign: "right", opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
                       />
-                      <input className="field" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
+                      {sourcePrix === "perso" || !serveurNormalise ? (
+                        <input className="field" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: 12, textAlign: "right", color: communaute[ing.nom] ? "var(--text)" : "var(--muted)" }}>
+                            {communaute[ing.nom]
+                              ? `${formatKamas(communaute[ing.nom].median)} (${communaute[ing.nom].nb} avis)`
+                              : `perso : ${formatKamas(prix[ing.id] || 0)}`}
+                          </span>
+                          {userId && (
+                            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                              <input
+                                type="number"
+                                className="field"
+                                min={0}
+                                placeholder="proposer"
+                                value={saisieCommunaute[ing.nom] ?? ""}
+                                onChange={(e) => setSaisieCommunaute((prev) => ({ ...prev, [ing.nom]: e.target.value }))}
+                                style={{ width: 62, padding: "3px 6px", fontSize: 11 }}
+                              />
+                              <button type="button" className="btn btn-ghost" style={{ padding: "3px 6px", fontSize: 11 }} onClick={() => proposerPrixCommunaute(ing.nom)}>OK</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {verrouille
                         ? <span style={{ padding: "8px 10px", color: "var(--muted)", textAlign: "center" }} title="Ingrédient verrouillé (recette officielle)">🔒</span>
                         : <button className="btn btn-ghost" style={{ color: "var(--red)", padding: "8px 10px" }} title="Supprimer cet ingrédient" onClick={() => supprimerIngredient(taille.cle, ing.id)}>×</button>}

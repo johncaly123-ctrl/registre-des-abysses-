@@ -756,7 +756,7 @@ export default function App() {
 
           {page === "guide" && <GuidePage />}
           {page === "nouveautes" && <NouveautesPage />}
-          {page === "mangeoire" && <MangeoirePage />}
+          {page === "mangeoire" && <MangeoirePage userId={compte.session?.user?.id} serveur={serveur} />}
 
           {page === "muldo" && (
             <>
