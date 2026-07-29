@@ -185,8 +185,7 @@ const RECETTES_CONNUES = {
       gigantesque: ["Chanvre", "Estomac de Gliglidoudur", "Poils de Pétartifoux", "Queue de Fantomalamère"],
     },
     elixir: {
-      // minuscule non ajouté : liste incomplète fournie (4 ingrédients sur 5 attendus) —
-      // laissé éditable en attendant le nom du 5e ingrédient.
+      minuscule: ["Chanvre", "Téphra d'Atomystique", "Cloaque du Poolay", "Pousse de Malzerb", "Canine de Félygiène"],
       petit: ["Maïs", "Étoffe de Samouraï fantôme", "Oreille de Soryo Givrefoux", "Poil de Chacrebleu", "Yokayu"],
       moyen: ["Maïs", "Œil de Dramanite", "Langue de Morsquale", "Œil de Champmane", "String en Cuir de la Mama Bwork"],
       grand: ["Millet", "Œil de Fleuro", "Patte de Scoliopode", "Peau d'Ouilleur", "Oreille de Fleuro"],
