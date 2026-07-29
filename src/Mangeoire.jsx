@@ -37,6 +37,22 @@ const TAILLES = [
   { cle: "gigantesque", nom: "Gigantesque", points: 5000 },
 ];
 
+// Composition réelle des recettes (noms d'ingrédients), saisie manuellement
+// depuis le jeu au fur et à mesure — jauge -> palier -> taille -> ingrédients.
+// Les recettes absentes d'ici gardent des noms génériques "Ingrédient N"
+// modifiables à la main dans l'interface.
+const RECETTES_CONNUES = {
+  Dragofesse: {
+    extrait: {
+      minuscule: ["Viande Intangible", "Herbe Folle"],
+      petit: ["Viande Intangible", "Crinière de Scélérat Strubien"],
+      moyen: ["Viande Faisandée", "Rondelles de Milirat Strubien"],
+      grand: ["Viande Faisandée", "Chauve-souris"],
+      gigantesque: ["Viande Minérale", "Corail Passaoh"],
+    },
+  },
+};
+
 function uid() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -54,8 +70,8 @@ function libelleCourt(palier, taille) {
   return `${taille.nom} ${palier.label}`;
 }
 
-function creerIngredientsStructure(nb) {
-  return Array.from({ length: nb }, (_, i) => ({ id: uid(), nom: `Ingrédient ${i + 1}`, quantite: 1 }));
+function creerIngredientsStructure(nb, noms) {
+  return Array.from({ length: nb }, (_, i) => ({ id: uid(), nom: (noms && noms[i]) || `Ingrédient ${i + 1}`, quantite: 1 }));
 }
 
 function creerStructureParDefaut() {
@@ -67,7 +83,7 @@ function creerStructureParDefaut() {
         id: uid(),
         tailleCle: taille.cle,
         points: taille.points,
-        ingredients: creerIngredientsStructure(palier.nbIngredients),
+        ingredients: creerIngredientsStructure(palier.nbIngredients, RECETTES_CONNUES[jauge]?.[palier.cle]?.[taille.cle]),
       }));
     });
   });
@@ -93,7 +109,7 @@ function normaliserStructure(brut) {
               nom: ing.nom || `Ingrédient ${i + 1}`,
               quantite: Number(ing.quantite) || 0,
             }))
-          : creerIngredientsStructure(palier.nbIngredients);
+          : creerIngredientsStructure(palier.nbIngredients, RECETTES_CONNUES[jauge]?.[palier.cle]?.[taille.cle]);
 
         return {
           id: existante.id || uid(),
