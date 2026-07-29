@@ -50,8 +50,49 @@ const RECETTES_CONNUES = {
       grand: ["Viande Faisandée", "Chauve-souris"],
       gigantesque: ["Viande Minérale", "Corail Passaoh"],
     },
+    philtre: {
+      minuscule: ["Viande Minérale", "Osselet de Black Wabbit Squelette", "Fléau de Robot Fléau"],
+      petit: ["Viande Ladre", "Pierre de Crystaloboule", "Kolérat Mort"],
+      moyen: ["Viande Ladre", "Coquille de Dragoeuf Charbon", "Boomerang du Warko Marron"],
+      grand: ["Viande Sanguinolente", "Poils de Koalak Reinette", "Dent de Gargantûl"],
+      gigantesque: ["Viande Sanguinolente", "Patte de Bouledogre", "Queue du Mulou"],
+    },
+    potion: {
+      minuscule: ["Viande Exsudative", "Plume de Dostrogo", "Antenne de Trésantène", "Coco du Bitouf des Plaines"],
+      petit: ["Viande Exsudative", "Oreille de Bouftonmouth", "Couche usagée de Warko Violet", "Laine du Trooll Furieux"],
+      moyen: ["Viande Saignante", "Peau de Draguaindrop", "Mouchoir de la Gamine Zoth", "Oreilles de Wabbit Fluo"],
+      grand: ["Viande Saignante", "Aile de Mansobèse", "Écorce de Brouture", "Os de Sramouraï"],
+      gigantesque: ["Viande Macérée", "Cuir de Gliglibido", "Peau de Rouquette", "Coquille de Fantimonier"],
+    },
+  },
+  Mangeoire: {
+    extrait: {
+      minuscule: ["Goujon", "Patte d'Arakne Magique"],
+      petit: ["Goujon", "Pierre de Granit"],
+      moyen: ["Truite", "Œil de Pikdoa"],
+      grand: ["Truite", "Dent de Kwoan"],
+      gigantesque: ["Poisson-Chaton", "Scalp de Bwork Archer"],
+    },
+    philtre: {
+      minuscule: ["Poisson-Chaton", "Minerai Étrange", "Poils de Wo Wabbit"],
+      petit: ["Carpe d'Iem", "Peau de Koalak Immature", "Étoffe de Foufayteur"],
+      moyen: ["Carpe d'Iem", "Œuf de Dragoeuf Calcaire", "Œil de Kanigrou"],
+      grand: ["Brochet", "Peau de Piralak", "Peau de Tivelo"],
+      gigantesque: ["Brochet", "Peau de Cochon de Farle", "Échasse de Molette"],
+    },
+    potion: {
+      minuscule: ["Anguille", "Bourgeon de Fourbasse", "Faux menton du Bourbassingue", "Bâton du Kilibriss"],
+      petit: ["Anguille", "Corne de Boufmouth de guerre", "Étoffe du Fauchalak", "Slip de Troollaraj"],
+      moyen: ["Perche", "Tibia du Guerrier Zoth", "Morpion de Truchideur", "Cawotte Transgénique"],
+      grand: ["Perche", "Duvet de Mamansot", "Amygdales du Bitouf Sombre", "Fleur de Cactiflore"],
+      gigantesque: ["Lotte", "Défense de Gliglicérin", "Bracelet de Ino-Naru", "Étoffe de Vigie Pirate"],
+    },
   },
 };
+
+function estRecetteConnue(jauge, palierCle, tailleCle) {
+  return Boolean(RECETTES_CONNUES[jauge]?.[palierCle]?.[tailleCle]);
+}
 
 function uid() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
@@ -176,6 +217,7 @@ export function MangeoirePage() {
   };
 
   const majIngredientChamp = (tailleCle, ingredientId, champ, valeur) => {
+    if (estRecetteConnue(jaugeActive, palierActif, tailleCle)) return;
     setStructure((prev) => {
       const suivant = { ...prev };
       suivant[jaugeActive] = { ...suivant[jaugeActive] };
@@ -199,6 +241,7 @@ export function MangeoirePage() {
   };
 
   const ajouterIngredient = (tailleCle) => {
+    if (estRecetteConnue(jaugeActive, palierActif, tailleCle)) return;
     setStructure((prev) => {
       const suivant = { ...prev };
       suivant[jaugeActive] = { ...suivant[jaugeActive] };
@@ -212,6 +255,7 @@ export function MangeoirePage() {
   };
 
   const supprimerIngredient = (tailleCle, ingredientId) => {
+    if (estRecetteConnue(jaugeActive, palierActif, tailleCle)) return;
     setStructure((prev) => {
       const suivant = { ...prev };
       suivant[jaugeActive] = { ...suivant[jaugeActive] };
@@ -359,10 +403,14 @@ export function MangeoirePage() {
           {TAILLES.map((taille) => {
             const recette = recettes.find((r) => r.tailleCle === taille.cle);
             const cout = coutRecette(recette, prix);
+            const verrouille = estRecetteConnue(jaugeActive, palierActif, taille.cle);
             return (
               <div key={taille.cle} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,.12)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-                  <b style={{ fontSize: 14 }}>{libelleRecette(jaugeActive, palier, taille)}</b>
+                  <b style={{ fontSize: 14 }}>
+                    {libelleRecette(jaugeActive, palier, taille)}
+                    {verrouille && <span title="Recette officielle : ingrédients verrouillés" style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>🔒</span>}
+                  </b>
                   <label style={{ display: "grid", gap: 4, fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
                     Points / utilisations
                     <input
@@ -387,7 +435,13 @@ export function MangeoirePage() {
                   {recette.ingredients.map((ing) => (
                     <div key={ing.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 80px 110px auto", gap: 8, alignItems: "center" }}>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <input className="field" value={ing.nom} onChange={(e) => majIngredientChamp(taille.cle, ing.id, "nom", e.target.value)} style={{ flex: 1 }} />
+                        <input
+                          className="field"
+                          value={ing.nom}
+                          readOnly={verrouille}
+                          onChange={(e) => majIngredientChamp(taille.cle, ing.id, "nom", e.target.value)}
+                          style={{ flex: 1, opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
+                        />
                         <button
                           type="button"
                           className="btn btn-ghost"
@@ -398,15 +452,28 @@ export function MangeoirePage() {
                           {ingredientCopieId === ing.id ? "✓" : "📋"}
                         </button>
                       </div>
-                      <input className="field" type="number" min="0" step="0.01" value={ing.quantite} onChange={(e) => majIngredientChamp(taille.cle, ing.id, "quantite", e.target.value)} style={{ textAlign: "right" }} />
+                      <input
+                        className="field"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={ing.quantite}
+                        readOnly={verrouille}
+                        onChange={(e) => majIngredientChamp(taille.cle, ing.id, "quantite", e.target.value)}
+                        style={{ textAlign: "right", opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
+                      />
                       <input className="field" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
-                      <button className="btn btn-ghost" style={{ color: "var(--red)", padding: "8px 10px" }} title="Supprimer cet ingrédient" onClick={() => supprimerIngredient(taille.cle, ing.id)}>×</button>
+                      {verrouille
+                        ? <span style={{ padding: "8px 10px", color: "var(--muted)", textAlign: "center" }} title="Ingrédient verrouillé (recette officielle)">🔒</span>
+                        : <button className="btn btn-ghost" style={{ color: "var(--red)", padding: "8px 10px" }} title="Supprimer cet ingrédient" onClick={() => supprimerIngredient(taille.cle, ing.id)}>×</button>}
                     </div>
                   ))}
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-                  <button className="btn btn-ghost" onClick={() => ajouterIngredient(taille.cle)}>+ Ajouter un ingrédient</button>
+                  {verrouille
+                    ? <span style={{ color: "var(--muted)", fontSize: 12 }}>🔒 Recette officielle — ingrédients verrouillés</span>
+                    : <button className="btn btn-ghost" onClick={() => ajouterIngredient(taille.cle)}>+ Ajouter un ingrédient</button>}
                   <div style={{ color: "var(--muted)", fontSize: 13 }}>Coût total : <b style={{ color: "var(--text)" }}>{formatKamas(cout)}</b></div>
                 </div>
               </div>
