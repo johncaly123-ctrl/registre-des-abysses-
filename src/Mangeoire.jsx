@@ -64,6 +64,13 @@ const RECETTES_CONNUES = {
       grand: ["Viande Saignante", "Aile de Mansobèse", "Écorce de Brouture", "Os de Sramouraï"],
       gigantesque: ["Viande Macérée", "Cuir de Gliglibido", "Peau de Rouquette", "Coquille de Fantimonier"],
     },
+    elixir: {
+      minuscule: ["Viande Macérée", "Résidu de Solfataré", "Griffe de Phorrêveur", "Bolas de Maltrio", "Chaîne de Panthègros"],
+      petit: ["Viande Fraîche", "Os de Jiangshi-Nobi", "Cuir de Maho Givrefoux", "Dent de Trezz", "Œil de Madura"],
+      moyen: ["Viande Fraîche", "Oreille de Fistulor", "Patte de Masticroc", "Lamelle de Champbis", "Caleçon Rouge"],
+      grand: ["Viande Gâtée", "Manubrium de Wolvero", "Aile de Puceronde", "Péroné du Marôdeur", "Queue de Wolvero"],
+      gigantesque: ["Viande Gâtée", "Cœur d'Empaillé", "Huile de Pikoleur", "Griffe de Kanimate", "Bec de Dodox"],
+    },
   },
   Mangeoire: {
     extrait: {
@@ -86,6 +93,13 @@ const RECETTES_CONNUES = {
       moyen: ["Perche", "Tibia du Guerrier Zoth", "Morpion de Truchideur", "Cawotte Transgénique"],
       grand: ["Perche", "Duvet de Mamansot", "Amygdales du Bitouf Sombre", "Fleur de Cactiflore"],
       gigantesque: ["Lotte", "Défense de Gliglicérin", "Bracelet de Ino-Naru", "Étoffe de Vigie Pirate"],
+    },
+    elixir: {
+      minuscule: ["Lotte", "Œuf de Crapeur", "Œil de Phozami", "Bave du Kaskargo", "Crinière d'Orfélin"],
+      petit: ["Bar Rikain", "Oreille de Chargus", "Queue de Yomi Givrefoux", "Barbe de Seith", "Lanterne usée"],
+      moyen: ["Bar Rikain", "Volve de Fongeur", "Écorce de Champaknyde", "Racine d'Abrazif", "Caleçon Blanc"],
+      grand: ["Tanche", "Oreille de Blérice", "Vomer d'Apériglours", "Aile de Gloursaya", "Molaire de Blérice"],
+      gigantesque: ["Tanche", "Pince de Krabouilleur", "Cervelle de Verglasseur", "Pédoncule de Mérulor", "Pic du Nocturlabe"],
     },
   },
   Abreuvoir: {
@@ -110,6 +124,13 @@ const RECETTES_CONNUES = {
       grand: ["Graine de Pandouille", "Huile de Mamansot", "Coco du Bitouf Sombre", "Parchemin de Cactana"],
       gigantesque: ["Ginseng", "Sabot de Gliglicérin", "Étoffe de Kurookin", "Écaille de Harpirate"],
     },
+    elixir: {
+      minuscule: ["Ginseng", "Cœur de Crapeur", "Corne de Père Phorreur", "Porte-bonheur de Malalfa", "Étoffe de Kaniblou"],
+      petit: ["Belladone", "Croissant de Tsukinochi", "Crâne de Yokaï Givrefoux", "Pagne de Trantroa", "Collier de Chakichan"],
+      moyen: ["Belladone", "Pédoncule de Fongeur", "Carapace de Ver des Sables", "Écorce d'Abrazif", "Caleçon Bleu"],
+      grand: ["Mandragore", "Étoffe de Croleur", "Venin d'Éperfide", "Laine de Glouragan", "Oreille de Croleur"],
+      gigantesque: ["Mandragore", "Bec de Granduk", "Malleus de Karkanik", "Oreille de Mécanofoux", "Chaussette du Cyclophandre"],
+    },
   },
   Foudroyeur: {
     extrait: {
@@ -132,6 +153,13 @@ const RECETTES_CONNUES = {
       moyen: ["Argent", "Corne de Dragacé", "Écusson du Sergent Zoth", "Dents de Wabbit Vampire"],
       grand: ["Argent", "Peau de Mansobèse", "Écorce de Fécorce", "Moustaches de Cactoblongo"],
       gigantesque: ["Bauxite", "Étoffe de Gliglidoudur", "Tête de lance de Fangshu", "Mât de Fantômat"],
+    },
+    elixir: {
+      minuscule: ["Bauxite", "Ulna de Solfataré", "Peau de Métaphorreur", "Pic de Malépik", "Boule de Panthègros"],
+      petit: ["Or", "Plastron de Tambouraï", "Laine de Maho Givrefoux", "Peau de Vindeux", "Kapokaza"],
+      moyen: ["Or", "Volve de Fistulor", "Peau de Trémorse", "Bave de Champ à Gnons", "Caleçon Brun"],
+      grand: ["Cendrepierre", "Poil de Blérauve", "Pince de Lucrane", "Iris de Boulglours", "Griffe de Blérauve"],
+      gigantesque: ["Cendrepierre", "Dent de Cuirboule", "Ethmoïde de Stalak", "Sternum de Mansordide", "Sépale de Drosérâle"],
     },
   },
   Caresseur: {
@@ -156,6 +184,14 @@ const RECETTES_CONNUES = {
       grand: ["Malt", "Plume du Timansot", "Écorce de Nerbe", "Sacoche de Kartouche"],
       gigantesque: ["Chanvre", "Estomac de Gliglidoudur", "Poils de Pétartifoux", "Queue de Fantomalamère"],
     },
+    elixir: {
+      // minuscule non ajouté : liste incomplète fournie (4 ingrédients sur 5 attendus) —
+      // laissé éditable en attendant le nom du 5e ingrédient.
+      petit: ["Maïs", "Étoffe de Samouraï fantôme", "Oreille de Soryo Givrefoux", "Poil de Chacrebleu", "Yokayu"],
+      moyen: ["Maïs", "Œil de Dramanite", "Langue de Morsquale", "Œil de Champmane", "String en Cuir de la Mama Bwork"],
+      grand: ["Millet", "Œil de Fleuro", "Patte de Scoliopode", "Peau d'Ouilleur", "Oreille de Fleuro"],
+      gigantesque: ["Millet", "Étoffe de Grodruche", "Molaire de Ventrublion", "Queue de Sinistrofu", "Crinière de Krakal"],
+    },
   },
   Baffeur: {
     extrait: {
@@ -178,6 +214,13 @@ const RECETTES_CONNUES = {
       moyen: ["Bois de Merisier", "Peau de Dragueuse", "Rotule du Disciple Zoth", "Sang de Wabbit Garou"],
       grand: ["Bois de Merisier", "Bec du Timansot", "Écorce de Chiendent", "Foulard de Milimaître"],
       gigantesque: ["Bois d'Ébène", "Poil de Gliglitch", "Poils de Boumbardier", "Pince du Fancrôme"],
+    },
+    elixir: {
+      minuscule: ["Bois d'Ébène", "Pierre d'Atomystique", "Tresse du Poolay", "Pétale de Malter", "Griffe de Félygiène"],
+      petit: ["Bois de Charme", "Fleur d'Onabu-Geisha", "Patte de Soryo Givrefoux", "Queue de Chasquatch", "Kaokurimono"],
+      moyen: ["Bois de Charme", "Lamelle de Dramanite", "Dent de Cycloporth", "Langue de Champodonte", "Furoncle de la Mama Bwork"],
+      grand: ["Bois d'Orme", "Oreille de Gobosteur", "Oreille d'Apériglours", "Œil de Sapeur", "Calcanéus de Meliglours"],
+      gigantesque: ["Bois d'Orme", "Culotte de Harrogant", "Plume de Cycloïde", "Broderie d'Eskoglyphe", "Molaire de Nessil"],
     },
   },
 };
