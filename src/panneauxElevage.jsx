@@ -1664,7 +1664,7 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
         Prix de « {labelExtraction} » :
         <input
           type="number"
-          className="field"
+          className="field champ-prix"
           min={0}
           value={config.prixAmbre}
           onChange={(e) => setConfig((prev) => ({ ...prev, prixAmbre: Math.max(0, Number(e.target.value) || 0) }))}
@@ -1698,7 +1698,7 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
             {sourcePrix === "perso" || !serveurNormalise ? (
               <input
                 type="number"
-                className="field"
+                className="field champ-prix"
                 min={0}
                 placeholder="prix en k"
                 value={config.prix[l.couleur] ?? ""}
@@ -1716,7 +1716,7 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
                   <div style={{ display: "flex", gap: 4 }}>
                     <input
                       type="number"
-                      className="field"
+                      className="field champ-prix"
                       min={0}
                       placeholder="proposer"
                       value={saisieCommunaute[l.couleur] ?? ""}

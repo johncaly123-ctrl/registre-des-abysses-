@@ -404,6 +404,12 @@ export default function App() {
         .field:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(214,166,74,.14); }
         .field::placeholder { color: rgba(169,150,124,.55); }
 
+        /* Champs de prix (kamas) : pas de flèches +/- (incrément de 1 inutile
+           sur des montants qui se comptent en milliers). */
+        .champ-prix::-webkit-outer-spin-button,
+        .champ-prix::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .champ-prix { -moz-appearance: textfield; }
+
         .btn {
           cursor:pointer; border:0; border-radius:10px; padding:10px 14px; font-size:13px; font-weight:700;
           display:inline-flex; align-items:center; justify-content:center; gap:7px;

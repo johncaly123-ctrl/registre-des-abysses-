@@ -669,7 +669,7 @@ export function MangeoirePage({ userId, serveur }) {
                         style={{ textAlign: "right", opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
                       />
                       {sourcePrix === "perso" || !serveurNormalise ? (
-                        <input className="field" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
+                        <input className="field champ-prix" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                           <span style={{ fontSize: 12, textAlign: "right", color: communaute[ing.nom] ? "var(--text)" : "var(--muted)" }}>
@@ -681,7 +681,7 @@ export function MangeoirePage({ userId, serveur }) {
                             <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
                               <input
                                 type="number"
-                                className="field"
+                                className="field champ-prix"
                                 min={0}
                                 placeholder="proposer"
                                 value={saisieCommunaute[ing.nom] ?? ""}
