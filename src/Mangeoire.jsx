@@ -278,13 +278,20 @@ function normaliserStructure(brut) {
         const existante = liste.find((r) => r.tailleCle === taille.cle) || liste[index];
         if (!existante) return base[jauge][palier.cle][index];
 
-        const ingredients = Array.isArray(existante.ingredients) && existante.ingredients.length
-          ? existante.ingredients.map((ing, i) => ({
-              id: ing.id || uid(),
-              nom: ing.nom || `Ingrédient ${i + 1}`,
-              quantite: Number(ing.quantite) || 0,
-            }))
-          : creerIngredientsStructure(palier.nbIngredients, RECETTES_CONNUES[jauge]?.[palier.cle]?.[taille.cle]);
+        const nomsConnus = RECETTES_CONNUES[jauge]?.[palier.cle]?.[taille.cle];
+        const existants = Array.isArray(existante.ingredients) ? existante.ingredients : [];
+        // Recette officielle (connue) : les noms font toujours foi, même si des
+        // données locales plus anciennes (génériques) sont encore en storage —
+        // seul l'id est repris, pour que les prix déjà saisis restent attachés.
+        const ingredients = nomsConnus
+          ? nomsConnus.map((nom, i) => ({ id: existants[i]?.id || uid(), nom, quantite: 1 }))
+          : (existants.length
+              ? existants.map((ing, i) => ({
+                  id: ing.id || uid(),
+                  nom: ing.nom || `Ingrédient ${i + 1}`,
+                  quantite: Number(ing.quantite) || 0,
+                }))
+              : creerIngredientsStructure(palier.nbIngredients));
 
         return {
           id: existante.id || uid(),
