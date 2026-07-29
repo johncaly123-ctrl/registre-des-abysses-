@@ -88,6 +88,98 @@ const RECETTES_CONNUES = {
       gigantesque: ["Lotte", "Défense de Gliglicérin", "Bracelet de Ino-Naru", "Étoffe de Vigie Pirate"],
     },
   },
+  Abreuvoir: {
+    extrait: {
+      minuscule: ["Ortie", "Bois Vermoulu"],
+      petit: ["Ortie", "Bougie du Mineur Sombre"],
+      moyen: ["Sauge", "Plume de Tofu Maléfique"],
+      grand: ["Sauge", "Estomac de Tofu Ventripotent"],
+      gigantesque: ["Trèfle à 5 feuilles", "Lait de Cochon de Lait"],
+    },
+    philtre: {
+      minuscule: ["Trèfle à 5 feuilles", "Oreille du Grand Pa Wabbit", "Peau de Larve Champêtre"],
+      petit: ["Menthe Sauvage", "Baballe", "Boîte de Vétauran"],
+      moyen: ["Menthe Sauvage", "Œuf de Dragoeuf Charbon", "Boomerang du Dok Alako"],
+      grand: ["Orchidée Freyesque", "Os de Pékeualak", "Œil de Saltik"],
+      gigantesque: ["Orchidée Freyesque", "Os de Mama Koalak", "Plume de Gobvious"],
+    },
+    potion: {
+      minuscule: ["Edelweiss", "Glouto Rhum", "Bec du Kido", "Peau de Mandrine"],
+      petit: ["Edelweiss", "Œil de Boufmouth de guerre", "Boomerang du Maître Koalak", "Bracelet de Force de Trooll"],
+      moyen: ["Graine de Pandouille", "Peau de Dragnarok", "Plume de Truchideur", "Œil de Wabbit Céphale"],
+      grand: ["Graine de Pandouille", "Huile de Mamansot", "Coco du Bitouf Sombre", "Parchemin de Cactana"],
+      gigantesque: ["Ginseng", "Sabot de Gliglicérin", "Étoffe de Kurookin", "Écaille de Harpirate"],
+    },
+  },
+  Foudroyeur: {
+    extrait: {
+      minuscule: ["Fer", "Sporme du Champ Champ"],
+      petit: ["Fer", "Étoffe du Sanglier"],
+      moyen: ["Cuivre", "Scalp de Milimulou"],
+      grand: ["Cuivre", "Crâne de Chafer"],
+      gigantesque: ["Bronze", "Corail Morito"],
+    },
+    philtre: {
+      minuscule: ["Bronze", "Estomac de Wo Wabbit", "Bidule inutile"],
+      petit: ["Kobalte", "Humérus du Sparo", "Langue de Craquelope"],
+      moyen: ["Kobalte", "Coquille de Dragoeuf Ardoise", "Racine d'Abraknyde Sombre"],
+      grand: ["Manganèse", "Poils de Koalak Indigo", "Fil de Néfileuse"],
+      gigantesque: ["Manganèse", "Peau de Drakoalak", "Canine de Mergranlou"],
+    },
+    potion: {
+      minuscule: ["Étain", "Trukikol Mort", "Corne de Berserkoffre", "Peau de Minoskito"],
+      petit: ["Étain", "Cuir de Bouftonmouth", "Peau de Maître Koalak", "Épaulière de Troolligark"],
+      moyen: ["Argent", "Corne de Dragacé", "Écusson du Sergent Zoth", "Dents de Wabbit Vampire"],
+      grand: ["Argent", "Peau de Mansobèse", "Écorce de Fécorce", "Moustaches de Cactoblongo"],
+      gigantesque: ["Bauxite", "Étoffe de Gliglidoudur", "Tête de lance de Fangshu", "Mât de Fantômat"],
+    },
+  },
+  Caresseur: {
+    extrait: {
+      minuscule: ["Blé", "Engrais"],
+      petit: ["Blé", "Feuille de Rose Obscure"],
+      moyen: ["Orge", "Œil de Ramane Strubien"],
+      grand: ["Orge", "Champignon Luidegît"],
+      gigantesque: ["Avoine", "Corail Malibout"],
+    },
+    philtre: {
+      minuscule: ["Avoine", "Bandeau de Black Wabbit Squelette", "Souris verte"],
+      petit: ["Houblon", "Cœur de Craqueleur", "Fragment d'Épée Reptilienne"],
+      moyen: ["Houblon", "Coquille de Dragoeuf Argile", "Écorce de Liroye Merline"],
+      grand: ["Lin", "Poils de Koalak Coco", "Laine de Dardalaine"],
+      gigantesque: ["Lin", "Oreille de Bouledogre", "Testicules de Cocholou"],
+    },
+    potion: {
+      minuscule: ["Seigle", "Fleur de Gloutovore", "Langue de Mimikado", "Fragment de cerveau poli"],
+      petit: ["Seigle", "Clavicule de Boufmouth", "Poils de Barbe du Warko Violet", "Enfumoir Zoth"],
+      moyen: ["Malt", "Aile de Draguaindrop", "Braguette du Maître Zoth", "Feuille de Cawotman"],
+      grand: ["Malt", "Plume du Timansot", "Écorce de Nerbe", "Sacoche de Kartouche"],
+      gigantesque: ["Chanvre", "Estomac de Gliglidoudur", "Poils de Pétartifoux", "Queue de Fantomalamère"],
+    },
+  },
+  Baffeur: {
+    extrait: {
+      minuscule: ["Bois de Frêne", "Feuille de Tournesol Sauvage"],
+      petit: ["Bois de Frêne", "Os Invisible du Chafer Invisible"],
+      moyen: ["Bois de Châtaignier", "Patte d'Arakne des Égouts"],
+      grand: ["Bois de Châtaignier", "Colonne Vertébrale"],
+      gigantesque: ["Bois de Noyer", "Corail Kouraçao"],
+    },
+    philtre: {
+      minuscule: ["Bois de Noyer", "Crâne de Wabbit Squelette", "Duvet de Bourdard"],
+      petit: ["Bois de Chêne", "Dent en Or de Craqueleur", "Œil de Crowneille"],
+      moyen: ["Bois de Chêne", "Coquille de Dragoeuf Calcaire", "Ambre d'Abraknyde Sombre"],
+      grand: ["Bois d'Érable", "Poils de Koalak Griotte", "Chélicères d'Arapex"],
+      gigantesque: ["Bois d'Érable", "Jus de Ouassingue", "Poils de Mulounoké"],
+    },
+    potion: {
+      minuscule: ["Bois de Pin", "Feuille de Fourbasse", "Corde de Boursoin", "Cœur de pierre poli"],
+      petit: ["Bois de Pin", "Laine de Boufmouth", "Cubitus de Momie Koalak", "Peau de Kraméléhon"],
+      moyen: ["Bois de Merisier", "Peau de Dragueuse", "Rotule du Disciple Zoth", "Sang de Wabbit Garou"],
+      grand: ["Bois de Merisier", "Bec du Timansot", "Écorce de Chiendent", "Foulard de Milimaître"],
+      gigantesque: ["Bois d'Ébène", "Poil de Gliglitch", "Poils de Boumbardier", "Pince du Fancrôme"],
+    },
+  },
 };
 
 function estRecetteConnue(jauge, palierCle, tailleCle) {
