@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { flushToutesEcrituresDebattues } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
-import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers } from "./panneauxElevage.jsx";
+import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers, SERVEURS_DOFUS, STORAGE_SERVEUR } from "./panneauxElevage.jsx";
 import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
 import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
 import { OnboardingOverlay } from "./OnboardingOverlay.jsx";
@@ -110,6 +110,13 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(STORAGE_THEME, theme);
   }, [theme]);
+  // Serveur Dofus de l'éleveur — choisi tout en haut de page (en-tête),
+  // partagé par les 3 créatures pour les prix communautaires. Persisté
+  // localement, et en plus sur le compte si connecté (voir plus bas).
+  const [serveur, setServeurState] = useState(() => localStorage.getItem(STORAGE_SERVEUR) || "");
+  useEffect(() => {
+    localStorage.setItem(STORAGE_SERVEUR, serveur);
+  }, [serveur]);
   const [onboardingGpsOuvert, setOnboardingGpsOuvert] = useState(false);
   useEffect(() => {
     if (sousPage === "gps" && !localStorage.getItem(STORAGE_ONBOARDING_GPS)) {
@@ -151,6 +158,18 @@ export default function App() {
     }
   };
   const compte = useCompte();
+  // Au premier chargement du profil connecté, s'il a déjà un serveur enregistré
+  // (choisi depuis un autre appareil), il prime sur la valeur locale.
+  useEffect(() => {
+    if (compte.profil?.serveur) setServeurState(compte.profil.serveur);
+  }, [compte.profil?.id]);
+  const setServeur = (valeur) => {
+    setServeurState(valeur);
+    if (supabase && compte.session?.user) {
+      supabase.from("profils").update({ serveur: valeur || null }).eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  };
   const eleveMuldo = useMuldoElevage(showToast, setToast);
   const eleveDragodinde = useDragodindeElevage();
   const eleveVolkorne = useVolkorneElevage();
@@ -595,6 +614,16 @@ export default function App() {
             <Save size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> sauvegarde…
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <select
+              className="field"
+              value={serveur}
+              onChange={(e) => setServeur(e.target.value)}
+              title="Ton serveur Dofus — utilisé pour les prix communautaires (Dashboard)"
+              style={{ padding: "8px 10px", fontSize: 13 }}
+            >
+              <option value="">Serveur…</option>
+              {SERVEURS_DOFUS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
             <button
               className="btn btn-ghost"
               onClick={() => setTheme((t) => (t === "clair" ? "sombre" : "clair"))}
@@ -662,7 +691,7 @@ export default function App() {
                 onVoirMuldo={eleveMuldo.voirMuldo}
               />
               <GraphiquesPanel cheptel={eleveMuldo.cheptel} journal={eleveMuldo.journal} instantanes={eleveMuldo.instantanes} />
-              <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} userId={compte.session?.user?.id} />
+              <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} userId={compte.session?.user?.id} serveur={serveur} />
               <PartagePublicPanel
                 session={compte.session}
                 pseudo={compte.profil?.pseudo}
@@ -1047,7 +1076,7 @@ const CREATURES_ESTIMATION = [
   { cle: "volkorne", label: "Volkorne", icone: "🐎", nomHdv: "Volkorne", labelExtraction: "Corne de Volkorne", storageKey: STORAGE_PRIX_KAMAS_VOLKORNE, generationDeCouleurFn: generationDeCouleurVolkorne },
 ];
 
-function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolkorne, userId }) {
+function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolkorne, userId, serveur }) {
   const [actif, setActif] = useState("muldo");
   const cheptelParCreature = { muldo: cheptelMuldo, dragodinde: cheptelDragodinde, volkorne: cheptelVolkorne };
   const config = CREATURES_ESTIMATION.find((c) => c.cle === actif);
@@ -1078,6 +1107,7 @@ function EstimationKamasSelecteur({ cheptelMuldo, cheptelDragodinde, cheptelVolk
         badge={config.badge}
         creature={config.cle}
         userId={userId}
+        serveur={serveur}
       />
     </div>
   );

@@ -303,3 +303,9 @@ begin
   return new;
 end;
 $$ language plpgsql security definer;
+
+-- v16 : serveur Dofus choisi tout en haut de page (en-tête), lié au compte
+-- pour suivre l'éleveur d'un appareil à l'autre. Simple étiquette texte (la
+-- liste figée proposée côté client peut évoluer sans migration) ; sert aussi
+-- de source pour les prix communautaires par serveur (v13).
+alter table profils add column if not exists serveur text;

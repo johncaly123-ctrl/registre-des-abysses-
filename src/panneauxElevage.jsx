@@ -8,10 +8,14 @@ import { Trash2, ChevronRight } from "lucide-react";
 import { COLORS } from "./muldoGenetique.js";
 import { supabase } from "./supabaseClient.js";
 
-// Nom de serveur Dofus — texte libre (pas de liste figée qui deviendrait vite
-// obsolète), partagé entre les 3 créatures : un joueur ne change pas de
-// serveur d'une page d'estimation à l'autre.
-const STORAGE_SERVEUR = "muldo-serveur-v1";
+// Nom de serveur Dofus — liste figée (évite les doublons de type "Rafal" vs
+// "rafal " qui fragmenteraient les prix communautaires par serveur). Choisi
+// une fois tout en haut de page (en-tête), partagé entre les 3 créatures.
+export const STORAGE_SERVEUR = "muldo-serveur-v1";
+export const SERVEURS_DOFUS = [
+  "Brial", "Dakal", "Draconiros", "HellMina", "Imagiro", "Kourial",
+  "Mikhal", "Ombre", "Orukam", "Rafal", "Salar",
+];
 
 export async function copierPressePapiers(texte) {
   try {
@@ -1495,16 +1499,14 @@ export function formatKamas(n) {
 // sont saisis à la main par couleur (une fois), persistés, et le total suit
 // automatiquement l'évolution du cheptel. Les stériles sont comptés avec une
 // décote réglable (leur valeur réelle est surtout le recyclage).
-export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge, creature, userId }) {
+export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge, creature, userId, serveur }) {
   const [sourcePrix, setSourcePrix] = useState("perso");
-  const [serveur, setServeur] = useState(() => localStorage.getItem(STORAGE_SERVEUR) || "");
-  useEffect(() => {
-    localStorage.setItem(STORAGE_SERVEUR, serveur);
-  }, [serveur]);
+  // Le serveur se choisit tout en haut de la page (en-tête) — partagé entre
+  // les 3 créatures, pas de champ dupliqué ici.
   // couleur -> { median, nb }, chargé depuis Supabase pour (creature, serveur).
   const [communaute, setCommunaute] = useState({});
   const [chargementCommunaute, setChargementCommunaute] = useState(false);
-  const serveurNormalise = serveur.trim();
+  const serveurNormalise = (serveur || "").trim();
   useEffect(() => {
     if (!supabase || sourcePrix !== "communaute" || !serveurNormalise) { setCommunaute({}); return; }
     let annule = false;
@@ -1637,14 +1639,9 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
           </div>
           {sourcePrix === "communaute" && (
             <>
-              <input
-                className="field"
-                placeholder="Ton serveur (ex. Dodge)"
-                value={serveur}
-                onChange={(e) => setServeur(e.target.value)}
-                style={{ width: 160, padding: "5px 10px" }}
-              />
-              {!serveurNormalise && <span>Renseigne un serveur pour voir les prix communautaires.</span>}
+              {serveurNormalise
+                ? <span>Serveur : <b style={{ color: "var(--text)" }}>{serveurNormalise}</b></span>
+                : <span>Choisis ton serveur en haut de la page pour voir les prix communautaires.</span>}
               {chargementCommunaute && <span>chargement…</span>}
             </>
           )}
