@@ -32,6 +32,14 @@ import {
 import { analyserTexteCaptureMuldo } from "./muldoOCR.js";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+// Comparaison insensible à la casse/espaces pour repérer un nom déjà pris
+// dans le cheptel (les noms générés automatiquement sont destinés à être
+// renommés en jeu, donc seuls les vrais doublons de nom saisi comptent).
+const nomEnDoublon = (liste, nom, excludeId) => {
+  const cible = (nom || "").trim().toLowerCase();
+  if (!cible) return false;
+  return liste.some((m) => m.id !== excludeId && (m.nom || "").trim().toLowerCase() === cible);
+};
 const STATUTS = ["Fertile", "Féconde", "Stérile"];
 const JAUGES = [
   { key: "amour", label: "Amour", icon: Heart },
@@ -1210,6 +1218,11 @@ export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
           <div style={{ fontSize: 11.5, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 4, paddingLeft: 8 }}>
             Génération {muldo.generation} · Ajouté le {new Date(muldo.dateAjout).toLocaleDateString("fr-FR")}
           </div>
+          {nomEnDoublon(Object.values(byId), muldo.nom, muldo.id) && (
+            <div style={{ fontSize: 11.5, color: "#e0a03c", fontFamily: "Inter, sans-serif", marginTop: 4, paddingLeft: 8, display: "flex", alignItems: "center", gap: 5 }}>
+              <AlertTriangle size={12} /> Un autre muldo porte déjà ce nom.
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-ghost" onClick={() => exporterFicheImage(muldo, { teintesFn: teintesDeCouleur, slugFn: slugCouleur, nomCreature: "muldos" })} title="Télécharger une image de cette fiche, à partager sur Discord/le forum">🖼️ Exporter</button>
@@ -1398,6 +1411,7 @@ export function NewMuldoModal({ cheptel, onClose, onCreate }) {
 
   const creer = () => {
     const nom = form.nom.trim() || genererNomCourt(form.couleur);
+    if (nomEnDoublon(cheptel, nom) && !confirm(`Un muldo nommé « ${nom} » existe déjà dans le cheptel. Créer quand même ?`)) return;
     onCreate({ ...form, nom, generation: generationDeCouleur(form.couleur), capacites: [form.capacite1, form.capacite2], parentIds: [form.pere || null, form.mere || null] });
     copierPressePapiers(nom);
     setDernierNom(nom);
