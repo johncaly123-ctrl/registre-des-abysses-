@@ -552,7 +552,7 @@ export function MangeoirePage({ userId, serveur }) {
     <>
       <div className="panel-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h2>Mangeoire d'enclos — Rentabilité</h2>
+          <h2>Carburant d'enclos — Rentabilité</h2>
           <button className="btn btn-ghost" onClick={reinitialiserPrix}>Réinitialiser les prix</button>
         </div>
         <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6, marginBottom: 14 }}>

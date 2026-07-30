@@ -279,7 +279,7 @@ export default function App() {
     const NOMS_SOUS_PAGE = { cheptel: "Cheptel", synchro: "Synchronisation", gps: "GPS", clonage: "Clonage" };
     let titre;
     if (page === "dashboard") titre = "Tableau de bord";
-    else if (page === "mangeoire") titre = "Mangeoire";
+    else if (page === "mangeoire") titre = "Carburant d'enclos";
     else if (page === "taverne") titre = "Taverne";
     else if (page === "succes") titre = "Succès";
     else if (page === "guide") titre = "Guide";
@@ -1035,7 +1035,7 @@ function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discover
     ["dragodinde", "🐲", "Dragodinde"],
     ["muldo", "🐴", "Muldo"],
     ["volkorne", "🐎", "Volkorne"],
-    ["mangeoire", "🍽️", "Mangeoire"],
+    ["mangeoire", "🍽️", "Carburant d'enclos"],
     ["taverne", "🍻", "Taverne"],
     ["succes", "🏆", "Succès"],
     ["guide", "📖", "Guide"],
