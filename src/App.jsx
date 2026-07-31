@@ -311,52 +311,59 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;0,9..144,800;1,9..144,600&display=swap');
         :root {
-          --bg: #17130f;
-          --bg2: #231d17;
-          --panel: #2b241d;
-          --panel2: #352b22;
-          --panel3: #403225;
-          --line: #5b4733;
+          --bg: #101b1e;
+          --bg2: #17262a;
+          --panel: #1c2e33;
+          --panel2: #23393f;
+          --panel3: #2b444b;
+          --line: #3c5b62;
           --gold: #d6a64a;
           --gold2: #f0cf72;
           --accent: #c97935;
           --green: #68c16f;
-          --cyan: #65c7c1;
+          --cyan: #45e0d3;
           --red: #d85b4f;
-          --text: #f4ead7;
-          --muted: #a9967c;
+          --text: #e9f4f2;
+          --muted: #8fadb2;
+          --btn-from: #ffe28f;
+          --btn-to: #e0862f;
+          --btn-text: #2a1608;
           --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
           --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-          --page-bg: #0c0a08;
+          --page-bg: #070d0f;
           --shell-bg:
-            radial-gradient(900px 420px at 35% -15%, rgba(214,166,74,.22), transparent 62%),
-            radial-gradient(1000px 600px at 108% 112%, rgba(101,199,193,.10), transparent 58%),
-            radial-gradient(700px 400px at -8% 108%, rgba(30,70,80,.35), transparent 60%),
-            linear-gradient(160deg, #120f0c 0%, #1f1812 55%, #15161a 100%);
+            radial-gradient(1100px 520px at 82% -10%, rgba(69,224,211,.20), transparent 62%),
+            radial-gradient(900px 480px at 8% 8%, rgba(214,166,74,.12), transparent 60%),
+            radial-gradient(900px 560px at -6% 112%, rgba(69,224,211,.16), transparent 62%),
+            linear-gradient(160deg, #0a1315 0%, #101d20 55%, #0c1517 100%);
         }
-        /* Thème clair — première passe, à affiner visuellement (teintes exactes
-           laissées à l'appréciation du propriétaire du site). */
+        /* Thème clair — pendant "surface eclairee" du theme sombre : meme
+           identite abysses/bioluminescence (cyan signature, or en second
+           plan) mais base froide claire plutot que sombre. */
         :root[data-theme="clair"] {
-          --bg: #f7f1e6;
-          --bg2: #efe4d0;
-          --panel: #fffaf0;
-          --panel2: #f3e9d6;
-          --panel3: #ead9bd;
-          --line: #d8c39f;
+          --bg: #eef6f5;
+          --bg2: #e2f0ee;
+          --panel: #fdffff;
+          --panel2: #eef8f7;
+          --panel3: #e0f0ee;
+          --line: #bfdcd9;
           --gold: #b9822f;
           --gold2: #8f6220;
           --accent: #b56b2e;
           --green: #2f9142;
-          --cyan: #1f8f88;
+          --cyan: #0e8f86;
           --red: #b23d32;
-          --text: #2b2013;
-          --muted: #7a6b52;
-          --page-bg: #f2ead9;
+          --text: #142526;
+          --muted: #547174;
+          --btn-from: #f0a63e;
+          --btn-to: #c96a24;
+          --btn-text: #2a1608;
+          --page-bg: #e6f2f0;
           --shell-bg:
-            radial-gradient(900px 420px at 35% -15%, rgba(214,166,74,.16), transparent 62%),
-            radial-gradient(1000px 600px at 108% 112%, rgba(101,199,193,.12), transparent 58%),
-            radial-gradient(700px 400px at -8% 108%, rgba(180,150,100,.18), transparent 60%),
-            linear-gradient(160deg, #fbf6ea 0%, #f3e8d3 55%, #eee7df 100%);
+            radial-gradient(1100px 520px at 82% -10%, rgba(14,143,134,.14), transparent 62%),
+            radial-gradient(900px 480px at 8% 8%, rgba(214,166,74,.12), transparent 60%),
+            radial-gradient(900px 560px at -6% 112%, rgba(14,143,134,.10), transparent 62%),
+            linear-gradient(160deg, #f7fcfb 0%, #eef8f6 55%, #e9f4f2 100%);
         }
         * { box-sizing: border-box; }
         /* Neutralise ENTIÈREMENT le gabarit Vite par défaut (index.css) :
@@ -374,7 +381,7 @@ export default function App() {
           text-align:initial; display:block !important;
         }
         input, select, textarea, button { font-family: var(--font-ui); }
-        :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+        :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 6px; }
         @media (prefers-reduced-motion: reduce) {
           *, *:before, *:after { animation: none !important; transition: none !important; }
         }
@@ -401,7 +408,7 @@ export default function App() {
           padding:10px 12px; border-radius:10px; font-size:13px;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .field:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(214,166,74,.14); }
+        .field:focus { outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(69,224,211,.18); }
         .field::placeholder { color: rgba(169,150,124,.55); }
 
         /* Champs de prix (kamas) : pas de flèches +/- (incrément de 1 inutile
@@ -419,16 +426,20 @@ export default function App() {
         .btn:active { transform: scale(.98); }
         .btn:disabled { cursor: not-allowed; transform: none; }
         .btn-coral, .btn.primary {
-          background:linear-gradient(180deg, var(--gold2), var(--accent)); color:#241408;
-          border:1px solid rgba(255,255,255,.18);
-          box-shadow:0 8px 22px rgba(201,121,53,.22);
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 45%),
+            linear-gradient(180deg, var(--btn-from), var(--btn-to));
+          color:var(--btn-text);
+          border:1px solid rgba(255,255,255,.28);
+          box-shadow:0 8px 22px rgba(201,121,53,.28), inset 0 1px 0 rgba(255,255,255,.4);
           font-weight:800;
         }
-        .btn-coral:hover { box-shadow:0 10px 26px rgba(201,121,53,.32); }
+        .btn-coral:hover { box-shadow:0 10px 28px rgba(201,121,53,.4), inset 0 1px 0 rgba(255,255,255,.5); }
         .btn-ghost {
           background:rgba(255,255,255,.03); color:var(--muted); border:1px solid var(--line);
         }
-        .btn-ghost:hover, .nav-active { color:var(--text); border-color:var(--gold); background:rgba(214,166,74,.12); }
+        .btn-ghost:hover { color:var(--text); border-color:var(--gold); background:rgba(214,166,74,.12); }
+        .nav-active { color:var(--text); border-color:var(--cyan); background:rgba(69,224,211,.14); box-shadow:0 0 0 1px rgba(69,224,211,.2); }
         .row-item:hover { background:rgba(214,166,74,.08); }
 
         .app-header {
@@ -444,15 +455,15 @@ export default function App() {
           font-weight: 600;
           font-size: 23px;
           letter-spacing: .3px;
-          background: linear-gradient(92deg, var(--text) 20%, var(--gold2) 60%, var(--gold) 90%);
+          background: linear-gradient(92deg, var(--text) 12%, var(--cyan) 34%, var(--gold2) 66%, var(--gold) 92%);
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
         }
         .brand-mark {
           width:42px; height:42px; border-radius:13px; display:grid; place-items:center;
-          background:linear-gradient(145deg, #46331f, #1b2a2c);
-          border:1px solid var(--line); box-shadow:inset 0 0 18px rgba(101,199,193,.18), inset 0 0 10px rgba(214,166,74,.16);
+          background:linear-gradient(145deg, #16343a, #0c1a1c);
+          border:1px solid var(--line); box-shadow:inset 0 0 18px rgba(69,224,211,.28), inset 0 0 10px rgba(214,166,74,.14);
         }
 
         .layout { display:flex; min-height:646px; }
@@ -497,19 +508,19 @@ export default function App() {
         }
         .stat-card:after {
           content:""; position:absolute; right:-36px; top:-36px; width:110px; height:110px; border-radius:50%;
-          background:rgba(214,166,74,.11);
+          background:rgba(69,224,211,.14);
         }
         .stat-value { font-family:var(--font-display); font-size:34px; font-weight:800; color:var(--gold2); line-height:1; }
         .stat-label { color:var(--muted); font-size:11px; margin-top:8px; text-transform:uppercase; letter-spacing:1.1px; font-weight:700; }
 
         .hero-gps { display:grid; grid-template-columns: 1.35fr .9fr; gap:16px; align-items:stretch; }
         .gps-action {
-          border-radius:22px; padding:24px; border:1px solid rgba(214,166,74,.55);
+          border-radius:22px; padding:24px; border:1px solid rgba(69,224,211,.45);
           background:
-            radial-gradient(580px 220px at 20% 0%, rgba(240,207,114,.18), transparent 60%),
+            radial-gradient(580px 220px at 20% 0%, rgba(69,224,211,.20), transparent 60%),
             linear-gradient(145deg, var(--panel3), var(--panel2));
         }
-        .gps-title { color:var(--gold2); font-weight:800; letter-spacing:1.4px; text-transform:uppercase; font-size:11px; }
+        .gps-title { color:var(--cyan); font-weight:800; letter-spacing:1.4px; text-transform:uppercase; font-size:11px; }
         .gps-target { font-family:var(--font-display); font-size:32px; margin:10px 0 12px; font-weight:800; }
 
         .recipe-line { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px; }
@@ -529,12 +540,15 @@ export default function App() {
         .muldo-card:hover { transform:translateY(-2px); border-color:var(--gold); box-shadow:0 10px 24px rgba(0,0,0,.28); }
         .muldo-ready { border-color:rgba(104,193,111,.75); }
         .muldo-sterile { border-color:rgba(216,91,79,.65); opacity:.78; }
-        .muldo-selected { box-shadow:0 0 0 2px rgba(214,166,74,.35); border-color:var(--gold); }
+        .muldo-selected { box-shadow:0 0 0 2px rgba(69,224,211,.4); border-color:var(--cyan); }
 
         .success-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap:10px; }
         .success-chip { padding:11px 12px; border-radius:13px; border:1px solid var(--line); background:rgba(0,0,0,.13); }
         .success-ok { border-color:rgba(104,193,111,.55); background:rgba(104,193,111,.09); }
         .success-miss { opacity:.58; }
+
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .spin-icon { animation: spin 0.8s linear infinite; }
 
         ::-webkit-scrollbar { width:9px; height:9px; }
         ::-webkit-scrollbar-thumb { background:var(--line); border-radius:6px; border:2px solid transparent; background-clip:padding-box; }

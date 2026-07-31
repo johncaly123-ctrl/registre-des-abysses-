@@ -1,4 +1,3 @@
-import React from "react";
 import { RECETTES_SPECIALES_MULDO, generationDeCouleur } from "./muldoGenetique.js";
 import { RECETTES_SPECIALES_DRAGODINDE, generationDeCouleurDragodinde } from "./Dragodinde.jsx";
 import { RECETTES_SPECIALES_VOLKORNE, generationDeCouleurVolkorne } from "./Volkorne.jsx";

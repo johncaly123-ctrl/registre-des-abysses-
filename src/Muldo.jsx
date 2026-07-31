@@ -2343,7 +2343,13 @@ export function LegendeCheptel() {
 
 export function CheptelCards({ items, selectedId, onSelect, modeSelection, idsSelectionnes, onToggleSelection }) {
   if (!items.length) {
-    return <div style={{ color: "var(--muted)", textAlign: "center", padding: 18 }}>Aucun muldo trouvé.</div>;
+    return (
+      <div style={{ textAlign: "center", padding: "40px 18px", color: "var(--muted)" }}>
+        <Baby size={32} style={{ opacity: 0.5, marginBottom: 10 }} />
+        <div style={{ fontWeight: 700, color: "var(--text)" }}>Aucun muldo trouvé</div>
+        <div style={{ fontSize: 12, marginTop: 4 }}>Essaie d'élargir tes filtres, ou clique « + Nouveau muldo » en haut pour commencer.</div>
+      </div>
+    );
   }
   return (
     <>

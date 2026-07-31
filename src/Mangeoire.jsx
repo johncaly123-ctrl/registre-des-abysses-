@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { Loader2 } from "lucide-react";
 import { chargerJSON, sauvegarderJSON } from "./stockage.js";
 import { formatKamas, SEUIL_MIN_SOUMISSIONS_COMMUNAUTE } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
@@ -575,7 +576,11 @@ export function MangeoirePage({ userId, serveur }) {
                 {serveurNormalise
                   ? <span>Serveur : <b style={{ color: "var(--text)" }}>{serveurNormalise}</b></span>
                   : <span>Choisis ton serveur en haut de la page pour voir les prix communautaires.</span>}
-                {chargementCommunaute && <span>chargement…</span>}
+                {chargementCommunaute && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <Loader2 size={12} className="spin-icon" /> chargement…
+                  </span>
+                )}
               </>
             )}
           </div>

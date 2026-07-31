@@ -4,7 +4,7 @@
 // spécifiques à la créature appelante en props (BadgeComponent,
 // generationDeCouleurFn, plierCouleurFn, couleursToutes...).
 import { useState, useMemo, useEffect } from "react";
-import { Trash2, ChevronRight } from "lucide-react";
+import { Trash2, ChevronRight, Loader2 } from "lucide-react";
 import { COLORS } from "./muldoGenetique.js";
 import { supabase } from "./supabaseClient.js";
 import { bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
@@ -1742,7 +1742,11 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
               {serveurNormalise
                 ? <span>Serveur : <b style={{ color: "var(--text)" }}>{serveurNormalise}</b></span>
                 : <span>Choisis ton serveur en haut de la page pour voir les prix communautaires.</span>}
-              {chargementCommunaute && <span>chargement…</span>}
+              {chargementCommunaute && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <Loader2 size={12} className="spin-icon" /> chargement…
+                </span>
+              )}
             </>
           )}
         </div>

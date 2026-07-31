@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 
 // Petit guide dismissible affiché à la première visite du GPS — pas de

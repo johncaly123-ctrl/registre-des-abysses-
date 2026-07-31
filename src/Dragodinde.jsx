@@ -4,7 +4,7 @@
 // de App.jsx, adapté à la génétique et au vocabulaire dragodinde. Voir
 // C:\Users\Caly\.claude\plans\dazzling-painting-shamir.md pour le contexte.
 // ============================================================
-import React, { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
 import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers } from "./panneauxElevage.jsx";
@@ -541,7 +541,13 @@ export function filtrerCheptelParTexteDragodinde(cheptel, filter) {
 
 export function DragodindeCheptelCards({ items, selectedId, onSelect, modeSelection, idsSelectionnes, onToggleSelection }) {
   if (!items.length) {
-    return <div style={{ color: "var(--muted)", textAlign: "center", padding: 18 }}>Aucun dragodinde trouvé.</div>;
+    return (
+      <div style={{ textAlign: "center", padding: "40px 18px", color: "var(--muted)" }}>
+        <Baby size={32} style={{ opacity: 0.5, marginBottom: 10 }} />
+        <div style={{ fontWeight: 700, color: "var(--text)" }}>Aucun dragodinde trouvé</div>
+        <div style={{ fontSize: 12, marginTop: 4 }}>Essaie d'élargir tes filtres, ou clique « + Nouveau dragodinde » en haut pour commencer.</div>
+      </div>
+    );
   }
   return (
     <div className="muldo-grid">
@@ -1144,6 +1150,9 @@ export function useDragodindeElevage() {
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY_DRAGODINDE, {}));
   const [journal, setJournal] = useState(() => chargerJSON(STORAGE_JOURNAL_DRAGODINDE, []));
   const [naissances, setNaissances] = useState(() => chargerJSON(STORAGE_NAISSANCES_DRAGODINDE, []));
+  const persisterNaissances = useCallback((next) => {
+    localStorage.setItem(STORAGE_NAISSANCES_DRAGODINDE, JSON.stringify(next));
+  }, []);
   const [corbeille, setCorbeille] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_CORBEILLE_DRAGODINDE));
@@ -1318,7 +1327,7 @@ export function useDragodindeElevage() {
       persisterNaissances(suivant);
       return suivant;
     });
-  }, [cheptel, modeGps, objectifGpsActif, purification, synchroniserContexteGps]);
+  }, [cheptel, modeGps, objectifGpsActif, purification, synchroniserContexteGps, persisterNaissances]);
 
   const annulerDernierCoupleGps = useCallback(() => {
     setGpsSuivi((prev) => {
@@ -1353,7 +1362,7 @@ export function useDragodindeElevage() {
 
       return next;
     });
-  }, [modeGps, objectifGpsActif, purification]);
+  }, [modeGps, objectifGpsActif, purification, persisterNaissances]);
 
   const reinitialiserSessionGps = useCallback(() => {
     const totalInitial = optimiserSessionAccouplementsDragodinde(cheptel, objectifGpsActif, purification).couples.length;
@@ -1527,10 +1536,6 @@ export function useDragodindeElevage() {
     }));
     setFusionA(""); setFusionB("");
   }, [fusionA, fusionB, byId, updateCheptel]);
-
-  const persisterNaissances = useCallback((next) => {
-    localStorage.setItem(STORAGE_NAISSANCES_DRAGODINDE, JSON.stringify(next));
-  }, []);
 
   // La naissance est immédiate et garantie, mais pas forcément le résultat de
   // la recette (le RNG du jeu peut retomber sur la couleur d'un parent ou
