@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculerGenerationCible, bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
+import { calculerGenerationCible, bonusProbabiliteGenerationCible, couleursCandidatesAccouplement } from "./geneticsUtils.js";
 
 // Table de générations synthétique, indépendante de toute vraie créature —
 // on teste ici uniquement l'algorithme générique de génération cible.
@@ -80,5 +80,75 @@ describe("bonusProbabiliteGenerationCible", () => {
     expect(bonusProbabiliteGenerationCible({ niveauA: 64, niveauB: 57 })).toBeCloseTo(48.15, 1);
     // Orchidée (niv 54) x Doré (niv 65), sans Makina -> Doré et Orchidée 47,85%
     expect(bonusProbabiliteGenerationCible({ niveauA: 54, niveauB: 65 })).toBeCloseTo(47.85, 1);
+  });
+});
+
+describe("couleursCandidatesAccouplement", () => {
+  // Table de générations réduite, mêmes noms que le vrai jeu muldo — reproduit
+  // exactement 3 couples capturés in-game (2026-07-31) pour vérifier que la
+  // dérivation des couleurs candidates colle aux vraies couleurs affichées
+  // dans "Génération cible" / "Autres" (pas seulement leur nombre).
+  const GEN = {
+    1: ["Ébène", "Pourpre", "Orchidée", "Indigo"],
+    2: ["Ébène et Pourpre", "Ébène et Orchidée", "Ébène et Indigo", "Orchidée et Pourpre", "Indigo et Orchidée"],
+    3: ["Roux", "Amande"],
+    4: ["Roux et Pourpre", "Roux et Amande", "Roux et Indigo", "Ébène et Amande", "Indigo et Amande", "Roux et Ébène", "Orchidée et Amande"],
+  };
+  const generationDeCouleurTest = (c) => {
+    for (const [gen, couleurs] of Object.entries(GEN)) if (couleurs.includes(c)) return Number(gen);
+    return 1;
+  };
+  const combiner = (ca, cb) => {
+    if (!ca || !cb || ca === cb) return null;
+    const nom1 = `${ca} et ${cb}`, nom2 = `${cb} et ${ca}`;
+    for (const couleurs of Object.values(GEN)) {
+      if (couleurs.includes(nom1)) return nom1;
+      if (couleurs.includes(nom2)) return nom2;
+    }
+    return null;
+  };
+
+  it("couple sans généalogie connue : une seule cible (combo direct), repli = les 2 couleurs seules", () => {
+    const a = { couleur: "Ébène", parentIds: [] };
+    const b = { couleur: "Pourpre", parentIds: [] };
+    const { generationCible, couleursCible, couleursAutres } =
+      couleursCandidatesAccouplement(a, b, {}, generationDeCouleurTest, combiner);
+    expect(generationCible).toBe(2);
+    expect(couleursCible).toEqual(["Ébène et Pourpre"]);
+    expect(couleursAutres.sort()).toEqual(["Ébène", "Pourpre"].sort());
+  });
+
+  it("un seul côté a 2 ancêtres connus : cible multiple (combos + couleur propre si assez haute)", () => {
+    // Reproduit la capture "Ébène x Orchidée et Pourpre" (2026-07-31) : 3 cibles GEN.2.
+    const orchidee = { id: "o", couleur: "Orchidée", parentIds: [] };
+    const pourpre = { id: "p", couleur: "Pourpre", parentIds: [] };
+    const mere = { id: "m", couleur: "Orchidée et Pourpre", parentIds: ["o", "p"] };
+    const byId = { o: orchidee, p: pourpre, m: mere };
+    const male = { couleur: "Ébène", parentIds: [] };
+    const { generationCible, couleursCible, couleursAutres } =
+      couleursCandidatesAccouplement(male, mere, byId, generationDeCouleurTest, combiner);
+    expect(generationCible).toBe(2);
+    expect(couleursCible.sort()).toEqual(["Ébène et Orchidée", "Ébène et Pourpre", "Orchidée et Pourpre"].sort());
+    expect(couleursAutres.sort()).toEqual(["Ébène", "Orchidée", "Pourpre"].sort());
+  });
+
+  it("ancêtres connus des deux côtés : un combo croisé sous la cible part en Autres, pas en cible", () => {
+    // Reproduit "Indigo et Amande x Roux et Pourpre" (2026-07-31) : 5 cibles GEN.4,
+    // et "Ébène et Indigo" (combo croisé qui ne monte qu'à GEN.2) en Autres.
+    const amande = { id: "am", couleur: "Amande", parentIds: [] };
+    const indigo = { id: "in", couleur: "Indigo", parentIds: [] };
+    const femelle = { id: "f", couleur: "Indigo et Amande", parentIds: ["am", "in"] };
+    const roux = { id: "ro", couleur: "Roux", parentIds: [] };
+    const ebene = { id: "eb", couleur: "Ébène", parentIds: [] };
+    const male = { id: "mm", couleur: "Roux et Pourpre", parentIds: ["ro", "eb"] };
+    const byId = { am: amande, in: indigo, f: femelle, ro: roux, eb: ebene, mm: male };
+    const { generationCible, couleursCible, couleursAutres } =
+      couleursCandidatesAccouplement(male, femelle, byId, generationDeCouleurTest, combiner);
+    expect(generationCible).toBe(4);
+    expect(couleursCible.sort()).toEqual(
+      ["Roux et Pourpre", "Indigo et Amande", "Roux et Amande", "Roux et Indigo", "Ébène et Amande"].sort()
+    );
+    expect(couleursAutres).toContain("Ébène et Indigo");
+    expect(couleursCible).not.toContain("Ébène et Indigo");
   });
 });

@@ -133,6 +133,54 @@ export function calculerGenerationCible(a, b, byId, generationDeCouleurFn) {
   return { generationCible: cibleNaive, viaAncetre: false };
 }
 
+// Couleurs candidates réellement atteignables pour un couple, et génération
+// cible réelle qui en découle — reverse-engineered depuis des captures
+// in-game (2026-07-31, écran Accouplement avec détail des % par couleur).
+// Mécanisme confirmé exact sur 7 couples réels (dont généalogie connue des
+// deux côtés à la fois) : proche du système "PGC" documenté par la
+// communauté pour les dragodindes (position dans l'arbre + recombinaison).
+// Chaque parent apporte un pool = sa propre couleur + ses parents DIRECTS
+// connus (pas les grands-parents — le jeu n'en affiche que 2 par toute
+// façon). On combine chaque couleur d'un pool avec chaque couleur de
+// l'AUTRE pool (jamais deux du même côté, jamais une couleur déjà composée
+// avec autre chose), plus chaque couleur de pool prise seule. La génération
+// cible = la plus haute génération parmi tous ces candidats ; ceux à cette
+// génération partagent le %-cible (bonusProbabiliteGenerationCible) ; les
+// autres sont des couleurs de repli. Note : cette fonction détermine QUELLES
+// couleurs sont candidates et à quelle génération (solide, vérifié 7/7) —
+// elle ne répartit PAS le %-cible individuellement entre plusieurs
+// candidats simultanés (les poids par couleur ne sont pas calibrés).
+export function couleursCandidatesAccouplement(a, b, byId, generationDeCouleurFn, combinerCouleursFn) {
+  const poolCote = (muldo) => {
+    const couleurs = new Set([muldo?.couleur].filter(Boolean));
+    (muldo?.parentIds || []).forEach((id) => {
+      const parent = byId?.[id];
+      if (parent?.couleur) couleurs.add(parent.couleur);
+    });
+    return [...couleurs];
+  };
+  const poolA = poolCote(a);
+  const poolB = poolCote(b);
+
+  const candidats = new Map();
+  const ajouter = (couleur) => {
+    if (couleur && !candidats.has(couleur)) candidats.set(couleur, generationDeCouleurFn(couleur));
+  };
+  poolA.forEach(ajouter);
+  poolB.forEach(ajouter);
+  poolA.forEach((ca) => {
+    poolB.forEach((cb) => {
+      if (ca === cb) return;
+      ajouter(combinerCouleursFn(ca, cb));
+    });
+  });
+
+  const generationCible = candidats.size ? Math.max(...candidats.values()) : 0;
+  const couleursCible = [...candidats.entries()].filter(([, g]) => g === generationCible).map(([c]) => c);
+  const couleursAutres = [...candidats.entries()].filter(([, g]) => g < generationCible).map(([c]) => c);
+  return { generationCible, couleursCible, couleursAutres };
+}
+
 // Bonus de chance d'obtenir la génération cible : reverifie in-game sur 6
 // accouplements (2026-07-25, captures avec % affiché) — base 30% toujours,
 // + 0.15% par niveau cumulé des deux parents, + 10% avec une Optimakina.

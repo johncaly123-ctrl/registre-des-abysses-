@@ -5,7 +5,7 @@
 //
 // distanceLevenshtein/affectationMaximale viennent de geneticsUtils.js, déjà
 // partagé avec Dragodinde.jsx/Volkorne.jsx (pas de copie locale ici).
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique } from "./geneticsUtils.js";
 export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres };
 
 // ---------- constantes de design ----------
@@ -791,6 +791,30 @@ export function toutesLesRecettesProgression() {
 
 export const RESULTATS_PAR_COUPLE = toutesLesRecettesProgression();
 
+// Recombinaison directe de 2 couleurs "simples" (génération impaire, non
+// composées) vers le nom de couleur à 2 parties qu'elles forment — construit
+// depuis GENERATIONS_MULDO lui-même (pas RECETTES_SPECIALES_MULDO, qui
+// contient des recettes multi-étapes hors sujet ici). Sert à
+// couleursCandidatesAccouplement (geneticsUtils.js) pour dériver les
+// couleurs réellement atteignables par un couple à partir des ancêtres
+// connus, plutôt que d'afficher toutes les couleurs d'une génération.
+const RECOMBINAISON_MULDO = (() => {
+  const map = new Map();
+  Object.entries(GENERATIONS_MULDO).forEach(([gen, couleurs]) => {
+    if (Number(gen) % 2 !== 0) return;
+    couleurs.forEach((nom) => {
+      const parties = nom.split(" et ");
+      if (parties.length === 2) map.set(cleCoupleCouleurs(parties[0], parties[1]), nom);
+    });
+  });
+  return map;
+})();
+
+function combinerCouleursMuldo(ca, cb) {
+  if (!ca || !cb || ca === cb) return null;
+  return RECOMBINAISON_MULDO.get(cleCoupleCouleurs(ca, cb)) || null;
+}
+
 // Couleurs qu'une naissance peut réellement donner : les résultats de recette
 // du couple, plus les couleurs des deux parents (le croisement peut "retomber"
 // sur l'une d'elles au lieu du résultat espéré).
@@ -1007,8 +1031,12 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
 
   // Génération cible (mécanique du jeu) : petit bonus de tri pour préférer
   // les couples visant une génération plus haute, sans écraser le scoring
-  // recette ci-dessus.
-  const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleur);
+  // recette ci-dessus. Couleurs candidates dérivées des ancêtres CONNUS
+  // (pas juste "toutes les couleurs de cette génération") — voir
+  // couleursCandidatesAccouplement (geneticsUtils.js).
+  const { generationCible, couleursCible, couleursAutres } = couleursCandidatesAccouplement(
+    male, femelle, byId, generationDeCouleur, combinerCouleursMuldo
+  );
   const generationBase = Math.max(generationDeCouleur(male.couleur), generationDeCouleur(femelle.couleur));
   score += (generationCible - generationBase) * 15;
   const chanceGenerationCible = bonusProbabiliteGenerationCible({
@@ -1024,9 +1052,10 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
     distance: meilleureDistance,
     chemin,
     generationCible,
-    viaAncetre,
+    viaAncetre: generationCible > generationBase,
     chanceGenerationCible,
-    couleursGenerationCible: GENERATIONS_MULDO[generationCible] || [],
+    couleursGenerationCible: couleursCible,
+    couleursAutresGenerationCible: couleursAutres,
   };
 }
 

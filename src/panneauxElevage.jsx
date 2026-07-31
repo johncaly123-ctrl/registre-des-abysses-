@@ -1385,6 +1385,14 @@ export function GpsDofusPage({
                   🎯 Génération cible : G{g.generationCible} (~{g.chanceGenerationCible}% de chance)
                   <br />
                   couleurs possibles : {(g.couleursGenerationCible || []).join(", ") || "—"}
+                  {g.couleursAutresGenerationCible?.length > 0 && (
+                    <>
+                      <br />
+                      <span style={{ opacity: 0.75 }}>
+                        sinon (repli) : {g.couleursAutresGenerationCible.join(", ")}
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
