@@ -9,16 +9,16 @@ import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2, X } from "lucide-react";
 import {
-  useDragodindeElevage, DragodindeCheptelListPane, DragodindeCheptelMainPane, NewDragodindeModal,
+  useDragodindeElevage, DragodindeCheptelOverviewPage, DragodindeCheptelCards, DragodindeDetail, DragodindeBadge, NewDragodindeModal,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
   CLES_SAUVEGARDE_DRAGODINDE, generationDeCouleurDragodinde, sexeDragodinde, plierCouleurDragodinde,
-  GENERATIONS_DRAGODINDE,
+  filtrerCheptelParTexteDragodinde, GENERATIONS_DRAGODINDE,
 } from "./Dragodinde.jsx";
 import {
-  useVolkorneElevage, VolkorneCheptelListPane, VolkorneCheptelMainPane, NewVolkorneModal,
+  useVolkorneElevage, VolkorneCheptelOverviewPage, VolkorneCheptelCards, VolkorneDetail, VolkorneBadge, NewVolkorneModal,
   VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
   CLES_SAUVEGARDE_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
-  GENERATIONS_VOLKORNE,
+  filtrerCheptelParTexteVolkorne, GENERATIONS_VOLKORNE,
 } from "./Volkorne.jsx";
 import {
   useMuldoElevage, MuldoBadge, MuldoDetail, NewMuldoModal, FicheRapideModal,
@@ -681,8 +681,34 @@ export default function App() {
             </div>
           </div>
         )}
-        {page === "dragodinde" && sousPage === "cheptel" && <DragodindeCheptelListPane {...eleveDragodinde.cheptelListProps} />}
-        {page === "volkorne" && sousPage === "cheptel" && <VolkorneCheptelListPane {...eleveVolkorne.cheptelListProps} />}
+        {page === "dragodinde" && sousPage === "cheptel" && (
+          <div className="tech-column">
+            <div style={{ padding: 14, borderBottom: "1px solid var(--line)" }}>
+              <input className="field" placeholder="Rechercher un dragodinde…" value={eleveDragodinde.filter} onChange={(e) => eleveDragodinde.setFilter(e.target.value)} />
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: 12 }}>
+              <DragodindeCheptelCards
+                items={filtrerCheptelParTexteDragodinde(eleveDragodinde.cheptel, eleveDragodinde.filter)}
+                selectedId={eleveDragodinde.selectedId}
+                onSelect={eleveDragodinde.setSelectedId}
+              />
+            </div>
+          </div>
+        )}
+        {page === "volkorne" && sousPage === "cheptel" && (
+          <div className="tech-column">
+            <div style={{ padding: 14, borderBottom: "1px solid var(--line)" }}>
+              <input className="field" placeholder="Rechercher un volkorne…" value={eleveVolkorne.filter} onChange={(e) => eleveVolkorne.setFilter(e.target.value)} />
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: 12 }}>
+              <VolkorneCheptelCards
+                items={filtrerCheptelParTexteVolkorne(eleveVolkorne.cheptel, eleveVolkorne.filter)}
+                selectedId={eleveVolkorne.selectedId}
+                onSelect={eleveVolkorne.setSelectedId}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="main-view">
           {page === "dashboard" && (
@@ -923,7 +949,48 @@ export default function App() {
               <SousNavOutils sousPage={sousPage} setSousPage={setSousPage} />
               {sousPage === "cheptel" && (
                 <>
-                  <DragodindeCheptelMainPane {...eleveDragodinde.cheptelMainProps} />
+                <div className="cheptel-layout">
+                  <div className="cheptel-liste">
+                    <DragodindeCheptelOverviewPage
+                      cheptel={eleveDragodinde.cheptel}
+                      selectedId={eleveDragodinde.selectedId}
+                      setSelectedId={eleveDragodinde.setSelectedId}
+                      filter={eleveDragodinde.filter}
+                      setFilter={eleveDragodinde.setFilter}
+                      onSupprimerPlusieurs={(ids) => {
+                        eleveDragodinde.deleteMuldos(ids);
+                        showToast(`${ids.length} dragodinde(s) mis à la corbeille.`);
+                      }}
+                      onMarquerStatutPlusieurs={(ids, statut) => {
+                        eleveDragodinde.marquerStatutMuldos(ids, statut);
+                        showToast(`${ids.length} dragodinde(s) passé(s) en ${statut}.`);
+                      }}
+                    />
+                  </div>
+                  {eleveDragodinde.selectedId && eleveDragodinde.byId[eleveDragodinde.selectedId] && (
+                    <div className="cheptel-backdrop" onClick={() => eleveDragodinde.setSelectedId(null)} />
+                  )}
+                  {eleveDragodinde.selectedId && eleveDragodinde.byId[eleveDragodinde.selectedId] && (
+                    <div className="cheptel-detail">
+                      <div className="cheptel-detail-barre">
+                        <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7 }}>
+                          <DragodindeBadge couleur={eleveDragodinde.byId[eleveDragodinde.selectedId].couleur} taille={18} /> {eleveDragodinde.byId[eleveDragodinde.selectedId].nom || eleveDragodinde.byId[eleveDragodinde.selectedId].couleur}
+                        </span>
+                        <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => eleveDragodinde.setSelectedId(null)}>
+                          ✕ Fermer
+                        </button>
+                      </div>
+                      <div className="cheptel-detail-corps">
+                        <DragodindeDetail
+                          m={eleveDragodinde.byId[eleveDragodinde.selectedId]}
+                          byId={eleveDragodinde.byId}
+                          onPatch={(p) => eleveDragodinde.patchMuldo(eleveDragodinde.selectedId, p)}
+                          onDelete={() => eleveDragodinde.deleteMuldo(eleveDragodinde.selectedId)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
                   <ArbreGenealogiquePanel cheptel={eleveDragodinde.cheptel} onSelect={eleveDragodinde.setSelectedId} sexeFn={sexeDragodinde} plierCouleurFn={plierCouleurDragodinde} />
                   <StatsCroisementsPanel journal={eleveDragodinde.journal} />
                   <CorbeillePanel {...eleveDragodinde.corbeilleProps} />
@@ -940,7 +1007,48 @@ export default function App() {
               <SousNavOutils sousPage={sousPage} setSousPage={setSousPage} />
               {sousPage === "cheptel" && (
                 <>
-                  <VolkorneCheptelMainPane {...eleveVolkorne.cheptelMainProps} />
+                <div className="cheptel-layout">
+                  <div className="cheptel-liste">
+                    <VolkorneCheptelOverviewPage
+                      cheptel={eleveVolkorne.cheptel}
+                      selectedId={eleveVolkorne.selectedId}
+                      setSelectedId={eleveVolkorne.setSelectedId}
+                      filter={eleveVolkorne.filter}
+                      setFilter={eleveVolkorne.setFilter}
+                      onSupprimerPlusieurs={(ids) => {
+                        eleveVolkorne.deleteMuldos(ids);
+                        showToast(`${ids.length} volkorne(s) mis à la corbeille.`);
+                      }}
+                      onMarquerStatutPlusieurs={(ids, statut) => {
+                        eleveVolkorne.marquerStatutMuldos(ids, statut);
+                        showToast(`${ids.length} volkorne(s) passé(s) en ${statut}.`);
+                      }}
+                    />
+                  </div>
+                  {eleveVolkorne.selectedId && eleveVolkorne.byId[eleveVolkorne.selectedId] && (
+                    <div className="cheptel-backdrop" onClick={() => eleveVolkorne.setSelectedId(null)} />
+                  )}
+                  {eleveVolkorne.selectedId && eleveVolkorne.byId[eleveVolkorne.selectedId] && (
+                    <div className="cheptel-detail">
+                      <div className="cheptel-detail-barre">
+                        <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7 }}>
+                          <VolkorneBadge couleur={eleveVolkorne.byId[eleveVolkorne.selectedId].couleur} taille={18} /> {eleveVolkorne.byId[eleveVolkorne.selectedId].nom || eleveVolkorne.byId[eleveVolkorne.selectedId].couleur}
+                        </span>
+                        <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => eleveVolkorne.setSelectedId(null)}>
+                          ✕ Fermer
+                        </button>
+                      </div>
+                      <div className="cheptel-detail-corps">
+                        <VolkorneDetail
+                          m={eleveVolkorne.byId[eleveVolkorne.selectedId]}
+                          byId={eleveVolkorne.byId}
+                          onPatch={(p) => eleveVolkorne.patchMuldo(eleveVolkorne.selectedId, p)}
+                          onDelete={() => eleveVolkorne.deleteMuldo(eleveVolkorne.selectedId)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
                   <ArbreGenealogiquePanel cheptel={eleveVolkorne.cheptel} onSelect={eleveVolkorne.setSelectedId} sexeFn={sexeVolkorne} plierCouleurFn={plierCouleurVolkorne} />
                   <StatsCroisementsPanel journal={eleveVolkorne.journal} />
                   <CorbeillePanel {...eleveVolkorne.corbeilleProps} />

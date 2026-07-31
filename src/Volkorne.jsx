@@ -523,7 +523,7 @@ export function teintesDeCouleurVolkorne(couleur) {
   return String(couleur).split(" et ").map((p) => PALETTE_VOLKORNE[foldKey(p.trim())] || "#8a7a63");
 }
 export function slugCouleurVolkorne(couleur) { return foldKey(couleur).replace(/[^a-z]+/g, "-").replace(/(^-|-$)/g, ""); }
-function VolkorneBadge({ couleur, taille = 22 }) {
+export function VolkorneBadge({ couleur, taille = 22 }) {
   const [ko, setKo] = useState(false);
   if (!ko) {
     return (
@@ -571,22 +571,59 @@ function RechercheVolkorneDeroulante({ muldos, valeurId, onChoisir, placeholder,
 }
 
 function VolkorneMiniCard({ m, selected, onClick, modeSelection, coche }) {
+  const action = getNextActionVolkorne(m);
   const sterile = !volkorneReproductible(m);
+  const ready = action.key === "pret";
+  const sexe = sexeVolkorne(m) === "F" ? "♀" : "♂";
   return (
-    <div onClick={onClick} className="panel-card" style={{ padding: 10, marginBottom: 8, cursor: "pointer", border: (modeSelection ? coche : selected) ? "1px solid var(--gold)" : sterile ? "1px solid rgba(232,137,106,.4)" : "1px solid var(--line)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+    <div className={`muldo-card ${ready ? "muldo-ready" : ""} ${sterile ? "muldo-sterile" : ""} ${(modeSelection ? coche : selected) ? "muldo-selected" : ""}`} onClick={onClick}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           {modeSelection && <input type="checkbox" checked={!!coche} readOnly style={{ pointerEvents: "none", flexShrink: 0 }} />}
-          {sexeVolkorne(m) === "F" ? "♀" : sexeVolkorne(m) === "M" ? "♂" : "?"} <VolkorneBadge couleur={m.couleur} taille={16} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.nom || m.couleur}</span>
+          <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sexe} {m.nom}</b>
         </span>
-        <span className="pill" style={{ fontSize: 11 }}>G{generationDeCouleurVolkorne(m.couleur)}</span>
+        <span className="pill">G{generationDeCouleurVolkorne(m.couleur)}</span>
       </div>
+      <div style={{ color: "var(--gold2)", fontWeight: 900, marginTop: 7 }}>{m.couleur}</div>
       <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{m.statut} · {sterile ? "stérile" : "1 reproduction"}</div>
+      {capacitesMuldo(m).length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+          {capacitesMuldo(m).map((c) => <span key={c} className="pill" style={{ padding: "4px 7px", fontSize: 10 }}>★ {c}</span>)}
+        </div>
+      )}
     </div>
   );
 }
 
-function VolkorneDetail({ m, byId, onPatch, onDelete }) {
+// Filtre texte (nom/couleur) partagé entre la colonne technique (recherche
+// seule) et VolkorneCheptelOverviewPage (recherche + filtres en cartouche).
+export function filtrerCheptelParTexteVolkorne(cheptel, filter) {
+  const p = plierCouleurVolkorne(filter);
+  if (!p) return cheptel;
+  return cheptel.filter((m) => plierCouleurVolkorne(m.nom || "").includes(p) || plierCouleurVolkorne(m.couleur || "").includes(p));
+}
+
+export function VolkorneCheptelCards({ items, selectedId, onSelect, modeSelection, idsSelectionnes, onToggleSelection }) {
+  if (!items.length) {
+    return <div style={{ color: "var(--muted)", textAlign: "center", padding: 18 }}>Aucun volkorne trouvé.</div>;
+  }
+  return (
+    <div className="muldo-grid">
+      {items.map((m) => (
+        <VolkorneMiniCard
+          key={m.id}
+          m={m}
+          selected={selectedId === m.id}
+          onClick={() => (modeSelection ? onToggleSelection(m.id) : onSelect(m.id))}
+          modeSelection={modeSelection}
+          coche={idsSelectionnes?.has(m.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function VolkorneDetail({ m, byId, onPatch, onDelete }) {
   const action = getNextActionVolkorne(m);
   const partners = useMemo(() => geneticPartnersVolkorne(m, Object.values(byId), byId), [m, byId]);
   return (
@@ -737,11 +774,15 @@ export function NewVolkorneModal({ onClose, onCreate }) {
 // ---------- Pages exportées ----------
 const STATUTS_VOLKORNE = ["Fertile", "Féconde", "Stérile"];
 
-export function VolkorneCheptelListPane({ cheptel, filter, setFilter, selectedId, onSelect, onSupprimerPlusieurs }) {
+// Page pleine largeur (cartes en grille, filtres en cartouche, sélection
+// multiple) — copiée fidèlement de CheptelOverviewPage (Muldo.jsx) pour une
+// apparence/emplacement de boutons identique entre les 3 créatures.
+export function VolkorneCheptelOverviewPage({ cheptel, filter, setFilter, selectedId, setSelectedId, onSupprimerPlusieurs, onMarquerStatutPlusieurs }) {
   const [filtreGeneration, setFiltreGeneration] = useState("");
   const [filtreSexe, setFiltreSexe] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreCouleur, setFiltreCouleur] = useState("");
+  const [filtreDate, setFiltreDate] = useState("");
   const [modeSelection, setModeSelection] = useState(false);
   const [idsSelectionnes, setIdsSelectionnes] = useState(() => new Set());
 
@@ -761,92 +802,136 @@ export function VolkorneCheptelListPane({ cheptel, filter, setFilter, selectedId
     }
   };
 
-  const filtres = useMemo(() => {
-    const p = plierCouleurVolkorne(filter);
-    const parTexte = !p
-      ? cheptel
-      : cheptel.filter((m) => plierCouleurVolkorne(m.nom || "").includes(p) || plierCouleurVolkorne(m.couleur || "").includes(p));
-    return parTexte.filter((m) =>
-      (!filtreGeneration || generationDeCouleurVolkorne(m.couleur) === Number(filtreGeneration)) &&
-      (!filtreSexe || sexeVolkorne(m) === filtreSexe) &&
-      (!filtreStatut || m.statut === filtreStatut) &&
-      (!filtreCouleur || m.couleur === filtreCouleur)
-    );
-  }, [cheptel, filter, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur]);
+  const parTexte = useMemo(() => filtrerCheptelParTexteVolkorne(cheptel, filter), [cheptel, filter]);
 
-  const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur;
+  const optionsDate = useMemo(() => {
+    const compteur = new Map();
+    parTexte.forEach((m) => {
+      const cle = m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue";
+      compteur.set(cle, (compteur.get(cle) || 0) + 1);
+    });
+    return [...compteur.entries()].sort(([a], [b]) => {
+      if (a === "Date inconnue") return 1;
+      if (b === "Date inconnue") return -1;
+      const [ja, ma, aa] = a.split("/").map(Number);
+      const [jb, mb, ab] = b.split("/").map(Number);
+      return new Date(ab, mb - 1, jb) - new Date(aa, ma - 1, ja);
+    });
+  }, [parTexte]);
+
+  const cheptelFiltre = useMemo(() => parTexte.filter((m) =>
+    (!filtreGeneration || generationDeCouleurVolkorne(m.couleur) === Number(filtreGeneration)) &&
+    (!filtreSexe || sexeVolkorne(m) === filtreSexe) &&
+    (!filtreStatut || m.statut === filtreStatut) &&
+    (!filtreCouleur || m.couleur === filtreCouleur) &&
+    (!filtreDate || (m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue") === filtreDate)
+  ), [parTexte, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur, filtreDate]);
+
+  const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur || filtreDate;
+  const reinitialiserFiltres = () => {
+    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); setFiltreDate("");
+  };
+  const selectionnerTousLesFiltres = () => {
+    setIdsSelectionnes(new Set(cheptelFiltre.map((m) => m.id)));
+  };
+  const marquerSelection = (statut) => {
+    if (!idsSelectionnes.size) return;
+    onMarquerStatutPlusieurs(Array.from(idsSelectionnes), statut);
+  };
 
   return (
-    <div className="tech-column">
-      <div style={{ padding: 14, borderBottom: "1px solid var(--line)" }}>
-        <input className="field" placeholder="Rechercher un volkorne…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <button className="btn btn-ghost" style={{ width: "100%", marginTop: 8, fontSize: 12 }} onClick={() => (modeSelection ? quitterModeSelection() : setModeSelection(true))}>
-          {modeSelection ? "✕ Annuler la sélection" : "☑️ Sélection multiple"}
-        </button>
-        {modeSelection && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>{idsSelectionnes.size} sélectionné(s)</div>
-            <button className="btn btn-coral" style={{ width: "100%", fontSize: 12 }} disabled={!idsSelectionnes.size} onClick={supprimerSelection}>
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", marginBottom: 18 }}>
+        <div>
+          <div style={{ color: "var(--gold)", fontSize: 12, fontWeight: 950, letterSpacing: 1.6, textTransform: "uppercase" }}>Cheptel</div>
+          <h1 style={{ margin: "6px 0 0", fontSize: 34 }}>Cartes de volkornes</h1>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ width: 280 }}>
+            <input className="field" placeholder="Rechercher…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          </div>
+          <button
+            className="btn btn-ghost"
+            onClick={() => (modeSelection ? quitterModeSelection() : setModeSelection(true))}
+          >
+            {modeSelection ? "✕ Annuler la sélection" : "☑️ Sélection multiple"}
+          </button>
+        </div>
+      </div>
+
+      {modeSelection && (
+        <div className="panel-card" style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>{idsSelectionnes.size} volkorne(s) sélectionné(s) — clique sur une carte pour la cocher/décocher.</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn-ghost" disabled={!cheptelFiltre.length} onClick={selectionnerTousLesFiltres}>
+              ☑️ Tout sélectionner ({cheptelFiltre.length}{filtresActifs ? " filtré(s)" : ""})
+            </button>
+            <button className="btn btn-ghost" disabled={!idsSelectionnes.size} onClick={() => marquerSelection("Fertile")}>
+              Marquer Fertile
+            </button>
+            <button className="btn btn-ghost" disabled={!idsSelectionnes.size} onClick={() => marquerSelection("Féconde")}>
+              Marquer Féconde
+            </button>
+            <button className="btn btn-coral" disabled={!idsSelectionnes.size} onClick={supprimerSelection}>
               🗑️ Supprimer la sélection ({idsSelectionnes.size})
             </button>
           </div>
-        )}
-      </div>
-      <div style={{ padding: "0 14px 14px", borderBottom: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <LabeledSelect label="Génération" value={filtreGeneration} onChange={setFiltreGeneration}
-          options={[["", "Toutes"], ...Object.keys(GENERATIONS_VOLKORNE).map((g) => [g, `Gén. ${g}`])]} />
-        <LabeledSelect label="Couleur" value={filtreCouleur} onChange={setFiltreCouleur}
-          options={[["", "Toutes"], ...COULEURS_VOLKORNE.map((c) => [c, c])]} />
-        <LabeledSelect label="Sexe" value={filtreSexe} onChange={setFiltreSexe}
-          options={[["", "Tous"], ["M", "Mâle"], ["F", "Femelle"]]} />
-        <LabeledSelect label="Statut" value={filtreStatut} onChange={setFiltreStatut}
-          options={[["", "Tous"], ...STATUTS_VOLKORNE.map((s) => [s, s])]} />
-        {filtresActifs && (
-          <button className="btn btn-ghost" style={{ gridColumn: "1 / -1", padding: "4px 10px", fontSize: 12 }} onClick={() => { setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); }}>✕ Réinitialiser</button>
-        )}
-      </div>
-      <div style={{ overflowY: "auto", flex: 1, padding: 12 }}>
-        {filtres.map((m) => (
-          <VolkorneMiniCard
-            key={m.id}
-            m={m}
-            selected={selectedId === m.id}
-            onClick={() => (modeSelection ? toggleSelection(m.id) : onSelect(m.id))}
-            modeSelection={modeSelection}
-            coche={idsSelectionnes.has(m.id)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function VolkorneCheptelMainPane({ cheptel, selectedId, setSelectedId, byId, onPatch, onDelete, setShowNew }) {
-  const selected = selectedId ? byId[selectedId] : null;
-  return (
-    <>
-      <div className="cheptel-layout">
-        <div className="cheptel-liste">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h1 style={{ margin: 0, fontSize: 26 }}>Cheptel Volkorne</h1>
-            <button className="btn btn-coral" onClick={() => setShowNew(true)}>+ Nouveau volkorne</button>
-          </div>
-          <div style={{ color: "var(--muted)", fontSize: 12 }}>{cheptel.length} volkorne(s) enregistré(s).</div>
         </div>
-        {selected && <div className="cheptel-backdrop" onClick={() => setSelectedId(null)} />}
-        {selected && (
-          <div className="cheptel-detail">
-            <div className="cheptel-detail-barre">
-              <span style={{ fontWeight: 700, fontSize: 13 }}><VolkorneBadge couleur={selected.couleur} taille={18} /> {selected.nom || selected.couleur}</span>
-              <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSelectedId(null)}>✕ Fermer</button>
-            </div>
-            <div className="cheptel-detail-corps">
-              <VolkorneDetail m={selected} byId={byId} onPatch={(p) => onPatch(selected.id, p)} onDelete={() => onDelete(selected.id)} />
-            </div>
-          </div>
+      )}
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h2 style={{ margin: 0 }}>Filtres</h2>
+          {filtresActifs && (
+            <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={reinitialiserFiltres}>✕ Réinitialiser</button>
+          )}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+          <LabeledSelect
+            label="Génération"
+            value={filtreGeneration}
+            onChange={setFiltreGeneration}
+            options={[["", "Toutes"], ...Object.keys(GENERATIONS_VOLKORNE).map((g) => [g, `Génération ${g}`])]}
+          />
+          <LabeledSelect
+            label="Couleur"
+            value={filtreCouleur}
+            onChange={setFiltreCouleur}
+            options={[["", "Toutes"], ...COULEURS_VOLKORNE.map((c) => [c, c])]}
+          />
+          <LabeledSelect
+            label="Sexe"
+            value={filtreSexe}
+            onChange={setFiltreSexe}
+            options={[["", "Tous"], ["M", "Mâle"], ["F", "Femelle"]]}
+          />
+          <LabeledSelect
+            label="Statut"
+            value={filtreStatut}
+            onChange={setFiltreStatut}
+            options={[["", "Tous"], ...STATUTS_VOLKORNE.map((s) => [s, s])]}
+          />
+          <LabeledSelect
+            label="Date de naissance"
+            value={filtreDate}
+            onChange={setFiltreDate}
+            options={[["", "Toutes"], ...optionsDate.map(([date, n]) => [date, `${date} (${n})`])]}
+          />
+        </div>
+        {filtresActifs && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>{cheptelFiltre.length} / {cheptel.length} volkorne(s) affiché(s)</div>
         )}
       </div>
-    </>
+
+      <VolkorneCheptelCards
+        items={cheptelFiltre}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        modeSelection={modeSelection}
+        idsSelectionnes={idsSelectionnes}
+        onToggleSelection={toggleSelection}
+      />
+    </div>
   );
 }
 
@@ -864,6 +949,7 @@ export function VolkorneSynchronisationPage({ cheptel, updateCheptel, showToast 
           statut: "Féconde", sterile: false, reproRestantes: 1, reproductionsRestantes: 1,
           amour: 100, endurance: 100, maturite: 100, serenite: 50,
           note: "Créé automatiquement depuis le screen du cheptel volkorne.",
+          dateAjout: new Date().toISOString(),
         });
         index += 1;
       }
@@ -1436,6 +1522,16 @@ export function useVolkorneElevage() {
     });
     setSelectedId((s) => (s && idsSet.has(s) ? null : s));
   }, []);
+  // Changement de statut en masse (sélection multiple dans le Cheptel) — même
+  // règle que le sélecteur Statut individuel : passer en Féconde force les
+  // jauges amour/endurance/maturité à 100 (prêt, point).
+  const marquerStatutMuldos = useCallback((ids, statut) => {
+    const idsSet = new Set(ids);
+    if (!idsSet.size) return;
+    updateCheptel((prev) => prev.map((m) => (idsSet.has(m.id)
+      ? { ...m, statut, ...(statut === "Féconde" ? { amour: 100, endurance: 100, maturite: 100 } : {}) }
+      : m)));
+  }, [updateCheptel]);
   const restaurerMuldo = useCallback((id) => {
     setCorbeille((prev) => {
       const entree = prev.find((e) => e.muldo.id === id);
@@ -1466,6 +1562,7 @@ export function useVolkorneElevage() {
       reproRestantes: form.statut === "Stérile" ? 0 : 1, reproductionsRestantes: form.statut === "Stérile" ? 0 : 1,
       ...(form.statut === "Féconde" ? { amour: 100, endurance: 100, maturite: 100 } : { amour: 0, endurance: 0, maturite: 0 }),
       serenite: 50,
+      dateAjout: new Date().toISOString(),
     }]);
   }, [updateCheptel]);
 
@@ -1515,6 +1612,7 @@ export function useVolkorneElevage() {
       generation: generationDeCouleurVolkorne(couleur), sexe, statut: "Fertile", sterile: false,
       reproRestantes: 1, reproductionsRestantes: 1, amour: 0, endurance: 0, maturite: 0, serenite: 50,
       parentIds: [n.maleId, n.femelleId],
+      dateAjout: new Date().toISOString(),
     };
     updateCheptel((prev) => [
       ...prev.map((m) => (m.id === n.maleId || m.id === n.femelleId)
@@ -1552,8 +1650,7 @@ export function useVolkorneElevage() {
 
   return {
     cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, addMuldo, byId, historiqueCouleurs, journal, naissances, corbeille,
-    cheptelListProps: { cheptel, filter, setFilter, selectedId, onSelect: setSelectedId, onSupprimerPlusieurs: deleteMuldos },
-    cheptelMainProps: { cheptel, selectedId, setSelectedId, byId, onPatch: patchMuldo, onDelete: deleteMuldo, showNew, setShowNew, onCreate: addMuldo },
+    patchMuldo, deleteMuldo, deleteMuldos, marquerStatutMuldos,
     syncProps: { cheptel, updateCheptel },
     gpsProps: {
       session: sessionGps,
