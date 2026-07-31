@@ -862,6 +862,10 @@ export default function App() {
                         eleveMuldo.deleteMuldos(ids);
                         showToast(`${ids.length} muldo(s) mis à la corbeille.`);
                       }}
+                      onMarquerStatutPlusieurs={(ids, statut) => {
+                        eleveMuldo.marquerStatutMuldos(ids, statut);
+                        showToast(`${ids.length} muldo(s) passé(s) en ${statut}.`);
+                      }}
                       importProps={{
                         captureText: eleveMuldo.captureText,
                         setCaptureText: eleveMuldo.setCaptureText,

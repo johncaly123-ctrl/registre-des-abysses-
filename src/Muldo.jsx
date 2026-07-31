@@ -846,6 +846,17 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     });
   };
 
+  // Changement de statut en masse (sélection multiple dans le Cheptel) — même
+  // règle que le sélecteur Statut individuel : passer en Féconde force les
+  // jauges amour/endurance/maturité à 100 (prêt, point).
+  const marquerStatutMuldos = (ids, statut) => {
+    const idsSet = new Set(ids);
+    if (!idsSet.size) return;
+    updateCheptel((prev) => prev.map((m) => (idsSet.has(m.id)
+      ? { ...m, statut, ...(statut === "Féconde" ? { amour: 100, endurance: 100, maturite: 100 } : {}) }
+      : m)));
+  };
+
   const restaurerMuldo = (id) => {
     const entree = corbeille.find((e) => e.muldo.id === id);
     if (!entree) return;
@@ -1091,6 +1102,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     patchMuldo,
     deleteMuldo,
     deleteMuldos,
+    marquerStatutMuldos,
     restaurerMuldo,
     purgerCorbeilleEntree,
     viderCorbeille,
@@ -1401,6 +1413,13 @@ export function NewMuldoModal({ cheptel, onClose, onCreate }) {
       nom: nomPersonnalise && f.nom ? f.nom : genererNomCourt(couleur),
     }));
   };
+  const changerSexe = (sexe) => {
+    setForm((f) => ({
+      ...f,
+      sexe,
+      nom: nomPersonnalise && f.nom ? f.nom : genererNomCourt(f.couleur),
+    }));
+  };
   const changerFiltreGeneration = (valeur) => {
     setFiltreGeneration(valeur);
     const liste = GENERATIONS_MULDO[Number(valeur)] || [];
@@ -1448,7 +1467,7 @@ export function NewMuldoModal({ cheptel, onClose, onCreate }) {
                 type="button"
                 className="btn btn-ghost"
                 style={{ flex: 1, justifyContent: "center", ...(form.sexe === "M" ? { borderColor: "#6fa8dc", color: "#6fa8dc", background: "rgba(111,168,220,.1)" } : {}) }}
-                onClick={() => set("sexe", "M")}
+                onClick={() => changerSexe("M")}
               >
                 ♂ Mâle
               </button>
@@ -1456,7 +1475,7 @@ export function NewMuldoModal({ cheptel, onClose, onCreate }) {
                 type="button"
                 className="btn btn-ghost"
                 style={{ flex: 1, justifyContent: "center", ...(form.sexe === "F" ? { borderColor: "#d98ec0", color: "#d98ec0", background: "rgba(217,142,192,.1)" } : {}) }}
-                onClick={() => set("sexe", "F")}
+                onClick={() => changerSexe("F")}
               >
                 ♀ Femelle
               </button>
@@ -2379,11 +2398,12 @@ export function MuldoMiniCard({ m, selected, onClick, modeSelection, coche }) {
 }
 
 
-export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter, setFilter, actionsDuJour, importProps, onSupprimerPlusieurs }) {
+export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter, setFilter, actionsDuJour, importProps, onSupprimerPlusieurs, onMarquerStatutPlusieurs }) {
   const [filtreGeneration, setFiltreGeneration] = useState("");
   const [filtreSexe, setFiltreSexe] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreCouleur, setFiltreCouleur] = useState("");
+  const [filtreDate, setFiltreDate] = useState("");
   const [modeSelection, setModeSelection] = useState(false);
   const [idsSelectionnes, setIdsSelectionnes] = useState(() => new Set());
 
@@ -2403,18 +2423,46 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
     }
   };
 
-  // Combine les 4 critères (ET logique) au-dessus de la recherche texte déjà
+  // Regroupe par date d'ajout/naissance (jj/mm/aaaa, fuseau local) — sert de
+  // repère pour sélectionner en masse toute une fournée née le même jour
+  // (ex. import synchro d'un enclos entier). Triée du plus récent au plus
+  // ancien ; les entrées sans date connue tombent dans un seau à part.
+  const optionsDate = useMemo(() => {
+    const compteur = new Map();
+    cheptel.forEach((m) => {
+      const cle = m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue";
+      compteur.set(cle, (compteur.get(cle) || 0) + 1);
+    });
+    return [...compteur.entries()].sort(([a], [b]) => {
+      if (a === "Date inconnue") return 1;
+      if (b === "Date inconnue") return -1;
+      const [ja, ma, aa] = a.split("/").map(Number);
+      const [jb, mb, ab] = b.split("/").map(Number);
+      return new Date(ab, mb - 1, jb) - new Date(aa, ma - 1, ja);
+    });
+  }, [cheptel]);
+
+  // Combine les 5 critères (ET logique) au-dessus de la recherche texte déjà
   // appliquée en amont (eleveMuldo.filtered) — vide = pas de restriction.
   const cheptelFiltre = useMemo(() => cheptel.filter((m) =>
     (!filtreGeneration || generationDeCouleur(m.couleur) === Number(filtreGeneration)) &&
     (!filtreSexe || sexeMuldo(m) === filtreSexe) &&
     (!filtreStatut || m.statut === filtreStatut) &&
-    (!filtreCouleur || m.couleur === filtreCouleur)
-  ), [cheptel, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur]);
+    (!filtreCouleur || m.couleur === filtreCouleur) &&
+    (!filtreDate || (m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue") === filtreDate)
+  ), [cheptel, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur, filtreDate]);
 
-  const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur;
+  const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur || filtreDate;
   const reinitialiserFiltres = () => {
-    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur("");
+    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); setFiltreDate("");
+  };
+
+  const selectionnerTousLesFiltres = () => {
+    setIdsSelectionnes(new Set(cheptelFiltre.map((m) => m.id)));
+  };
+  const marquerSelection = (statut) => {
+    if (!idsSelectionnes.size) return;
+    onMarquerStatutPlusieurs(Array.from(idsSelectionnes), statut);
   };
 
   return (
@@ -2440,9 +2488,20 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
       {modeSelection && (
         <div className="panel-card" style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: 13, color: "var(--muted)" }}>{idsSelectionnes.size} muldo(s) sélectionné(s) — clique sur une carte pour la cocher/décocher.</span>
-          <button className="btn btn-coral" disabled={!idsSelectionnes.size} onClick={supprimerSelection}>
-            🗑️ Supprimer la sélection ({idsSelectionnes.size})
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn-ghost" disabled={!cheptelFiltre.length} onClick={selectionnerTousLesFiltres}>
+              ☑️ Tout sélectionner ({cheptelFiltre.length}{filtresActifs ? " filtré(s)" : ""})
+            </button>
+            <button className="btn btn-ghost" disabled={!idsSelectionnes.size} onClick={() => marquerSelection("Fertile")}>
+              Marquer Fertile
+            </button>
+            <button className="btn btn-ghost" disabled={!idsSelectionnes.size} onClick={() => marquerSelection("Féconde")}>
+              Marquer Féconde
+            </button>
+            <button className="btn btn-coral" disabled={!idsSelectionnes.size} onClick={supprimerSelection}>
+              🗑️ Supprimer la sélection ({idsSelectionnes.size})
+            </button>
+          </div>
         </div>
       )}
 
@@ -2477,6 +2536,12 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
             value={filtreStatut}
             onChange={setFiltreStatut}
             options={[["", "Tous"], ...STATUTS.map((s) => [s, s])]}
+          />
+          <LabeledSelect
+            label="Date de naissance"
+            value={filtreDate}
+            onChange={setFiltreDate}
+            options={[["", "Toutes"], ...optionsDate.map(([date, n]) => [date, `${date} (${n})`])]}
           />
         </div>
         {filtresActifs && (
