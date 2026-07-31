@@ -6,7 +6,7 @@
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
 import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
@@ -269,6 +269,29 @@ function meilleureRecettePourCouleurDragodinde(couleur, stock, visiting = new Se
 }
 
 export function cleCoupleCouleursDragodinde(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
+
+// Recombinaison directe de 2 monocolores vers leur bicolore ("A et B") — même
+// principe que combinerCouleursMuldo (muldoGenetique.js), construit depuis
+// GENERATIONS_DRAGODINDE lui-même. Sert à couleursCandidatesAccouplement pour
+// dériver les couleurs cibles réellement atteignables par un couple à partir
+// des ancêtres connus (pas RECETTES_SPECIALES_DRAGODINDE, qui décrit une
+// mécanique différente : bicolore+bicolore -> monocolore spécial).
+const RECOMBINAISON_DRAGODINDE = (() => {
+  const map = new Map();
+  Object.entries(GENERATIONS_DRAGODINDE).forEach(([gen, couleurs]) => {
+    if (Number(gen) % 2 !== 0) return;
+    couleurs.forEach((nom) => {
+      const parties = nom.split(" et ");
+      if (parties.length === 2) map.set(cleCoupleCouleursDragodinde(parties[0], parties[1]), nom);
+    });
+  });
+  return map;
+})();
+function combinerCouleursDragodinde(ca, cb) {
+  if (!ca || !cb || ca === cb) return null;
+  return RECOMBINAISON_DRAGODINDE.get(cleCoupleCouleursDragodinde(ca, cb)) || null;
+}
+
 function toutesLesRecettesProgressionDragodinde() {
   const map = {};
   COULEURS_DRAGODINDE.forEach((enfant) => {
@@ -358,14 +381,17 @@ function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purif
   }
   score += Math.max(0, 20 - collisionScoreDragodinde(male, femelle, byId));
   const chemin = construireCheminVersObjectifDragodinde(meilleurResultat, objectif, distances);
-  const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleurDragodinde);
+  const { generationCible, couleursCible, couleursAutres } = couleursCandidatesAccouplement(
+    male, femelle, byId, generationDeCouleurDragodinde, combinerCouleursDragodinde
+  );
   const generationBase = Math.max(generationDeCouleurDragodinde(male.couleur), generationDeCouleurDragodinde(femelle.couleur));
   score += (generationCible - generationBase) * 15;
   const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina });
   return {
     score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
-    generationCible, viaAncetre, chanceGenerationCible,
-    couleursGenerationCible: GENERATIONS_DRAGODINDE[generationCible] || [],
+    generationCible, viaAncetre: generationCible > generationBase, chanceGenerationCible,
+    couleursGenerationCible: couleursCible,
+    couleursAutresGenerationCible: couleursAutres,
   };
 }
 function optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {

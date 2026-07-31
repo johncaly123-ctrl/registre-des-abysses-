@@ -6,7 +6,7 @@
 // ============================================================
 import React, { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
 import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
@@ -332,6 +332,29 @@ function meilleureRecettePourCouleurVolkorne(couleur, stock, visiting = new Set(
   return options[0];
 }
 export function cleCoupleCouleursVolkorne(a, b) { return [a, b].sort((x, y) => x.localeCompare(y, "fr")).join("||| "); }
+
+// Recombinaison directe de 2 monocolores vers leur bicolore ("A et B") — même
+// principe que combinerCouleursMuldo (muldoGenetique.js), construit depuis
+// GENERATIONS_VOLKORNE lui-même. Sert à couleursCandidatesAccouplement pour
+// dériver les couleurs cibles réellement atteignables par un couple à partir
+// des ancêtres connus (pas RECETTES_SPECIALES_VOLKORNE, qui décrit une
+// mécanique différente : bicolore+bicolore -> monocolore spécial).
+const RECOMBINAISON_VOLKORNE = (() => {
+  const map = new Map();
+  Object.entries(GENERATIONS_VOLKORNE).forEach(([gen, couleurs]) => {
+    if (Number(gen) % 2 !== 0) return;
+    couleurs.forEach((nom) => {
+      const parties = nom.split(" et ");
+      if (parties.length === 2) map.set(cleCoupleCouleursVolkorne(parties[0], parties[1]), nom);
+    });
+  });
+  return map;
+})();
+function combinerCouleursVolkorne(ca, cb) {
+  if (!ca || !cb || ca === cb) return null;
+  return RECOMBINAISON_VOLKORNE.get(cleCoupleCouleursVolkorne(ca, cb)) || null;
+}
+
 function toutesLesRecettesProgressionVolkorne() {
   const map = {};
   COULEURS_VOLKORNE.forEach((enfant) => {
@@ -421,14 +444,17 @@ function scoreCoupleObjectifVolkorne(male, femelle, objectif, distances, purific
   }
   score += Math.max(0, 20 - collisionScoreVolkorne(male, femelle, byId));
   const chemin = construireCheminVersObjectifVolkorne(meilleurResultat, objectif, distances);
-  const { generationCible, viaAncetre } = calculerGenerationCible(male, femelle, byId, generationDeCouleurVolkorne);
+  const { generationCible, couleursCible, couleursAutres } = couleursCandidatesAccouplement(
+    male, femelle, byId, generationDeCouleurVolkorne, combinerCouleursVolkorne
+  );
   const generationBase = Math.max(generationDeCouleurVolkorne(male.couleur), generationDeCouleurVolkorne(femelle.couleur));
   score += (generationCible - generationBase) * 15;
   const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina });
   return {
     score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
-    generationCible, viaAncetre, chanceGenerationCible,
-    couleursGenerationCible: GENERATIONS_VOLKORNE[generationCible] || [],
+    generationCible, viaAncetre: generationCible > generationBase, chanceGenerationCible,
+    couleursGenerationCible: couleursCible,
+    couleursAutresGenerationCible: couleursAutres,
   };
 }
 function optimiserSessionAccouplementsVolkorne(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
