@@ -696,6 +696,20 @@ export default function App() {
                 registerBirth={eleveMuldo.registerBirth}
                 onVoirMuldo={eleveMuldo.voirMuldo}
               />
+              <div className="panel-card" style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <b>🎲 Simulateur de chance</b>
+                  <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
+                    Teste en un clic la probabilité d'obtenir la génération cible selon le niveau de tes parents (et l'Optimakina).
+                  </div>
+                </div>
+                <button
+                  className="btn btn-coral"
+                  onClick={() => { setPage("muldo"); setSousPage("gps"); }}
+                >
+                  Ouvrir le simulateur
+                </button>
+              </div>
               <GraphiquesPanel cheptel={eleveMuldo.cheptel} journal={eleveMuldo.journal} instantanes={eleveMuldo.instantanes} />
               <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} userId={compte.session?.user?.id} serveur={serveur} />
               <PartagePublicPanel

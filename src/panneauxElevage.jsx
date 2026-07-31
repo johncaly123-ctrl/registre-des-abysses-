@@ -7,6 +7,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Trash2, ChevronRight } from "lucide-react";
 import { COLORS } from "./muldoGenetique.js";
 import { supabase } from "./supabaseClient.js";
+import { bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
 
 // Nom de serveur Dofus — liste figée (évite les doublons de type "Rafal" vs
 // "rafal " qui fragmenteraient les prix communautaires par serveur). Choisi
@@ -16,6 +17,11 @@ export const SERVEURS_DOFUS = [
   "Brial", "Dakal", "Draconiros", "HellMina", "Imagiro", "Kourial",
   "Mikhal", "Ombre", "Orukam", "Rafal", "Salar",
 ];
+
+// En dessous de ce nombre de soumissions, une médiane communautaire n'est pas
+// fiable (une seule personne peut la fixer arbitrairement) — on retombe sur
+// le prix personnel plutôt que de l'utiliser telle quelle.
+export const SEUIL_MIN_SOUMISSIONS_COMMUNAUTE = 3;
 
 export async function copierPressePapiers(texte) {
   try {
@@ -443,6 +449,7 @@ export function ArbreGenealogiquePanel({ cheptel, onSelect, sexeFn, plierCouleur
         <input
           className="field"
           placeholder="Nom ou couleur…"
+          aria-label="Rechercher une monture par nom ou couleur"
           value={recherche}
           onChange={(e) => setRecherche(e.target.value)}
           style={{ width: 230, padding: "4px 8px", fontSize: 12 }}
@@ -682,6 +689,71 @@ export function BoutonFiche({ id, onVoir, label }) {
     >
       🔍 Fiche
     </button>
+  );
+}
+
+// ---------- Simulateur rapide de chance (génération cible) ----------
+// Outil autonome, indépendant du cheptel réel : permet de tester n'importe
+// quel couple de niveaux (et l'Optimakina) sans lancer de session GPS.
+export function SimulateurChanceGenerationPanel() {
+  const [niveauA, setNiveauA] = useState(50);
+  const [niveauB, setNiveauB] = useState(50);
+  const [optimakina, setOptimakina] = useState(false);
+
+  const chance = bonusProbabiliteGenerationCible({
+    niveauA: Number(niveauA) || 0,
+    niveauB: Number(niveauB) || 0,
+    optimakina,
+  });
+
+  const champStyle = { display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted)" };
+
+  return (
+    <div className="panel-card" style={{ marginBottom: 16 }}>
+      <h2 style={{ marginTop: 0 }}>🎲 Simulateur de chance</h2>
+      <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 16 }}>
+        Estime la chance d'obtenir la génération cible pour n'importe quel niveau de parents,
+        sans avoir besoin d'une session GPS en cours.
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={champStyle}>
+          Niveau parent 1 (1 à 200)
+          <input
+            type="number"
+            className="field"
+            min={1}
+            max={200}
+            value={niveauA}
+            onChange={(e) => setNiveauA(e.target.value === "" ? "" : Number(e.target.value))}
+            style={{ width: 150 }}
+          />
+        </label>
+        <label style={champStyle}>
+          Niveau parent 2 (1 à 200)
+          <input
+            type="number"
+            className="field"
+            min={1}
+            max={200}
+            value={niveauB}
+            onChange={(e) => setNiveauB(e.target.value === "" ? "" : Number(e.target.value))}
+            style={{ width: 150 }}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--muted)", paddingBottom: 9 }}>
+          <input type="checkbox" checked={optimakina} onChange={(e) => setOptimakina(e.target.checked)} />
+          Utiliser une Optimakina (+10%)
+        </label>
+      </div>
+      <div style={{ marginTop: 18, textAlign: "center" }}>
+        <div style={{ fontSize: 26, fontWeight: 950, color: "var(--gold)" }}>
+          Chance finale : {chance.toFixed(2)}%
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>
+          Si plusieurs générations cibles sont possibles, la probabilité affichée est partagée entre elles.
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1216,6 +1288,8 @@ export function GpsDofusPage({
         </div>
       </div>
 
+      <SimulateurChanceGenerationPanel />
+
       <NaissancesEnAttentePanel
         naissances={naissances}
         onConfirmer={confirmerNaissanceEtDetecterObjectif}
@@ -1500,7 +1574,22 @@ export function formatKamas(n) {
 // automatiquement l'évolution du cheptel. Les stériles sont comptés avec une
 // décote réglable (leur valeur réelle est surtout le recyclage).
 export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge, creature, userId, serveur }) {
-  const [sourcePrix, setSourcePrix] = useState("perso");
+  const storageKeySourcePrix = `${storageKey}-source-v1`;
+  const [sourcePrix, setSourcePrix] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKeySourcePrix);
+      return saved === "communaute" || saved === "perso" ? saved : "perso";
+    } catch (_e) {
+      return "perso";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKeySourcePrix, sourcePrix);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [sourcePrix, storageKeySourcePrix]);
   // Le serveur se choisit tout en haut de la page (en-tête) — partagé entre
   // les 3 créatures, pas de champ dupliqué ici.
   // couleur -> { median, nb }, chargé depuis Supabase pour (creature, serveur).
@@ -1574,10 +1663,13 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
     return [...parCouleur.values()]
       .map((l) => {
         const prixPerso = Number(config.prix[l.couleur]) || 0;
-        const prixCommunaute = communaute[l.couleur]?.median;
-        // Communauté choisie mais aucune soumission pour cette couleur/serveur
-        // encore : repli automatique sur le prix personnel.
-        const prixUnitaire = sourcePrix === "communaute" && Number.isFinite(prixCommunaute) ? prixCommunaute : prixPerso;
+        const infoCommunaute = communaute[l.couleur];
+        const prixCommunauteFiable = infoCommunaute && infoCommunaute.nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE
+          ? infoCommunaute.median
+          : undefined;
+        // Communauté choisie mais aucune soumission fiable pour cette couleur/
+        // serveur (pas encore assez d'avis) : repli automatique sur le prix personnel.
+        const prixUnitaire = sourcePrix === "communaute" && Number.isFinite(prixCommunauteFiable) ? prixCommunauteFiable : prixPerso;
         const sousTotal = l.fertiles * prixUnitaire
           + (l.steriles + l.seniles) * prixUnitaire * (config.decoteSterile / 100);
         const generation = generationDeCouleurFn(l.couleur);
@@ -1701,15 +1793,23 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
                 className="field champ-prix"
                 min={0}
                 placeholder="prix en k"
+                aria-label={`Prix personnel pour ${l.couleur}`}
                 value={config.prix[l.couleur] ?? ""}
                 onChange={(e) => setPrixCouleur(l.couleur, e.target.value)}
                 style={{ width: "100%", padding: "4px 8px" }}
               />
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <span style={{ fontSize: 12, color: communaute[l.couleur] ? "var(--text)" : "var(--muted)" }}>
+                <span
+                  style={{ fontSize: 12, color: communaute[l.couleur]?.nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE ? "var(--text)" : "var(--muted)" }}
+                  title={communaute[l.couleur] && communaute[l.couleur].nb < SEUIL_MIN_SOUMISSIONS_COMMUNAUTE
+                    ? `Pas assez d'avis pour être fiable (minimum ${SEUIL_MIN_SOUMISSIONS_COMMUNAUTE}) — prix personnel utilisé en attendant`
+                    : undefined}
+                >
                   {communaute[l.couleur]
-                    ? `${formatKamas(communaute[l.couleur].median)} (${communaute[l.couleur].nb} avis)`
+                    ? communaute[l.couleur].nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE
+                      ? `${formatKamas(communaute[l.couleur].median)} (${communaute[l.couleur].nb} avis)`
+                      : `perso : ${formatKamas(l.prixPerso)} (${communaute[l.couleur].nb}/${SEUIL_MIN_SOUMISSIONS_COMMUNAUTE} avis)`
                     : `perso : ${formatKamas(l.prixPerso)}`}
                 </span>
                 {userId && (
@@ -1719,6 +1819,7 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
                       className="field champ-prix"
                       min={0}
                       placeholder="proposer"
+                      aria-label={`Proposer un prix communautaire pour ${l.couleur}`}
                       value={saisieCommunaute[l.couleur] ?? ""}
                       onChange={(e) => setSaisieCommunaute((prev) => ({ ...prev, [l.couleur]: e.target.value }))}
                       style={{ width: 70, padding: "3px 6px", fontSize: 11 }}

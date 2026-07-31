@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { chargerJSON, sauvegarderJSON } from "./stockage.js";
-import { formatKamas } from "./panneauxElevage.jsx";
+import { formatKamas, SEUIL_MIN_SOUMISSIONS_COMMUNAUTE } from "./panneauxElevage.jsx";
 import { supabase } from "./supabaseClient.js";
 
 // Mangeoire d'enclos : 6 jauges à monter (Dragofesse, Mangeoire, Foudroyeur,
@@ -19,6 +19,7 @@ import { supabase } from "./supabaseClient.js";
 export const STORAGE_MANGEOIRE_STRUCTURE = "mangeoire-structure-v1";
 export const STORAGE_MANGEOIRE_PRIX = "mangeoire-prix-v2";
 export const STORAGE_MANGEOIRE_SAUVEGARDES = "mangeoire-sauvegardes-v2";
+export const STORAGE_MANGEOIRE_SOURCE_PRIX = "mangeoire-source-prix-v1";
 export const CLES_SAUVEGARDE_MANGEOIRE = [STORAGE_MANGEOIRE_STRUCTURE, STORAGE_MANGEOIRE_PRIX, STORAGE_MANGEOIRE_SAUVEGARDES];
 
 const JAUGES = ["Dragofesse", "Mangeoire", "Foudroyeur", "Baffeur", "Abreuvoir", "Caresseur"];
@@ -342,7 +343,7 @@ export function MangeoirePage({ userId, serveur }) {
 
   // Prix communautaires : médiane par nom d'ingrédient et par serveur (un
   // ingrédient a le même prix quelle que soit la recette qui l'utilise).
-  const [sourcePrix, setSourcePrix] = useState("perso");
+  const [sourcePrix, setSourcePrix] = useState(() => chargerJSON(STORAGE_MANGEOIRE_SOURCE_PRIX, "perso"));
   const serveurNormalise = (serveur || "").trim();
   const [communaute, setCommunaute] = useState({});
   const [chargementCommunaute, setChargementCommunaute] = useState(false);
@@ -351,6 +352,7 @@ export function MangeoirePage({ userId, serveur }) {
   useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_STRUCTURE, structure); }, [structure]);
   useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_PRIX, prix); }, [prix]);
   useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_SAUVEGARDES, sauvegardes); }, [sauvegardes]);
+  useEffect(() => { sauvegarderJSON(STORAGE_MANGEOIRE_SOURCE_PRIX, sourcePrix); }, [sourcePrix]);
 
   useEffect(() => {
     if (!supabase || sourcePrix !== "communaute" || !serveurNormalise) { setCommunaute({}); return; }
@@ -385,7 +387,7 @@ export function MangeoirePage({ userId, serveur }) {
   const resolvePrix = (ing) => {
     if (sourcePrix === "communaute") {
       const c = communaute[ing.nom];
-      if (c && Number.isFinite(c.median)) return c.median;
+      if (c && Number.isFinite(c.median) && c.nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE) return c.median;
     }
     return Number(prix[ing.id]) || 0;
   };
@@ -645,6 +647,7 @@ export function MangeoirePage({ userId, serveur }) {
                           className="field"
                           value={ing.nom}
                           readOnly={verrouille}
+                          aria-label="Nom de l'ingrédient"
                           onChange={(e) => majIngredientChamp(taille.cle, ing.id, "nom", e.target.value)}
                           style={{ flex: 1, opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
                         />
@@ -665,16 +668,24 @@ export function MangeoirePage({ userId, serveur }) {
                         step="0.01"
                         value={ing.quantite}
                         readOnly={verrouille}
+                        aria-label={`Quantité de ${ing.nom}`}
                         onChange={(e) => majIngredientChamp(taille.cle, ing.id, "quantite", e.target.value)}
                         style={{ textAlign: "right", opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
                       />
                       {sourcePrix === "perso" || !serveurNormalise ? (
-                        <input className="field champ-prix" type="number" min="0" step="1" value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
+                        <input className="field champ-prix" type="number" min="0" step="1" aria-label={`Prix personnel de ${ing.nom}`} value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                          <span style={{ fontSize: 12, textAlign: "right", color: communaute[ing.nom] ? "var(--text)" : "var(--muted)" }}>
+                          <span
+                            style={{ fontSize: 12, textAlign: "right", color: communaute[ing.nom]?.nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE ? "var(--text)" : "var(--muted)" }}
+                            title={communaute[ing.nom] && communaute[ing.nom].nb < SEUIL_MIN_SOUMISSIONS_COMMUNAUTE
+                              ? `Pas assez d'avis pour être fiable (minimum ${SEUIL_MIN_SOUMISSIONS_COMMUNAUTE}) — prix personnel utilisé en attendant`
+                              : undefined}
+                          >
                             {communaute[ing.nom]
-                              ? `${formatKamas(communaute[ing.nom].median)} (${communaute[ing.nom].nb} avis)`
+                              ? communaute[ing.nom].nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE
+                                ? `${formatKamas(communaute[ing.nom].median)} (${communaute[ing.nom].nb} avis)`
+                                : `perso : ${formatKamas(prix[ing.id] || 0)} (${communaute[ing.nom].nb}/${SEUIL_MIN_SOUMISSIONS_COMMUNAUTE} avis)`
                               : `perso : ${formatKamas(prix[ing.id] || 0)}`}
                           </span>
                           {userId && (
@@ -684,6 +695,7 @@ export function MangeoirePage({ userId, serveur }) {
                                 className="field champ-prix"
                                 min={0}
                                 placeholder="proposer"
+                                aria-label={`Proposer un prix communautaire pour ${ing.nom}`}
                                 value={saisieCommunaute[ing.nom] ?? ""}
                                 onChange={(e) => setSaisieCommunaute((prev) => ({ ...prev, [ing.nom]: e.target.value }))}
                                 style={{ width: 62, padding: "3px 6px", fontSize: 11 }}
@@ -805,6 +817,7 @@ export function MangeoirePage({ userId, serveur }) {
           className="field"
           type="search"
           placeholder="Rechercher une sauvegarde…"
+          aria-label="Rechercher une sauvegarde de prix"
           value={rechercheSauvegarde}
           onChange={(e) => setRechercheSauvegarde(e.target.value)}
           style={{ marginBottom: 12 }}
