@@ -4,7 +4,7 @@ import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactive
 import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers, SERVEURS_DOFUS, STORAGE_SERVEUR } from "./panneauxElevage.jsx";
 import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
 import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
-import { OnboardingOverlay } from "./OnboardingOverlay.jsx";
+import { OnboardingOverlay, ETAPES_ONBOARDING_GPS, ETAPES_ONBOARDING_SITE } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2, X } from "lucide-react";
@@ -58,6 +58,7 @@ const STORAGE_PRIX_KAMAS_VOLKORNE = "volkorne-prix-kamas-v1";
 const STORAGE_PROFIL = "muldo-profil-v1";
 const STORAGE_THEME = "muldo-theme-v1";
 const STORAGE_ONBOARDING_GPS = "muldo-onboarding-gps-v1";
+const STORAGE_ONBOARDING_SITE = "muldo-onboarding-site-v1";
 const STORAGE_PARCOURS_GUIDE = "muldo-parcours-guide-v1";
 
 // Bandeau de version visible dans l'en-tête. Reste "BETA vX.Y" tant que le
@@ -127,6 +128,20 @@ export default function App() {
     localStorage.setItem(STORAGE_ONBOARDING_GPS, "1");
     setOnboardingGpsOuvert(false);
   };
+  // Tuto de première visite, site entier (distinct de la découverte GPS
+  // ci-dessus) : déclenché une seule fois au montage, sauf si on arrive sur
+  // le cheptel public de quelqu'un d'autre (?voir=), où il serait hors-propos.
+  const [onboardingSiteOuvert, setOnboardingSiteOuvert] = useState(false);
+  useEffect(() => {
+    if (!pseudoPublic && !localStorage.getItem(STORAGE_ONBOARDING_SITE)) {
+      setOnboardingSiteOuvert(true);
+    }
+  }, []);
+  const fermerOnboardingSite = () => {
+    localStorage.setItem(STORAGE_ONBOARDING_SITE, "1");
+    setOnboardingSiteOuvert(false);
+  };
+  const relancerOnboardingSite = () => setOnboardingSiteOuvert(true);
   const [demandeClassementTaverne, setDemandeClassementTaverne] = useState(false);
   const voirClassementDepuisSucces = () => {
     setDemandeClassementTaverne(true);
@@ -1080,7 +1095,8 @@ export default function App() {
       {eleveDragodinde.showNew && <NewDragodindeModal onClose={() => eleveDragodinde.setShowNew(false)} onCreate={eleveDragodinde.addMuldo} />}
       {eleveVolkorne.showNew && <NewVolkorneModal onClose={() => eleveVolkorne.setShowNew(false)} onCreate={eleveVolkorne.addMuldo} />}
 
-      <OnboardingOverlay open={onboardingGpsOuvert} onClose={fermerOnboardingGps} />
+      <OnboardingOverlay open={onboardingGpsOuvert} onClose={fermerOnboardingGps} etapes={ETAPES_ONBOARDING_GPS} titre="Découverte du GPS" />
+      <OnboardingOverlay open={onboardingSiteOuvert} onClose={fermerOnboardingSite} etapes={ETAPES_ONBOARDING_SITE} titre="Visite du Registre des Abysses" />
 
       {profilOuvert && (
         <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} parrainCapture={parrainCapture} />
@@ -1118,6 +1134,8 @@ export default function App() {
         <a href="#" onClick={(e) => { e.preventDefault(); relancerParcoursGuide(); }} style={{ color: "var(--gold)" }}>🎓 Relancer le parcours guidé</a>
         {" · "}
         <a href="#" onClick={(e) => { e.preventDefault(); setPage("nouveautes"); }} style={{ color: "var(--gold)" }}>🆕 Quoi de neuf</a>
+        {" · "}
+        <a href="#" onClick={(e) => { e.preventDefault(); relancerOnboardingSite(); }} style={{ color: "var(--gold)" }}>🧭 Revoir la visite guidée</a>
       </footer>
 
       {toast && (
