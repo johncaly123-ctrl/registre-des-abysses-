@@ -14,7 +14,10 @@ import { supabase } from "./supabaseClient.js";
 // La composition des recettes (noms/quantités d'ingrédients, points par
 // recette) est fixée par le jeu et ne change jamais : elle vit dans
 // `structure`, indépendamment des prix kamas qui eux fluctuent selon le
-// serveur/moment et vivent dans `prix` (map ingredientId -> prix unitaire).
+// serveur/moment et vivent dans `prix` (map NOM d'ingrédient -> prix
+// unitaire — pas l'id de la ligne, pour qu'un même ingrédient utilisé dans
+// plusieurs recettes partage un seul prix ; voir remapPrixVersNoms pour la
+// migration silencieuse depuis l'ancien schéma par id).
 // Les sauvegardes nommées ne figent donc que des jeux de prix, jamais la
 // structure des recettes.
 export const STORAGE_MANGEOIRE_STRUCTURE = "mangeoire-structure-v1";
@@ -39,6 +42,43 @@ const TAILLES = [
   { cle: "grand", nom: "Grand", points: 4000 },
   { cle: "gigantesque", nom: "Gigantesque", points: 5000 },
 ];
+
+// Mécanique réelle des jauges d'enclos (indépendante du coût/point de
+// remplissage calculé plus haut) : chaque jauge se vide de 10/20/30/40 points
+// par tranche de 10 secondes selon son tier (1 à 4), et chaque monture
+// présente dans l'enclos gagne exactement ce qui est consommé — sans partage,
+// donc plus il y a de montures, meilleure est la rentabilité par monture.
+const GAIN_PAR_TIER = { 1: 10, 2: 20, 3: 30, 4: 40 }; // points / 10s
+const DUREE_VIDAGE_TIER_SECONDES = { 1: 39960, 2: 14940, 3: 6660, 4: 2520 }; // 11h06 / 4h09 / 1h51 / 42min
+
+// Chaque jauge d'enclos agit sur une stat précise de la monture. Amour,
+// Maturité et Endurance plafonnent à 20 000 (nécessaires pour la fécondité).
+// Sérénité varie entre -5 000 et +5 000 (Caresseur l'augmente, Baffeur la
+// diminue). Mangeoire donne de l'Expérience, sans plafond fixe (courbe de
+// niveau ci-dessous), avec un bonus x2 pour les montures "Sage".
+const EFFET_JAUGE = {
+  Dragofesse: { stat: "Amour", plafond: 20000, plancher: 0 },
+  Abreuvoir: { stat: "Maturité", plafond: 20000, plancher: 0 },
+  Foudroyeur: { stat: "Endurance", plafond: 20000, plancher: 0 },
+  Caresseur: { stat: "Sérénité", plafond: 5000, plancher: -5000, sens: "augmente" },
+  Baffeur: { stat: "Sérénité", plafond: 5000, plancher: -5000, sens: "diminue" },
+  Mangeoire: { stat: "Expérience", plafond: null, plancher: 0 },
+};
+
+const PALIERS_NIVEAU_MONTURE = [
+  { niveau: 100, xp: 172668 },
+  { niveau: 200, xp: 867582 },
+];
+
+function formatDuree(secondes) {
+  if (!Number.isFinite(secondes) || secondes < 0) return "—";
+  const totalMinutes = Math.round(secondes / 60);
+  const heures = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (heures <= 0) return `${minutes} min`;
+  if (minutes === 0) return `${heures} h`;
+  return `${heures} h ${String(minutes).padStart(2, "0")}`;
+}
 
 // Composition réelle des recettes (noms d'ingrédients), saisie manuellement
 // depuis le jeu au fur et à mesure — jauge -> palier -> taille -> ingrédients.
@@ -319,6 +359,34 @@ function normaliserPrix(brut) {
   return propre;
 }
 
+// Le prix personnel était historiquement stocké par id de ligne d'ingrédient
+// (une entrée par occurrence dans une recette), pas par nom — du coup un même
+// ingrédient utilisé dans plusieurs recettes (très fréquent : "Or", "Viande
+// Fraîche"...) avait un prix différent selon la recette, jamais synchronisé.
+// Cette fonction migre silencieusement les anciennes clés (des id) vers des
+// clés par nom en les recherchant dans la structure actuelle ; les clés qui
+// ne correspondent à aucun id connu sont déjà des noms (nouveau schéma) et
+// passent inchangées. Idempotente : rejouable à chaque chargement sans coût,
+// pas besoin de bump de version de storage.
+function remapPrixVersNoms(brut, structure) {
+  const normalise = normaliserPrix(brut);
+  if (!Object.keys(normalise).length) return normalise;
+  const idVersNom = new Map();
+  JAUGES.forEach((jauge) => {
+    PALIERS.forEach((palier) => {
+      (structure[jauge]?.[palier.cle] || []).forEach((recette) => {
+        (recette.ingredients || []).forEach((ing) => idVersNom.set(ing.id, ing.nom));
+      });
+    });
+  });
+  const parNom = {};
+  Object.entries(normalise).forEach(([cle, valeur]) => {
+    const nom = idVersNom.get(cle) || cle;
+    if (valeur > 0 || !(nom in parNom)) parNom[nom] = valeur;
+  });
+  return parNom;
+}
+
 function coutRecette(recette, resolvePrix) {
   return recette.ingredients.reduce(
     (total, ing) => total + (Number(ing.quantite) || 0) * resolvePrix(ing),
@@ -330,13 +398,32 @@ function fmtRatio(n, decimales = 2) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: decimales }).format(n);
 }
 
+// Meilleur coût par point parmi les 5 tailles d'un palier donné — pour
+// maintenir un tier en continu, seul le carburant de ce palier peut être
+// utilisé (les autres plafonnent trop bas ou dépassent la plage voulue).
+function meilleurCoutParPointPalier(structureJauge, palierCle, resolvePrix) {
+  const recettes = structureJauge[palierCle] || [];
+  let meilleur = Infinity;
+  recettes.forEach((r) => {
+    const points = Number(r.points) || 0;
+    if (points <= 0) return;
+    const cout = coutRecette(r, resolvePrix) / points;
+    if (cout < meilleur) meilleur = cout;
+  });
+  return Number.isFinite(meilleur) ? meilleur : null;
+}
+
 export function MangeoirePage({ userId, serveur }) {
   const [structure, setStructure] = useState(() => normaliserStructure(chargerJSON(STORAGE_MANGEOIRE_STRUCTURE, null)));
-  const [prix, setPrix] = useState(() => normaliserPrix(chargerJSON(STORAGE_MANGEOIRE_PRIX, null)));
+  const [prix, setPrix] = useState(() => remapPrixVersNoms(chargerJSON(STORAGE_MANGEOIRE_PRIX, null), structure));
   const [sauvegardes, setSauvegardes] = useState(() => chargerJSON(STORAGE_MANGEOIRE_SAUVEGARDES, []));
   const [jaugeActive, setJaugeActive] = useState(JAUGES[0]);
   const [palierActif, setPalierActif] = useState(PALIERS[0].cle);
   const [classementFiltre, setClassementFiltre] = useState("tous");
+  const [vue, setVue] = useState("rentabilite");
+  const [tierVise, setTierVise] = useState(4);
+  const [nbMontures, setNbMontures] = useState(10);
+  const [sage, setSage] = useState(false);
   const [nomSauvegarde, setNomSauvegarde] = useState("");
   const [rechercheSauvegarde, setRechercheSauvegarde] = useState("");
   const [statut, setStatut] = useState("");
@@ -390,7 +477,7 @@ export function MangeoirePage({ userId, serveur }) {
       const c = communaute[ing.nom];
       if (c && Number.isFinite(c.median) && c.nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE) return c.median;
     }
-    return Number(prix[ing.id]) || 0;
+    return Number(prix[ing.nom]) || 0;
   };
 
   const palier = PALIERS.find((p) => p.cle === palierActif);
@@ -427,8 +514,11 @@ export function MangeoirePage({ userId, serveur }) {
     });
   };
 
-  const majIngredientPrix = (ingredientId, valeur) => {
-    setPrix((prev) => ({ ...prev, [ingredientId]: Number(valeur) || 0 }));
+  // Prix keyé par NOM d'ingrédient (pas par id de ligne) : saisir un prix met
+  // à jour toutes les recettes qui partagent cet ingrédient, pas seulement
+  // celle affichée à l'écran.
+  const majIngredientPrix = (nom, valeur) => {
+    setPrix((prev) => ({ ...prev, [nom]: Number(valeur) || 0 }));
   };
 
   const ajouterIngredient = (tailleCle) => {
@@ -457,11 +547,10 @@ export function MangeoirePage({ userId, serveur }) {
       );
       return suivant;
     });
-    setPrix((prev) => {
-      const suivant = { ...prev };
-      delete suivant[ingredientId];
-      return suivant;
-    });
+    // Le prix n'est pas supprimé ici : il est keyé par nom d'ingrédient et
+    // peut être partagé par d'autres recettes — le retirer d'une seule ligne
+    // le ferait disparaître partout. "Réinitialiser les prix" reste le seul
+    // moyen de tout effacer.
   };
 
   const copierNomIngredient = (ing) => {
@@ -494,6 +583,25 @@ export function MangeoirePage({ userId, serveur }) {
     .sort((a, b) => a.coutParPoint - b.coutParPoint);
 
   const meilleure = classement.find((r) => Number.isFinite(r.coutParPoint));
+
+  // Vue "Rentabilité par heure / XP réelle" : dérivé du tier visé, pas de
+  // nouvel état à part tierVise/nbMontures/sage.
+  const effet = EFFET_JAUGE[jaugeActive];
+  const palierPourTier = PALIERS[tierVise - 1].cle;
+  const coutParPointTier = meilleurCoutParPointPalier(structure[jaugeActive], palierPourTier, resolvePrix);
+  const pointsParHeure = GAIN_PAR_TIER[tierVise] * 360; // 3600s / 10s
+  const multiplicateurSage = sage && jaugeActive === "Mangeoire" ? 2 : 1;
+  const gainMontureParHeure = pointsParHeure * multiplicateurSage;
+  const coutEnclosParHeure = coutParPointTier != null ? coutParPointTier * pointsParHeure : null;
+  const coutParMontureParHeure = coutEnclosParHeure != null ? coutEnclosParHeure / Math.max(1, Number(nbMontures) || 1) : null;
+  const amplitudeStat = effet.plafond != null ? effet.plafond - effet.plancher : null;
+  const dureeRemplissageStat = amplitudeStat != null && gainMontureParHeure > 0 ? amplitudeStat / gainMontureParHeure : null;
+  const coutRemplissageStat = amplitudeStat != null && coutParPointTier != null ? amplitudeStat * coutParPointTier : null;
+  const niveauxMonture = PALIERS_NIVEAU_MONTURE.map((p) => ({
+    ...p,
+    dureeHeures: gainMontureParHeure > 0 ? p.xp / gainMontureParHeure : null,
+    cout: coutEnclosParHeure != null && gainMontureParHeure > 0 ? (p.xp / gainMontureParHeure) * coutEnclosParHeure : null,
+  }));
 
   const afficherStatut = (msg) => {
     setStatut(msg);
@@ -530,7 +638,7 @@ export function MangeoirePage({ userId, serveur }) {
     const entree = sauvegardes.find((s) => s.id === id);
     if (!entree) return;
     if (!confirm(`Charger « ${entree.nom} » ? Les prix actuellement affichés seront remplacés (les ingrédients ne bougent pas).`)) return;
-    setPrix(normaliserPrix(entree.prix));
+    setPrix(remapPrixVersNoms(entree.prix, structure));
     afficherStatut(`Sauvegarde « ${entree.nom} » chargée.`);
   };
 
@@ -562,6 +670,23 @@ export function MangeoirePage({ userId, serveur }) {
           Compare le coût des recettes de mangeoire selon leur coût total et leurs points, pour les 6 jauges
           et les 4 paliers de consommables. Les noms/quantités d'ingrédients sont fixes (recettes du jeu) et
           se sauvegardent automatiquement ; seuls les prix kamas changent selon le serveur ou le moment.
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          <button
+            className="btn btn-ghost"
+            style={vue === "rentabilite" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+            onClick={() => setVue("rentabilite")}
+          >
+            Rentabilité
+          </button>
+          <button
+            className="btn btn-ghost"
+            style={vue === "temps" ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+            onClick={() => setVue("temps")}
+          >
+            Rentabilité par heure & XP
+          </button>
         </div>
 
         {supabase && (
@@ -599,6 +724,8 @@ export function MangeoirePage({ userId, serveur }) {
           ))}
         </div>
 
+        {vue === "rentabilite" && (
+        <>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
           {PALIERS.map((p) => (
             <button
@@ -678,7 +805,7 @@ export function MangeoirePage({ userId, serveur }) {
                         style={{ textAlign: "right", opacity: verrouille ? 0.85 : 1, cursor: verrouille ? "default" : "text" }}
                       />
                       {sourcePrix === "perso" || !serveurNormalise ? (
-                        <input className="field champ-prix" type="number" min="0" step="1" aria-label={`Prix personnel de ${ing.nom}`} value={prix[ing.id] || 0} onChange={(e) => majIngredientPrix(ing.id, e.target.value)} style={{ textAlign: "right" }} />
+                        <input className="field champ-prix" type="number" min="0" step="1" aria-label={`Prix personnel de ${ing.nom}`} value={prix[ing.nom] || 0} onChange={(e) => majIngredientPrix(ing.nom, e.target.value)} style={{ textAlign: "right" }} />
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                           <span
@@ -690,8 +817,8 @@ export function MangeoirePage({ userId, serveur }) {
                             {communaute[ing.nom]
                               ? communaute[ing.nom].nb >= SEUIL_MIN_SOUMISSIONS_COMMUNAUTE
                                 ? `${formatKamas(communaute[ing.nom].median)} (${communaute[ing.nom].nb} avis)`
-                                : `perso : ${formatKamas(prix[ing.id] || 0)} (${communaute[ing.nom].nb}/${SEUIL_MIN_SOUMISSIONS_COMMUNAUTE} avis)`
-                              : `perso : ${formatKamas(prix[ing.id] || 0)}`}
+                                : `perso : ${formatKamas(prix[ing.nom] || 0)} (${communaute[ing.nom].nb}/${SEUIL_MIN_SOUMISSIONS_COMMUNAUTE} avis)`
+                              : `perso : ${formatKamas(prix[ing.nom] || 0)}`}
                           </span>
                           {userId && (
                             <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
@@ -727,7 +854,126 @@ export function MangeoirePage({ userId, serveur }) {
             );
           })}
         </div>
+        </>
+        )}
       </div>
+
+      {vue === "temps" && (
+      <div className="panel-card" style={{ marginTop: 16 }}>
+        <h2>Rentabilité par heure & XP réelle — {jaugeActive}</h2>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6, marginBottom: 14 }}>
+          {jaugeActive} agit sur la stat <b style={{ color: "var(--text)" }}>{effet.stat}</b> de la monture
+          {(jaugeActive === "Baffeur" || jaugeActive === "Caresseur") && <> ({effet.sens} la Sérénité)</>}.
+          {" "}Le gain d'une monture présente dans l'enclos n'est jamais partagé : chaque monture gagne le
+          plein montant, quel que soit le nombre de montures présentes.
+        </div>
+
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, marginBottom: 6 }}>Tier visé (maintenu en continu)</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[1, 2, 3, 4].map((t) => (
+                <button
+                  key={t}
+                  className="btn btn-ghost"
+                  style={t === tierVise ? { borderColor: "var(--cyan)", color: "var(--cyan)" } : undefined}
+                  onClick={() => setTierVise(t)}
+                >
+                  Tier {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label style={{ display: "grid", gap: 4, fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
+            Montures présentes dans l'enclos
+            <input
+              className="field"
+              type="number"
+              min="1"
+              step="1"
+              value={nbMontures}
+              onChange={(e) => setNbMontures(e.target.value)}
+              style={{ width: 160, textAlign: "right" }}
+            />
+          </label>
+          {jaugeActive === "Mangeoire" && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
+              <input type="checkbox" checked={sage} onChange={(e) => setSage(e.target.checked)} />
+              Monture "Sage" (x2 XP)
+            </label>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 10, marginBottom: 16 }}>
+          <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Gain / monture / heure</span>
+            <span style={{ fontWeight: 900, fontSize: 15 }}>{gainMontureParHeure.toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Coût enclos / heure</span>
+            <span style={{ fontWeight: 900, fontSize: 15 }}>{coutEnclosParHeure != null ? formatKamas(coutEnclosParHeure) : "—"}</span>
+          </div>
+          <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Coût / monture / heure</span>
+            <span style={{ fontWeight: 900, fontSize: 15 }}>{coutParMontureParHeure != null ? formatKamas(coutParMontureParHeure) : "—"}</span>
+          </div>
+          <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Temps de vidage de ce tier</span>
+            <span style={{ fontWeight: 900, fontSize: 15 }}>{formatDuree(DUREE_VIDAGE_TIER_SECONDES[tierVise])}</span>
+          </div>
+        </div>
+
+        {amplitudeStat != null && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 10, marginBottom: 16 }}>
+            <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+              <span style={{ color: "var(--muted)", fontSize: 11 }}>Temps pour remplir {effet.stat} (0 → plafond)</span>
+              <span style={{ fontWeight: 900, fontSize: 15 }}>{dureeRemplissageStat != null ? formatDuree(dureeRemplissageStat * 3600) : "—"}</span>
+            </div>
+            <div className="pill" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "10px 14px" }}>
+              <span style={{ color: "var(--muted)", fontSize: 11 }}>Coût total d'un remplissage complet</span>
+              <span style={{ fontWeight: 900, fontSize: 15 }}>{coutRemplissageStat != null ? formatKamas(coutRemplissageStat) : "—"}</span>
+              <span style={{ color: "var(--muted)", fontSize: 11 }}>Sert à toutes les montures présentes, indépendamment de leur nombre.</span>
+            </div>
+          </div>
+        )}
+
+        {jaugeActive === "Mangeoire" && (
+          <div style={{ overflowX: "auto", marginBottom: 16 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 420 }}>
+              <thead>
+                <tr>
+                  {["Niveau monture", "XP requis", "Temps", "Coût"].map((h) => (
+                    <th key={h} style={{ textAlign: h === "Niveau monture" ? "left" : "right", padding: "8px", borderBottom: "1px solid var(--line)", color: "var(--gold2)", fontSize: 12 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {niveauxMonture.map((n) => (
+                  <tr key={n.niveau}>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontWeight: 700 }}>Niveau {n.niveau}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{n.xp.toLocaleString("fr-FR")}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{n.dureeHeures != null ? formatDuree(n.dureeHeures * 3600) : "—"}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", textAlign: "right" }}>{n.cout != null ? formatKamas(n.cout) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {(jaugeActive === "Baffeur" || jaugeActive === "Caresseur") && (
+          <div style={{ fontSize: 12, color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 12, padding: 12 }}>
+            La Sérénité varie entre -5 000 et +5 000 et conditionne quelle stat peut être montée :
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              <li>Entre -5 000 et -1 (négative) : permet de monter l'Endurance.</li>
+              <li>Entre -2 000 et 2 000 (moyenne) : permet de monter la Maturité.</li>
+              <li>Entre 0 et 5 000 (positive) : permet de monter l'Amour.</li>
+            </ul>
+            Idéalement, garder la Sérénité proche de 0 (entre -2 000 et 2 000) pour ne jamais se retrouver bloqué à -5 000 ou +5 000.
+          </div>
+        )}
+      </div>
+      )}
 
       <div className="panel-card" style={{ marginTop: 16 }}>
         <h2>Classement — {jaugeActive}</h2>
