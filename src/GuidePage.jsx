@@ -69,6 +69,40 @@ export function GuidePage() {
         </p>
       </Section>
 
+      <Section titre="Génération cible et généalogie : comment lire vos pourcentages">
+        <p>
+          À l'écran d'accouplement, le jeu affiche un pourcentage de chance d'obtenir la{" "}
+          <b>génération cible</b> — la couleur la plus élevée que ce couple précis peut produire, en
+          combinant les deux parents et leurs ancêtres connus dans l'arbre généalogique. Ce pourcentage
+          suit une formule fixe : <b>30 % de base</b>, <b>+ 0,15 % par niveau cumulé des deux parents</b>,
+          et <b>+ 10 % si une Optimakina/Makina</b> est utilisée. Le reste (100 % moins la cible) se
+          répartit entre les couleurs de repli issues des ancêtres.
+        </p>
+        <p>
+          Trois règles qualitatives gouvernent cette répartition de repli : plus la génération d'une
+          couleur candidate est élevée, plus ses chances sont faibles ; un <b>parent pèse plus qu'un
+          grand-parent</b> dans l'arbre ; et une couleur <b>présente plusieurs fois</b> dans la
+          généalogie voit ses chances augmenter en conséquence.
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: 13 }}>
+          Exemple (Dragodinde) : une Pourpre (génération 5, niveau 200, sans ancêtre connu) accouplée à
+          une Émeraude (génération 9, niveau 1, ancêtres Ivoire et Turquoise / Ivoire et Pourpre) vise la
+          génération 10 (Émeraude et Pourpre). Base 30 % + 0,15 % × (200 + 1) = 30,15 %, puis + 10 % avec
+          Optimakina = 70,15 % de chance d'obtenir Émeraude et Pourpre. Le reste (29,85 %) se répartit
+          très majoritairement sur les couleurs des parents eux-mêmes (Pourpre, Émeraude) plutôt que sur
+          les grands-parents (Ivoire et Turquoise / Ivoire et Pourpre, génération 8), qui restent
+          marginaux.
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: 13 }}>
+          Exemple (Muldo) : un Pourpre (ancêtre connu : Corail) accouplé à un Doré et Indigo (ancêtres
+          connus : Doré, Indigo) offre deux combinaisons possibles vers la génération 10 — Corail et
+          Doré, ou Corail et Indigo — qui se partagent la probabilité cible à parts égales (15,15 %
+          chacune sur un total de 30,3 %). Ici, le Pourpre — présent deux fois dans les deux arbres
+          combinés — a nettement plus de chances d'apparaître en repli que le Doré ou l'Indigo, qui
+          n'apparaissent qu'une seule fois chacun malgré une génération comparable.
+        </p>
+      </Section>
+
       <Section titre="Utiliser le GPS d'accouplements">
         <p>
           Le GPS optimise l'organisation d'une session d'accouplements : il propose un objectif de

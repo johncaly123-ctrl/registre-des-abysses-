@@ -5,7 +5,7 @@
 //
 // distanceLevenshtein/affectationMaximale viennent de geneticsUtils.js, déjà
 // partagé avec Dragodinde.jsx/Volkorne.jsx (pas de copie locale ici).
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique } from "./geneticsUtils.js";
 export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres };
 
 // ---------- constantes de design ----------
@@ -391,6 +391,11 @@ export const GENERATIONS_MULDO = {
   9: ["Ambre", "Corail", "Azur", "Aigue-marine"],
   10: GENERATION_10_MULDO,
 };
+
+// Exception de poids pour repartitionProbabilitesAccouplement (formule
+// vérifiée 7/7 le 2026-08-01) : ces monocolores génération 9 ont un poids
+// de 2 au lieu de 9, comme les monocolores bicolores classiques.
+export const COULEURS_POIDS_FAIBLE_MULDO = ["Ambre", "Corail", "Azur", "Aigue-marine"];
 
 
 export function couleursGenerationJusqua(generation) {
@@ -1044,6 +1049,10 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
     niveauB: Math.max(femelle.niveau || 0, niveauMinimum),
     optimakina,
   });
+  const repartitionCouleurs = repartitionProbabilitesAccouplement(
+    male, femelle, byId, generationDeCouleur, combinerCouleursMuldo,
+    generationCible, chanceGenerationCible, COULEURS_POIDS_FAIBLE_MULDO
+  );
 
   return {
     score,
@@ -1056,6 +1065,7 @@ export function scoreCoupleObjectif(male, femelle, objectif, distances, purifica
     chanceGenerationCible,
     couleursGenerationCible: couleursCible,
     couleursAutresGenerationCible: couleursAutres,
+    repartitionCouleurs,
   };
 }
 

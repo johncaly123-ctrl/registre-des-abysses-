@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculerGenerationCible, bonusProbabiliteGenerationCible, couleursCandidatesAccouplement } from "./geneticsUtils.js";
+import { calculerGenerationCible, bonusProbabiliteGenerationCible, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement } from "./geneticsUtils.js";
 
 // Table de générations synthétique, indépendante de toute vraie créature —
 // on teste ici uniquement l'algorithme générique de génération cible.
@@ -150,5 +150,62 @@ describe("couleursCandidatesAccouplement", () => {
     );
     expect(couleursAutres).toContain("Ébène et Indigo");
     expect(couleursCible).not.toContain("Ébène et Indigo");
+  });
+});
+
+describe("repartitionProbabilitesAccouplement", () => {
+  // Formule postée par un joueur (non officielle), vérifiée exactement le
+  // 2026-08-01 contre 7 captures réelles en jeu (44 points de données,
+  // écart max 0.008 point de %). Les 2 cas ci-dessous reprennent 2 de ces
+  // captures telles quelles (mêmes couples que les tests
+  // couleursCandidatesAccouplement ci-dessus, mêmes % cible connus).
+  const GEN = {
+    1: ["Ébène", "Pourpre", "Orchidée", "Indigo"],
+    2: ["Ébène et Pourpre", "Ébène et Orchidée", "Ébène et Indigo", "Orchidée et Pourpre", "Indigo et Orchidée"],
+    3: ["Roux", "Amande"],
+    4: ["Roux et Pourpre", "Roux et Amande", "Roux et Indigo", "Ébène et Amande", "Indigo et Amande", "Roux et Ébène", "Orchidée et Amande"],
+  };
+  const generationDeCouleurTest = (c) => {
+    for (const [gen, couleurs] of Object.entries(GEN)) if (couleurs.includes(c)) return Number(gen);
+    return 1;
+  };
+  const combiner = (ca, cb) => {
+    if (!ca || !cb || ca === cb) return null;
+    const nom1 = `${ca} et ${cb}`, nom2 = `${cb} et ${ca}`;
+    for (const couleurs of Object.values(GEN)) {
+      if (couleurs.includes(nom1)) return nom1;
+      if (couleurs.includes(nom2)) return nom2;
+    }
+    return null;
+  };
+
+  it("couple sans généalogie connue : 47.25% sur le combo, 26.38%/26.38% en repli", () => {
+    const a = { couleur: "Ébène", parentIds: [] };
+    const b = { couleur: "Pourpre", parentIds: [] };
+    const repartition = repartitionProbabilitesAccouplement(a, b, {}, generationDeCouleurTest, combiner, 2, 47.25);
+    expect(repartition["Ébène et Pourpre"]).toBeCloseTo(47.25, 1);
+    expect(repartition["Ébène"]).toBeCloseTo(26.38, 1);
+    expect(repartition["Pourpre"]).toBeCloseTo(26.38, 1);
+  });
+
+  it("ancêtres connus des deux côtés (5 candidats cible + 1 combo croisé en Autres)", () => {
+    const amande = { id: "am", couleur: "Amande", parentIds: [] };
+    const indigo = { id: "in", couleur: "Indigo", parentIds: [] };
+    const femelle = { id: "f", couleur: "Indigo et Amande", parentIds: ["am", "in"] };
+    const roux = { id: "ro", couleur: "Roux", parentIds: [] };
+    const ebene = { id: "eb", couleur: "Ébène", parentIds: [] };
+    const male = { id: "mm", couleur: "Roux et Pourpre", parentIds: ["ro", "eb"] };
+    const byId = { am: amande, in: indigo, f: femelle, ro: roux, eb: ebene, mm: male };
+    const repartition = repartitionProbabilitesAccouplement(male, femelle, byId, generationDeCouleurTest, combiner, 4, 44.85);
+    expect(repartition["Roux et Pourpre"]).toBeCloseTo(8.28, 1);
+    expect(repartition["Indigo et Amande"]).toBeCloseTo(8.28, 1);
+    expect(repartition["Roux et Amande"]).toBeCloseTo(9.43, 1);
+    expect(repartition["Roux et Indigo"]).toBeCloseTo(9.43, 1);
+    expect(repartition["Ébène et Amande"]).toBeCloseTo(9.43, 1);
+    expect(repartition["Roux"]).toBeCloseTo(12.47, 1);
+    expect(repartition["Amande"]).toBeCloseTo(12.47, 1);
+    expect(repartition["Indigo"]).toBeCloseTo(12.47, 1);
+    expect(repartition["Ébène"]).toBeCloseTo(12.47, 1);
+    expect(repartition["Ébène et Indigo"]).toBeCloseTo(5.26, 1);
   });
 });

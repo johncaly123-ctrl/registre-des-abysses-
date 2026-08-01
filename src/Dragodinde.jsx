@@ -6,7 +6,7 @@
 // ============================================================
 import { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
+import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
 import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
@@ -27,6 +27,12 @@ const MONOCOLORES_DRAGODINDE_PAR_GENERATION = {
   7: ["Ivoire", "Turquoise"],
   9: ["Émeraude", "Prune"],
 };
+
+// Exception de poids pour repartitionProbabilitesAccouplement (formule
+// vérifiée 7/7 sur des captures muldo le 2026-08-01, exception dragodinde
+// citée telle quelle par le joueur qui a posté la formule) : la Dorée a un
+// poids de 2 au lieu de 9, malgré sa génération impaire (monocolore).
+export const COULEURS_POIDS_FAIBLE_DRAGODINDE = ["Dorée"];
 
 // Règle vérifiée sur les données confirmées (ex. "Dorée et Ivoire" = génération
 // 8 = max(1,7)+1 ; les 7 bicolores de génération 4 connus correspondent tous à
@@ -387,11 +393,16 @@ function scoreCoupleObjectifDragodinde(male, femelle, objectif, distances, purif
   const generationBase = Math.max(generationDeCouleurDragodinde(male.couleur), generationDeCouleurDragodinde(femelle.couleur));
   score += (generationCible - generationBase) * 15;
   const chanceGenerationCible = bonusProbabiliteGenerationCible({ niveauA: Math.max(male.niveau || 0, niveauMinimum), niveauB: Math.max(femelle.niveau || 0, niveauMinimum), optimakina });
+  const repartitionCouleurs = repartitionProbabilitesAccouplement(
+    male, femelle, byId, generationDeCouleurDragodinde, combinerCouleursDragodinde,
+    generationCible, chanceGenerationCible, COULEURS_POIDS_FAIBLE_DRAGODINDE
+  );
   return {
     score, raison, resultat: meilleurResultat, distance: meilleureDistance, chemin,
     generationCible, viaAncetre: generationCible > generationBase, chanceGenerationCible,
     couleursGenerationCible: couleursCible,
     couleursAutresGenerationCible: couleursAutres,
+    repartitionCouleurs,
   };
 }
 function optimiserSessionAccouplementsDragodinde(cheptel, objectif, purification = false, optimakina = false, niveauMinimum = 0) {
@@ -629,6 +640,26 @@ export function DragodindeDetail({ m, byId, onPatch, onDelete }) {
               </label>
             );
           })}
+        </div>
+      </div>
+      <div className="panel-card" style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "var(--gold)", marginBottom: 10, fontWeight: 900 }}>Généalogie</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <LabeledSelect
+            label="Père"
+            value={m.parentIds?.[0] || ""}
+            options={[["", "Inconnu / sauvage"], ...Object.values(byId).filter((c) => c.id !== m.id && sexeDragodinde(c) === "M").map((c) => [c.id, c.nom || c.couleur])]}
+            onChange={(v) => onPatch({ parentIds: [v || null, m.parentIds?.[1] || null] })}
+          />
+          <LabeledSelect
+            label="Mère"
+            value={m.parentIds?.[1] || ""}
+            options={[["", "Inconnue / sauvage"], ...Object.values(byId).filter((c) => c.id !== m.id && sexeDragodinde(c) === "F").map((c) => [c.id, c.nom || c.couleur])]}
+            onChange={(v) => onPatch({ parentIds: [m.parentIds?.[0] || null, v || null] })}
+          />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
+          Renseigner les parents améliore la précision de la génération cible et des probabilités affichées dans le GPS.
         </div>
       </div>
       <div style={{ marginTop: 12, padding: 10, borderRadius: 10, border: `1px solid ${action.color}`, background: "rgba(0,0,0,.12)" }}>

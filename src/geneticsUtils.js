@@ -181,6 +181,72 @@ export function couleursCandidatesAccouplement(a, b, byId, generationDeCouleurFn
   return { generationCible, couleursCible, couleursAutres };
 }
 
+// Répartit le %-cible total (bonusProbabiliteGenerationCible) et son
+// complément entre les couleurs candidates individuelles — formule postée
+// par un joueur (non officielle, mais vérifiée exactement contre 7 captures
+// réelles, 44 points de données, écart max 0.008 point de %). Poids de
+// base d'une couleur : 9 si monocolore (génération impaire), 2 si bicolore
+// (génération paire), sauf exceptions listées dans couleursPoidsFaible
+// (poids 2 malgré une génération impaire — ex. Muldo génération 9,
+// Dragodinde "Dorée"). Poids d'une entrée dans l'arbre = poids de base ×5
+// si c'est la couleur du parent direct, ×3 si c'est un ancêtre connu
+// (grand-parent). On énumère TOUTES les paires (entrée pool père × entrée
+// pool mère) ; chaque paire ajoute son poids au total de CHACUN de ses deux
+// membres, et en plus, si les deux couleurs diffèrent et qu'un croisement
+// existe, au total de la couleur résultante (un poids de paire peut donc
+// nourrir jusqu'à 3 totaux). generationCible/chanceGenerationCible sont
+// reçus en paramètres (déjà calculés par couleursCandidatesAccouplement /
+// bonusProbabiliteGenerationCible) plutôt que recalculés ici, pour ne
+// jamais diverger de ces deux fonctions déjà solides.
+export function repartitionProbabilitesAccouplement(
+  a, b, byId, generationDeCouleurFn, combinerCouleursFn,
+  generationCible, chanceGenerationCible, couleursPoidsFaible = []
+) {
+  const poolCote = (muldo) => {
+    const pool = [];
+    if (muldo?.couleur) pool.push({ couleur: muldo.couleur, profondeur: 0 });
+    (muldo?.parentIds || []).forEach((id) => {
+      const parent = byId?.[id];
+      if (parent?.couleur) pool.push({ couleur: parent.couleur, profondeur: 1 });
+    });
+    return pool;
+  };
+  const poidsBase = (couleur) =>
+    couleursPoidsFaible.includes(couleur) ? 2 : (generationDeCouleurFn(couleur) % 2 === 1 ? 9 : 2);
+  const poidsEntree = (e) => poidsBase(e.couleur) * (e.profondeur === 0 ? 5 : 3);
+
+  const poidsParCouleur = new Map();
+  const ajouter = (couleur, poids) => poidsParCouleur.set(couleur, (poidsParCouleur.get(couleur) || 0) + poids);
+
+  poolCote(a).forEach((eA) => {
+    poolCote(b).forEach((eB) => {
+      const poids = poidsEntree(eA) * poidsEntree(eB);
+      ajouter(eA.couleur, poids);
+      ajouter(eB.couleur, poids);
+      if (eA.couleur !== eB.couleur) {
+        const combo = combinerCouleursFn(eA.couleur, eB.couleur);
+        if (combo) ajouter(combo, poids);
+      }
+    });
+  });
+
+  let totalCible = 0;
+  let totalAutres = 0;
+  poidsParCouleur.forEach((poids, couleur) => {
+    if (generationDeCouleurFn(couleur) === generationCible) totalCible += poids; else totalAutres += poids;
+  });
+
+  const repartition = {};
+  poidsParCouleur.forEach((poids, couleur) => {
+    const estCible = generationDeCouleurFn(couleur) === generationCible;
+    const part = estCible
+      ? (totalCible > 0 ? (chanceGenerationCible / 100) * (poids / totalCible) : 0)
+      : (totalAutres > 0 ? (1 - chanceGenerationCible / 100) * (poids / totalAutres) : 0);
+    repartition[couleur] = Math.round(part * 10000) / 100;
+  });
+  return repartition;
+}
+
 // Bonus de chance d'obtenir la génération cible : reverifie in-game sur 6
 // accouplements (2026-07-25, captures avec % affiché) — base 30% toujours,
 // + 0.15% par niveau cumulé des deux parents, + 10% avec une Optimakina.

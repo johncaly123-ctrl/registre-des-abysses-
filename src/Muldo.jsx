@@ -1212,8 +1212,6 @@ export function FicheRapideModal({ muldo, byId, onPatch, onDelete, onClose }) {
 
 export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
   const readiness = readinessScore(muldo);
-  const pere = muldo.parentIds?.[0] ? byId[muldo.parentIds[0]] : null;
-  const mere = muldo.parentIds?.[1] ? byId[muldo.parentIds[1]] : null;
 
   const partners = geneticPartners(
     muldo,
@@ -1345,11 +1343,22 @@ export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: COLORS.glow, marginBottom: 10, fontFamily: "Inter, sans-serif", fontWeight: 700 }}>
           Généalogie
         </div>
-        <div style={{ fontSize: 12.5, fontFamily: "Inter, sans-serif", color: COLORS.text }}>
-          Père : {pere ? pere.nom : "inconnu / sauvage"} · Mère : {mere ? mere.nom : "inconnu / sauvage"}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <LabeledSelect
+            label="Père"
+            value={muldo.parentIds?.[0] || ""}
+            options={[["", "Inconnu / sauvage"], ...Object.values(byId).filter((c) => c.id !== muldo.id && sexeMuldo(c) === "M").map((c) => [c.id, c.nom])]}
+            onChange={(v) => onPatch({ parentIds: [v || null, muldo.parentIds?.[1] || null] })}
+          />
+          <LabeledSelect
+            label="Mère"
+            value={muldo.parentIds?.[1] || ""}
+            options={[["", "Inconnue / sauvage"], ...Object.values(byId).filter((c) => c.id !== muldo.id && sexeMuldo(c) === "F").map((c) => [c.id, c.nom])]}
+            onChange={(v) => onPatch({ parentIds: [muldo.parentIds?.[0] || null, v || null] })}
+          />
         </div>
-        <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 4 }}>
-          Renseigner les parents permet d'éviter les collisions génétiques (consanguinité) lors des suggestions d'accouplement.
+        <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 8 }}>
+          Renseigner les parents permet d'éviter les collisions génétiques (consanguinité) lors des suggestions d'accouplement, et améliore la précision de la génération cible et des probabilités affichées dans le GPS.
         </div>
 
       </div>

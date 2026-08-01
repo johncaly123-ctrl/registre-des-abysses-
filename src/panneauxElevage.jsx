@@ -757,6 +757,15 @@ export function SimulateurChanceGenerationPanel() {
   );
 }
 
+// Formate une liste de couleurs avec, quand connu, leur % de chance
+// individuel (repartitionCouleurs, voir repartitionProbabilitesAccouplement
+// dans geneticsUtils.js) entre parenthèses juste après le nom.
+function avecPourcentages(couleurs, repartition) {
+  return (couleurs || [])
+    .map((c) => `${c}${repartition?.[c] != null ? ` (${repartition[c]}%)` : ""}`)
+    .join(", ");
+}
+
 // ---------- Page GPS (objectif intelligent + session + plan d'accouplement) ----------
 // Générique : reçoit tout ce qui dépend de la créature (couleurs, badge,
 // fonctions de génération/canonicalisation, table des générations, libellés)
@@ -1384,12 +1393,12 @@ export function GpsDofusPage({
                 <div style={{ marginTop: 4 }}>
                   🎯 Génération cible : G{g.generationCible} (~{g.chanceGenerationCible}% de chance)
                   <br />
-                  couleurs possibles : {(g.couleursGenerationCible || []).join(", ") || "—"}
+                  couleurs possibles : {avecPourcentages(g.couleursGenerationCible, g.repartitionCouleurs) || "—"}
                   {g.couleursAutresGenerationCible?.length > 0 && (
                     <>
                       <br />
                       <span style={{ opacity: 0.75 }}>
-                        sinon (repli) : {g.couleursAutresGenerationCible.join(", ")}
+                        sinon (repli) : {avecPourcentages(g.couleursAutresGenerationCible, g.repartitionCouleurs)}
                       </span>
                     </>
                   )}
