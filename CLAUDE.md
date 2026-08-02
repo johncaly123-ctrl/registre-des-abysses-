@@ -75,16 +75,24 @@ list before merging into the herd (`SynchronisationFiltresPage`).
 ### Ailes de soutien (support wings)
 
 A cosmetic tier system rewarding donations, independent of gameplay data:
-- 5 tiers mapped 1:1 to donation amounts in `MONTANTS_NIVEAUX = [5, 8, 12, 16, 20]` (€), each with a
-  French title per style in `NOMS_NIVEAUX_AILES` (`or`: Éclat Naissant → Apogée Céleste; `abysses`:
-  Murmure des Ombres → Seigneur Abyssal).
-- 2 visual styles, `or` and `abysses`, selectable independently of tier.
-- Rendering cascades: `AileNiveau` / `DemiAile` first try a static image at `public/ailes/{style}-{tier}.png`
-  (and `-gauche`/`-droite` half-wing variants for framing a pseudo), falling back to `AileSvg`, a
-  hand-drawn SVG that adds more detail/glow per tier (2: veins/extra feathers, 3: bone
-  structure/gilding, 4: spikes/halo + shimmer animation, 5: full apotheosis). Drop artwork into
-  `public/ailes/` (see `public/ailes/LISEZMOI.txt`) to replace the SVGs; do not use extracted
-  in-game assets in anything published (they're Ankama property).
+- 3 tiers (`NIVEAU_MAX_AILES` in `src/App.jsx`) mapped 1:1 to donation amounts in
+  `MONTANTS_NIVEAUX = [5, 12, 20]` (€), each with a French title per style in `NOMS_NIVEAUX_AILES`
+  (`dragodinde`: Envol Naissant → Majesté Solaire; `muldo`: Sang Neuf → Légende Vivante; `volkorne`:
+  Braise Naissante → Apocalypse Vivante).
+- 3 visual styles — `dragodinde`, `muldo`, `volkorne` — each themed on one of the app's creatures,
+  selectable independently of tier, gated only by donation tier (the earlier `muldo`-only
+  generation-success gate, `tierAilesMuldo`, was dropped 2026-08-01 for consistency across all three).
+- The SVG/image assets and their progressive detail levels were designed for 5 tiers before the
+  donation tiers were trimmed to 3; rather than redraw art, `VISUEL_PAR_NIVEAU = [1, 3, 5]` maps
+  official tier 1/2/3 onto the original visual levels 1/3/5, so tiers 2 and 4's assets stay on disk
+  unused. Keep this in mind before assuming a `{style}-N.png` file (N 1-5) is reachable from the UI.
+- Rendering cascades: `AileNiveau` / `DemiAile` first try a static image at
+  `public/ailes/{style}-{visualTier}.png` (and `-gauche`/`-droite` half-wing variants for framing a
+  pseudo), falling back to `AileSvg`, a hand-drawn SVG that adds more detail/glow per visual level (2:
+  veins/extra feathers, 3: bone structure/gilding, 4: spikes/halo + shimmer animation, 5: full
+  apotheosis) — since only 1/3/5 are ever requested, tiers 2 and 4 of the SVG cascade are dead code
+  paths too. Drop artwork into `public/ailes/` (see `public/ailes/LISEZMOI.txt`) to replace the SVGs;
+  do not use extracted in-game assets in anything published (they're Ankama property).
 - `PseudoAvecAiles` wraps a username with `DemiAile`s and a gradient-text ornament when the user has
   `soutien` — used throughout the Taverne (forum) to show off supporter status.
 - Two parallel sources of truth: a local, unauthenticated preview (`profil.soutien` /

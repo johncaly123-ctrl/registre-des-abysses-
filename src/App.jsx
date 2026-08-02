@@ -6,7 +6,7 @@ import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
 import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
 import { OnboardingOverlay, ETAPES_ONBOARDING_GPS, ETAPES_ONBOARDING_SITE } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
-import { supabaseEstConfigure, LIEN_DON, LIENS_DON_STRIPE, LIEN_DISCORD } from "./configSupabase.js";
+import { supabaseEstConfigure, LIEN_DON, LIEN_DISCORD } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2, X } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelOverviewPage, DragodindeCheptelCards, DragodindeDetail, DragodindeBadge, NewDragodindeModal,
@@ -37,7 +37,6 @@ import {
   cleCoupleCouleurs,
   RESULTATS_PAR_COUPLE,
   plusHauteGenerationValidee,
-  tierAilesMuldo,
 } from "./muldoGenetique.js";
 
 
@@ -1691,8 +1690,34 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   const [nouveauMdp, setNouveauMdp] = useState("");
   const [info, setInfo] = useState("");
   const [erreur, setErreur] = useState("");
+  const [donsCumules, setDonsCumules] = useState(0);
+  const [chargementDon, setChargementDon] = useState(0); // palier en cours de paiement, 0 = aucun
 
   useEffect(() => { setDescription(profil?.description || ""); }, [profil]);
+
+  useEffect(() => {
+    if (!session) return;
+    supabase.from("dons").select("montant_euros").eq("profil_id", session.user.id).then(({ data }) => {
+      setDonsCumules((data || []).reduce((total, d) => total + Number(d.montant_euros), 0));
+    });
+  }, [session]);
+
+  // Facture uniquement la différence jusqu'au palier visé (voir
+  // supabase/functions/creer-session-don) : ouvre la session Stripe dans un
+  // nouvel onglet, le webhook attribue le palier dès le paiement confirmé.
+  const donnerPourPalier = async (n) => {
+    setErreur(""); setInfo(""); setChargementDon(n);
+    try {
+      const { data, error } = await supabase.functions.invoke("creer-session-don", {
+        body: { palier: n, retourUrl: window.location.href },
+      });
+      if (error) { setErreur("Paiement indisponible pour le moment : " + error.message); return; }
+      if (data?.url) window.open(data.url, "_blank", "noopener");
+      else if (data?.message) setInfo(data.message);
+    } finally {
+      setChargementDon(0);
+    }
+  };
 
   const patcher = async (patch, message) => {
     setErreur(""); setInfo("");
@@ -1709,13 +1734,11 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   };
 
   const configManquante = !supabaseEstConfigure() || !supabase;
-  // "muldo" est conditionné au succès de génération (déjà réellement suivi
-  // dans l'appli) en plus du don ; "dragodinde"/"volkorne" ne dépendent pour
-  // l'instant que du palier de don, faute de suivi d'élevage pour ces
-  // montures — à resserrer plus tard quand ces pages existeront.
-  const tierMuldo = profil ? tierAilesMuldo(profil.niveau_ailes, profil.succes_generation_muldo) : 0;
-  const tierDon = profil ? Math.max(0, Math.min(5, Number(profil.niveau_ailes) || 0)) : 0;
-  const tiersParStyle = { dragodinde: tierDon, muldo: tierMuldo, volkorne: tierDon };
+  // Les 3 styles d'ailes ne dépendent que du palier de don — plus de
+  // condition de génération validée pour muldo (abandonné, uniformise avec
+  // dragodinde/volkorne qui n'ont jamais eu cette contrainte).
+  const tierDon = profil ? Math.max(0, Math.min(NIVEAU_MAX_AILES, Number(profil.niveau_ailes) || 0)) : 0;
+  const tiersParStyle = { dragodinde: tierDon, muldo: tierDon, volkorne: tierDon };
   const niveauEffectif = profil ? (tiersParStyle[profil.style_ailes] ?? tierDon) : 0;
 
   return (
@@ -1769,11 +1792,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                       className="btn btn-ghost"
                       disabled={verrouille}
                       style={actif ? { borderColor: "var(--gold)", color: "var(--gold2)" } : verrouille ? { opacity: .5 } : undefined}
-                      title={verrouille ? (
-                        style === "muldo"
-                          ? `Débloqué à partir de la génération 2 validée (page Succès) et d'un don palier 1 — actuellement génération ${profil.succes_generation_muldo || 0} validée`
-                          : "Débloqué à partir du palier de don 1"
-                      ) : undefined}
+                      title={verrouille ? "Débloqué à partir du palier de don 1" : undefined}
                       onClick={() => !verrouille && patcher({ style_ailes: style }, `Ailes ${label} équipées.`)}
                     >
                       <AileNiveau style={style} taille={36} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
@@ -1781,12 +1800,6 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                   );
                 })}
               </div>
-              {tierMuldo < 1 && (
-                <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
-                  Ailes muldo : débloquées par palier de don ET par succès de génération (palier × 2). Génération actuellement
-                  validée : <b>{profil.succes_generation_muldo || 0}</b> — valide plus de générations dans la page Succès pour progresser.
-                </div>
-              )}
             </div>
 
             <div style={{ marginTop: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -1805,8 +1818,8 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                   : <>Le Registre est gratuit — les soutiens gagnent leurs ailes, visibles dans toute la Taverne.</>}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 10 }}>
-                {[1,2,3,4,5].map((n) => (
-                  <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === profil.niveau_ailes ? "var(--gold)" : "var(--line)"}`, background: n === profil.niveau_ailes ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
+                {[1,2,3].map((n) => (
+                  <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === tierDon ? "var(--gold)" : "var(--line)"}`, background: n === tierDon ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 3 }}>
                       <AileNiveau style="dragodinde" miroir taille={32} niveau={n} />
                       <AileNiveau style="muldo" taille={32} niveau={n} />
@@ -1816,39 +1829,36 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                   </div>
                 ))}
               </div>
-              {LIENS_DON_STRIPE.some(Boolean) && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 6 }}>
-                    Palier attribué automatiquement dès le paiement confirmé :
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {LIENS_DON_STRIPE.map((lien, i) => {
-                      const n = i + 1;
-                      if (!lien) return null;
-                      const url = `${lien}${lien.includes("?") ? "&" : "?"}client_reference_id=${encodeURIComponent(session.user.id)}`;
-                      return (
-                        <a
-                          key={n}
-                          className="btn btn-coral"
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ textDecoration: "none", display: "inline-flex" }}
-                        >
-                          💳 {montantPourNiveau(n)} €
-                        </a>
-                      );
-                    })}
-                  </div>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 6 }}>
+                  Palier attribué automatiquement dès le paiement confirmé — chaque bouton ne facture
+                  que le complément si tu as déjà donné{donsCumules > 0 ? ` (${donsCumules} € cumulés)` : ""} :
                 </div>
-              )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {[1, 2, 3].map((n) => {
+                    const montantCible = montantPourNiveau(n);
+                    const atteint = donsCumules >= montantCible;
+                    const reste = Math.max(Math.round((montantCible - donsCumules) * 100) / 100, 0);
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        className="btn btn-coral"
+                        disabled={atteint || chargementDon === n}
+                        style={atteint ? { opacity: .5 } : undefined}
+                        onClick={() => donnerPourPalier(n)}
+                      >
+                        {atteint ? `✓ palier ${n} atteint` : chargementDon === n ? "…" : `💳 ${reste} € (palier ${n})`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {LIEN_DON && (
                 <a className="btn btn-ghost" href={LIEN_DON} target="_blank" rel="noreferrer" style={{ marginTop: 12, textDecoration: "none", display: "inline-flex" }}>💛 Don manuel (PayPal)</a>
               )}
               <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 8 }}>
-                {LIENS_DON_STRIPE.some(Boolean)
-                  ? "Les boutons ci-dessus attribuent le palier automatiquement. Le don PayPal reste manuel : indique ton pseudo dans le message, attribution sous quelques jours."
-                  : "Indique ton pseudo dans le message du don : les ailes sont attribuées manuellement (Stripe automatisera ça plus tard)."}
+                Les boutons ci-dessus attribuent le palier automatiquement. Le don PayPal reste manuel : indique ton pseudo dans le message, attribution sous quelques jours.
               </div>
             </div>
           </div>
@@ -2128,16 +2138,13 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
   const AuteurAile = ({ id, taille = 16 }) => {
     const p = profilsParId[id];
     if (!p) return <span style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)" }}>Éleveur</span>;
-    const niveauEffectif = p.style_ailes === "muldo"
-      ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo)
-      : p.niveau_ailes;
     return (
       <span
         title={p.description || undefined}
         onClick={(e) => { e.stopPropagation(); setProfilPublicId(id); }}
         style={{ cursor: "pointer" }}
       >
-        <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={taille} />
+        <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={taille} />
       </span>
     );
   };
@@ -2362,14 +2369,11 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
 }
 
 function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePrive }) {
-  const niveauEffectif = profil.style_ailes === "muldo"
-    ? tierAilesMuldo(profil.niveau_ailes, profil.succes_generation_muldo)
-    : profil.niveau_ailes;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(360px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={32} />
+          <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={profil.niveau_ailes} taille={32} />
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕</button>
         </div>
         {profil.description && <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 14 }}>{profil.description}</div>}
@@ -2404,7 +2408,6 @@ function ClassementModal({ classement, onOuvrirProfil, onClose }) {
           <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>Personne au classement pour l'instant.</div>
         )}
         {classement.map((p, i) => {
-          const niveauEffectif = p.style_ailes === "muldo" ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo) : p.niveau_ailes;
           return (
             <div
               key={p.id}
@@ -2414,7 +2417,7 @@ function ClassementModal({ classement, onOuvrirProfil, onClose }) {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 <span style={{ width: 26, textAlign: "center", fontWeight: 800, color: "var(--gold2)" }}>{MEDAILLES[i] || i + 1}</span>
-                <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={20} />
+                <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={20} />
               </div>
               <div style={{ display: "flex", gap: 14, color: "var(--muted)", fontSize: 12, flex: "0 0 auto" }}>
                 <span title="Muldo">🐴 G<b style={{ color: "var(--text)" }}>{p.succes_generation_muldo || 0}</b> · <b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_muldo || 0}</b></span>
@@ -2444,7 +2447,7 @@ function BoiteReceptionModal({ conversations, profilsParId, onOuvrir, onClose })
         )}
         {conversations.map((c) => {
           const p = profilsParId[c.id];
-          const niveauEffectif = p ? (p.style_ailes === "muldo" ? tierAilesMuldo(p.niveau_ailes, p.succes_generation_muldo) : p.niveau_ailes) : 0;
+          const niveauEffectif = p?.niveau_ailes || 0;
           return (
             <div
               key={c.id}
@@ -2468,7 +2471,7 @@ function BoiteReceptionModal({ conversations, profilsParId, onOuvrir, onClose })
 function MessagesPrivesModal({ session, messages, profilCible, saisie, setSaisie, onEnvoyer, onClose, onOuvrirProfil }) {
   const finRef = React.useRef(null);
   useEffect(() => { finRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
-  const niveauEffectif = profilCible ? (profilCible.style_ailes === "muldo" ? tierAilesMuldo(profilCible.niveau_ailes, profilCible.succes_generation_muldo) : profilCible.niveau_ailes) : 0;
+  const niveauEffectif = profilCible?.niveau_ailes || 0;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", maxHeight: "80vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
@@ -2517,13 +2520,24 @@ function MessagesPrivesModal({ session, messages, profilCible, saisie, setSaisie
 // ---------- Cosmétiques de soutien ----------
 // Trois styles d'ailes au choix pour les soutiens du projet, chacun sur le
 // thème d'une monture Dofus : "dragodinde" (plumes dorées), "muldo" (voiles
-// bleu-turquoise, débloquées par succès de génération en plus du don — voir
-// tierAilesMuldo) et "volkorne" (griffes/flammes sombres).
+// bleu-turquoise), "volkorne" (griffes/flammes sombres) — les 3 débloquées
+// uniquement par le palier de don, aucune condition de génération.
 const NOMS_NIVEAUX_AILES = {
-  dragodinde: ["Envol Naissant", "Plume Dorée", "Grâce Ailée", "Splendeur Céleste", "Majesté Solaire"],
-  muldo: ["Sang Neuf", "Robe Affirmée", "Instinct du Troupeau", "Sagesse du Cheptel", "Légende Vivante"],
-  volkorne: ["Braise Naissante", "Griffe Ardente", "Fureur Cornue", "Rugissement Infernal", "Apocalypse Vivante"],
+  dragodinde: ["Envol Naissant", "Grâce Ailée", "Majesté Solaire"],
+  muldo: ["Sang Neuf", "Instinct du Troupeau", "Légende Vivante"],
+  volkorne: ["Braise Naissante", "Fureur Cornue", "Apocalypse Vivante"],
 };
+// Nombre de paliers de don réellement vendus (voir MONTANTS_NIVEAUX). Les
+// dessins/images d'ailes existent en interne sur une échelle 1-5 (voir
+// VISUEL_PAR_NIVEAU) : ce palier officiel n'en affiche que 3 (l'entrée, le
+// milieu, le sommet) pour ne pas multiplier les paliers vendus.
+const NIVEAU_MAX_AILES = 3;
+// Palier de don (1-3) -> "niveau visuel" (1-5) sur lequel sont calibrés les
+// dessins SVG et les images public/ailes/{style}-{n}.png : on réutilise tels
+// quels les visuels du 1er, 3e et 5e niveau plutôt que d'en redessiner 3
+// nouveaux, donc les fichiers -2 et -4 restent sur disque mais ne sont plus
+// jamais atteints.
+const VISUEL_PAR_NIVEAU = [1, 3, 5];
 
 // Teinte de la lueur (drop-shadow) autour des images PNG, par style.
 const HALO_AILES = {
@@ -2533,7 +2547,7 @@ const HALO_AILES = {
 };
 
 function nomNiveauAiles(style, niveau) {
-  const n = Math.max(1, Math.min(5, Number(niveau) || 1));
+  const n = Math.max(1, Math.min(NIVEAU_MAX_AILES, Number(niveau) || 1));
   return (NOMS_NIVEAUX_AILES[style] || NOMS_NIVEAUX_AILES.muldo)[n - 1] || "";
 }
 
@@ -2542,7 +2556,7 @@ function nomNiveauAiles(style, niveau) {
 // relais.
 function AileNiveau({ style = "muldo", miroir = false, taille = 22, niveau = 1 }) {
   const [imageKo, setImageKo] = useState(false);
-  const n = Math.max(1, Math.min(5, Number(niveau) || 1));
+  const n = VISUEL_PAR_NIVEAU[Math.max(1, Math.min(NIVEAU_MAX_AILES, Number(niveau) || 1)) - 1];
   if (!imageKo) {
     // Les images fournies sont des PAIRES complètes (aile gauche + droite) à
     // fond transparent : on les affiche telles quelles, sans miroir ni blend.
@@ -2565,7 +2579,7 @@ function AileNiveau({ style = "muldo", miroir = false, taille = 22, niveau = 1 }
 
 function DemiAile({ style = "muldo", cote = "gauche", taille = 20, niveau = 1 }) {
   const [etat, setEtat] = useState("dedie"); // dedie -> moitie -> svg
-  const n = Math.max(1, Math.min(5, Number(niveau) || 1));
+  const n = VISUEL_PAR_NIVEAU[Math.max(1, Math.min(NIVEAU_MAX_AILES, Number(niveau) || 1)) - 1];
   const base = `ailes/${style}-${n}`;
   const h = Math.round(taille * (1 + (n - 1) * 0.16));
   const ombre = `drop-shadow(0 0 ${2 + n}px ${(HALO_AILES[style] || HALO_AILES.muldo)}.4))`;
@@ -2670,9 +2684,10 @@ function PseudoAvecAiles({ pseudo, soutien, styleAiles = "muldo", taille = 20, n
   if (!soutien) {
     return <span style={{ fontWeight: 700, fontSize: 14 }}>{pseudo}</span>;
   }
-  const n = Math.max(1, Math.min(5, Number(niveau) || 1));
+  const n = Math.max(1, Math.min(NIVEAU_MAX_AILES, Number(niveau) || 1));
+  const visuel = VISUEL_PAR_NIVEAU[n - 1];
   const base = ORNEMENT_AILES[styleAiles] || ORNEMENT_AILES.muldo;
-  const ornement = n >= 5 ? `✧${base}✧` : n >= 3 ? `${base}${base}` : base;
+  const ornement = visuel >= 5 ? `✧${base}✧` : visuel >= 3 ? `${base}${base}` : base;
   const degrade = DEGRADE_AILES[styleAiles] || DEGRADE_AILES.muldo;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }} title={`Soutien du Registre — ${nomNiveauAiles(styleAiles, n)} (niveau ${n})`}>
@@ -2694,16 +2709,18 @@ function PseudoAvecAiles({ pseudo, soutien, styleAiles = "muldo", taille = 20, n
   );
 }
 
-// Barème sur 5 paliers : 5, 8, 12, 16 et 20 €.
-const MONTANTS_NIVEAUX = [5, 8, 12, 16, 20];
+// Barème sur 3 paliers : 5, 12 et 20 € — doit rester synchronisé avec la
+// copie MONTANTS_NIVEAUX_EUROS dans supabase/functions/stripe-webhook et
+// supabase/functions/creer-session-don (Deno ne peut pas importer ce fichier).
+const MONTANTS_NIVEAUX = [5, 12, 20];
 function montantPourNiveau(niveau) {
-  const n = Math.max(1, Math.min(5, Number(niveau) || 1));
+  const n = Math.max(1, Math.min(NIVEAU_MAX_AILES, Number(niveau) || 1));
   return MONTANTS_NIVEAUX[n - 1];
 }
 
 function SoutienPanel({ profil, setProfil }) {
   const set = (patch) => setProfil({ ...profil, ...patch });
-  const niveau = Math.max(1, Math.min(5, Number(profil.niveauAiles) || 1));
+  const niveau = Math.max(1, Math.min(NIVEAU_MAX_AILES, Number(profil.niveauAiles) || 1));
   return (
     <div className="panel-card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -2712,8 +2729,7 @@ function SoutienPanel({ profil, setProfil }) {
       </div>
       <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
         Le Registre restera utilisable gratuitement. Les soutiens gagnent leurs ailes selon leur don, en
-        cinq paliers de 5 à 20 € — trois styles au choix : Dragodinde, Muldo (débloqué aussi par succès de
-        génération) et Volkorne.
+        trois paliers de 5 à 20 € — trois styles au choix : Dragodinde, Muldo et Volkorne.
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginTop: 12 }}>
         <div>
@@ -2741,7 +2757,6 @@ function SoutienPanel({ profil, setProfil }) {
                 className="btn btn-ghost"
                 style={profil.styleAiles === style ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
                 onClick={() => set({ styleAiles: style })}
-                title={style === "muldo" ? "Aperçu local — en vrai, débloquées par palier de don ET succès de génération" : undefined}
               >
                 <AileSvg style={style} taille={32} /> {label}
               </button>
@@ -2755,7 +2770,7 @@ function SoutienPanel({ profil, setProfil }) {
           <input
             type="range"
             min={1}
-            max={5}
+            max={NIVEAU_MAX_AILES}
             value={niveau}
             onChange={(e) => set({ niveauAiles: Number(e.target.value) })}
             style={{ width: 180, accentColor: "#d6a64a" }}

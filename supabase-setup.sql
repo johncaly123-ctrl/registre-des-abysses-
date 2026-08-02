@@ -345,3 +345,34 @@ select
   count(*) as nb_soumissions
 from prix_communautaires_ingredients
 group by ingredient, serveur;
+
+-- v18 : cumul reel des dons (au lieu du seul montant de la derniere
+-- transaction) pour permettre de monter de palier en ne payant que la
+-- difference. Table separee de profils (comme prix_communautaires_*) :
+-- historique auditable, insertion idempotente via stripe_session_id unique.
+create table if not exists dons (
+  id bigint generated always as identity primary key,
+  profil_id uuid not null references profils(id) on delete cascade,
+  montant_euros numeric not null check (montant_euros > 0),
+  stripe_session_id text not null unique,
+  cree_le timestamptz not null default now()
+);
+alter table dons enable row level security;
+drop policy if exists "dons visibles par leur auteur" on dons;
+create policy "dons visibles par leur auteur" on dons for select using (auth.uid() = profil_id);
+-- Pas de policy insert/update/delete pour authenticated/anon : seul le
+-- service_role (webhook) ecrit ici, meme logique que niveau_ailes.
+
+-- Reconciliation retroactive : les dons faits AVANT cette migration (test
+-- Stripe du 2026-07-24 inclus) n'ont pas de ligne dans `dons`. Sans ca, le
+-- cumul recalcule a partir de `dons` sous-estimerait ce qu'ils ont deja
+-- donne et leur redemanderait de payer plus que necessaire pour monter de
+-- palier. On seme une ligne de reconciliation au montant plancher de leur
+-- palier actuel (minoration volontaire : jamais plus que ce qu'ils ont
+-- reellement paye, jamais moins que le seuil de leur palier deja acquis).
+insert into dons (profil_id, montant_euros, stripe_session_id, cree_le)
+select id, case niveau_ailes when 1 then 5 when 2 then 8 when 3 then 12 when 4 then 16 when 5 then 20 end,
+       'legacy-' || id, now()
+from profils
+where niveau_ailes between 1 and 5
+on conflict (stripe_session_id) do nothing;

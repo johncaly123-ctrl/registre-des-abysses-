@@ -1190,18 +1190,13 @@ export function progressionParGeneration(cheptel, historiqueCouleurs = {}) {
   });
 }
 
-// Plus haute génération entièrement validée dans les Succès — sert de base
-// au déblocage des ailes "muldo" (barème palier × 2, voir tierAilesMuldo).
+// Plus haute génération entièrement validée dans les Succès — alimente
+// profils.succes_generation_muldo (page Succès, classement des éleveurs).
 export function plusHauteGenerationValidee(cheptel, historiqueCouleurs) {
   const completes = progressionParGeneration(cheptel, historiqueCouleurs)
     .filter((p) => p.pct === 100)
     .map((p) => p.generation);
   return completes.length ? Math.max(...completes) : 0;
-}
-
-export function tierAilesMuldo(niveauAilesDonation, generationValidee) {
-  const tierParSucces = Math.floor((Number(generationValidee) || 0) / 2);
-  return Math.max(0, Math.min(5, Math.min(Number(niveauAilesDonation) || 0, tierParSucces)));
 }
 
 export function choisirObjectifGpsAutomatique(params) {
