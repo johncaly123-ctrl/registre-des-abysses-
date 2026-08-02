@@ -560,6 +560,7 @@ export function NaissancesEnAttentePanel({
                   onClick={() => setC(n.id, { couleur })}
                 >
                   <BadgeComponent couleur={couleur} taille={16} />{" "}{couleur}{n.resultatEspere === couleur ? " ★" : ""}
+                  {n.pourcentages?.[couleur] != null && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {n.pourcentages[couleur]}%</span>}
                 </button>
               ))}
               <div style={{ position: "relative" }}>
@@ -1554,6 +1555,53 @@ export function GpsDofusPage({
               }, {})
             ).map(([k, n]) => `${n}× ${k}`).join(" · ")}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Recherche par couleur avec autocomplétion (préfixe, insensible aux accents
+// via plierCouleurFn), sans lien vers une fiche du cheptel — pour renseigner
+// un ancêtre dont on connaît seulement la couleur (monture d'un autre
+// cheptel, achetée à l'HDV, généalogie oubliée...). Utilisé sur la fiche
+// pour Père/Mère quand la vraie monture n'est pas dans le cheptel.
+export function RechercheCouleurDeroulante({ couleurs, valeur, onChoisir, onEffacer, placeholder, plierCouleurFn, generationFn, BadgeComponent }) {
+  const [recherche, setRecherche] = useState("");
+  const [ferme, setFerme] = useState(true);
+  const prefixe = plierCouleurFn(recherche.trim());
+  const suggestions = (!ferme && prefixe)
+    ? [...new Set(couleurs || [])].filter((c) => plierCouleurFn(c).startsWith(prefixe)).slice(0, 30)
+    : [];
+  return (
+    <div style={{ position: "relative", minWidth: 200 }}>
+      <input
+        className="field"
+        placeholder={placeholder}
+        value={recherche}
+        onChange={(e) => { setRecherche(e.target.value); setFerme(false); }}
+        style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
+      />
+      {valeur && (
+        <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+          → {BadgeComponent && <BadgeComponent couleur={valeur} taille={14} />} {valeur}
+          {onEffacer && <button type="button" className="btn btn-ghost" style={{ padding: "0 6px", fontSize: 11 }} onClick={onEffacer}>×</button>}
+        </div>
+      )}
+      {!ferme && prefixe && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 20, minWidth: 220, maxHeight: 230, overflowY: "auto", background: "var(--panel, #1d1710)", border: "1px solid var(--gold)", borderRadius: 10, boxShadow: "0 12px 30px rgba(0,0,0,.45)", padding: 4 }}>
+          {suggestions.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12, padding: "6px 8px" }}>aucune couleur ne commence par « {recherche.trim()} »</div>}
+          {suggestions.map((c) => (
+            <div
+              key={c}
+              onClick={() => { onChoisir(c); setRecherche(""); setFerme(true); }}
+              style={{ padding: "5px 8px", fontSize: 13, cursor: "pointer", borderRadius: 6 }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.06)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              {BadgeComponent && <BadgeComponent couleur={c} taille={16} />}{" "}{c}{generationFn && ` · G${generationFn(c)}`}
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
-import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers } from "./panneauxElevage.jsx";
+import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers, RechercheCouleurDeroulante } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 
 const JAUGES_VOLKORNE = [
@@ -553,7 +553,7 @@ export function VolkorneBadge({ couleur, taille = 22 }) {
 }
 
 // ---------- Petits composants réutilisés ----------
-function RechercheVolkorneDeroulante({ muldos, valeurId, onChoisir, placeholder, exclureId }) {
+function RechercheVolkorneDeroulante({ muldos, valeurId, onChoisir, placeholder, exclureId, onEffacer }) {
   const [recherche, setRecherche] = useState("");
   const [ferme, setFerme] = useState(true);
   const choisi = (muldos || []).find((m) => m.id === valeurId) || null;
@@ -565,7 +565,12 @@ function RechercheVolkorneDeroulante({ muldos, valeurId, onChoisir, placeholder,
   return (
     <div style={{ position: "relative", minWidth: 260 }}>
       <input className="field" placeholder={placeholder} value={recherche} onChange={(e) => { setRecherche(e.target.value); setFerme(false); }} style={{ width: "100%", padding: "6px 10px", fontSize: 13 }} />
-      {choisi && <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4 }}>→ {etiquette(choisi)}</div>}
+      {choisi && (
+        <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+          → {etiquette(choisi)}
+          {onEffacer && <button type="button" className="btn btn-ghost" style={{ padding: "0 6px", fontSize: 11 }} onClick={onEffacer}>×</button>}
+        </div>
+      )}
       {!ferme && prefixe && (
         <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 20, minWidth: 260, maxHeight: 230, overflowY: "auto", background: "var(--panel, #1d1710)", border: "1px solid var(--gold)", borderRadius: 10, boxShadow: "0 12px 30px rgba(0,0,0,.45)", padding: 4 }}>
           {suggestions.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12, padding: "6px 8px" }}>aucun volkorne trouvé</div>}
@@ -709,18 +714,37 @@ export function VolkorneDetail({ m, byId, onPatch, onDelete }) {
       <div className="panel-card" style={{ marginTop: 12 }}>
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "var(--gold)", marginBottom: 10, fontWeight: 900 }}>Généalogie</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <LabeledSelect
-            label="Père"
-            value={m.parentIds?.[0] || ""}
-            options={[["", "Inconnu / sauvage"], ...Object.values(byId).filter((c) => c.id !== m.id && sexeVolkorne(c) === "M").map((c) => [c.id, c.nom || c.couleur])]}
-            onChange={(v) => onPatch({ parentIds: [v || null, m.parentIds?.[1] || null] })}
-          />
-          <LabeledSelect
-            label="Mère"
-            value={m.parentIds?.[1] || ""}
-            options={[["", "Inconnue / sauvage"], ...Object.values(byId).filter((c) => c.id !== m.id && sexeVolkorne(c) === "F").map((c) => [c.id, c.nom || c.couleur])]}
-            onChange={(v) => onPatch({ parentIds: [m.parentIds?.[0] || null, v || null] })}
-          />
+          {[0, 1].map((index) => {
+            const label = index === 0 ? "Père" : "Mère";
+            const parentReel = m.parentIds?.[index] ? byId[m.parentIds[index]] : null;
+            return (
+              <div key={index}>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>{label}</div>
+                {parentReel ? (
+                  <div style={{ fontSize: 13 }}>{parentReel.nom} <span style={{ color: "var(--muted)", fontSize: 12 }}>({parentReel.couleur})</span></div>
+                ) : (
+                  <RechercheCouleurDeroulante
+                    couleurs={couleursGenerationJusquaVolkorne(10)}
+                    valeur={m.parentsCouleurs?.[index] || null}
+                    placeholder="Couleur…"
+                    plierCouleurFn={plierCouleurVolkorne}
+                    generationFn={generationDeCouleurVolkorne}
+                    BadgeComponent={VolkorneBadge}
+                    onChoisir={(c) => {
+                      const suivant = [...(m.parentsCouleurs || [])];
+                      suivant[index] = c;
+                      onPatch({ parentsCouleurs: suivant });
+                    }}
+                    onEffacer={() => {
+                      const suivant = [...(m.parentsCouleurs || [])];
+                      suivant[index] = null;
+                      onPatch({ parentsCouleurs: suivant });
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
           Renseigner les parents améliore la précision de la génération cible et des probabilités affichées dans le GPS.
@@ -1401,22 +1425,29 @@ export function useVolkorneElevage() {
       const dejaPaires = new Set(prev.map((n) => `${n.maleId}|${n.femelleId}`));
       const ajouts = (couplesARealiser || [])
         .filter((c) => c?.male?.id && c?.femelle?.id && !dejaPaires.has(`${c.male.id}|${c.femelle.id}`))
-        .map((c) => ({
-          id: crypto.randomUUID(),
-          maleId: c.male.id,
-          femelleId: c.femelle.id,
-          maleNom: c.male.nom || c.male.couleur,
-          femelleNom: c.femelle.nom || c.femelle.couleur,
-          maleCouleur: c.male.couleur,
-          femelleCouleur: c.femelle.couleur,
-          resultatEspere: c.resultat || null,
-          possibles: [...new Set([
-            ...couleursNaissancePossiblesVolkorne(c.male.couleur, c.femelle.couleur),
-            ...couleursAncetres(c.male, cheptel),
-            ...couleursAncetres(c.femelle, cheptel),
-          ])],
-          date: new Date().toISOString(),
-        }));
+        .map((c) => {
+          const repartition = c.repartitionCouleurs || {};
+          const couleursTriees = Object.keys(repartition).length
+            ? Object.entries(repartition).sort((a, b) => b[1] - a[1]).map(([couleur]) => couleur)
+            : [...new Set([
+                ...couleursNaissancePossiblesVolkorne(c.male.couleur, c.femelle.couleur),
+                ...couleursAncetres(c.male, cheptel),
+                ...couleursAncetres(c.femelle, cheptel),
+              ])];
+          return {
+            id: crypto.randomUUID(),
+            maleId: c.male.id,
+            femelleId: c.femelle.id,
+            maleNom: c.male.nom || c.male.couleur,
+            femelleNom: c.femelle.nom || c.femelle.couleur,
+            maleCouleur: c.male.couleur,
+            femelleCouleur: c.femelle.couleur,
+            resultatEspere: c.resultat || null,
+            possibles: couleursTriees,
+            pourcentages: repartition,
+            date: new Date().toISOString(),
+          };
+        });
       if (!ajouts.length) return prev;
       const suivant = [...prev, ...ajouts];
       persisterNaissances(suivant);

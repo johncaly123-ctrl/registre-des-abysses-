@@ -12,7 +12,7 @@ import { Plus, Trash2, Heart, Zap, Sparkles, Droplets, AlertTriangle, X, Skull, 
 import { creerEcritureDebattue } from "./stockage.js";
 import {
   BebesARenommerPanel, BoutonFiche,
-  exporterFicheImage, copierPressePapiers, LabeledSelect, StatCard,
+  exporterFicheImage, copierPressePapiers, LabeledSelect, StatCard, RechercheCouleurDeroulante,
 } from "./panneauxElevage.jsx";
 import {
   COLORS, COULEURS_MULDO, CAPACITES_MULDO,
@@ -420,22 +420,33 @@ export function useMuldoElevage(showToast, setToast) {
       const dejaPaires = new Set(prev.map((n) => `${n.maleId}|${n.femelleId}`));
       const ajouts = (couplesARealiser || [])
         .filter((c) => c?.male?.id && c?.femelle?.id && !dejaPaires.has(`${c.male.id}|${c.femelle.id}`))
-        .map((c) => ({
-          id: uid(),
-          maleId: c.male.id,
-          femelleId: c.femelle.id,
-          maleNom: c.male.nom || c.male.couleur,
-          femelleNom: c.femelle.nom || c.femelle.couleur,
-          maleCouleur: c.male.couleur,
-          femelleCouleur: c.femelle.couleur,
-          resultatEspere: c.resultat || null,
-          possibles: [...new Set([
-            ...couleursNaissancePossibles(c.male.couleur, c.femelle.couleur),
-            ...couleursAncetres(c.male, cheptel),
-            ...couleursAncetres(c.femelle, cheptel),
-          ])],
-          date: new Date().toISOString(),
-        }));
+        .map((c) => {
+          // Réutilise la répartition déjà calculée par le GPS (formule
+          // vérifiée, couleurs cible + repli) plutôt que de recalculer une
+          // liste plus pauvre : les propositions sont donc TOUTES les
+          // couleurs candidates réelles, triées par probabilité décroissante.
+          const repartition = c.repartitionCouleurs || {};
+          const couleursTriees = Object.keys(repartition).length
+            ? Object.entries(repartition).sort((a, b) => b[1] - a[1]).map(([couleur]) => couleur)
+            : [...new Set([
+                ...couleursNaissancePossibles(c.male.couleur, c.femelle.couleur),
+                ...couleursAncetres(c.male, cheptel),
+                ...couleursAncetres(c.femelle, cheptel),
+              ])];
+          return {
+            id: uid(),
+            maleId: c.male.id,
+            femelleId: c.femelle.id,
+            maleNom: c.male.nom || c.male.couleur,
+            femelleNom: c.femelle.nom || c.femelle.couleur,
+            maleCouleur: c.male.couleur,
+            femelleCouleur: c.femelle.couleur,
+            resultatEspere: c.resultat || null,
+            possibles: couleursTriees,
+            pourcentages: repartition,
+            date: new Date().toISOString(),
+          };
+        });
       if (!ajouts.length) return prev;
       const suivant = [...prev, ...ajouts];
       try {
@@ -1344,18 +1355,37 @@ export function MuldoDetail({ muldo, byId, onPatch, onDelete }) {
           Généalogie
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <LabeledSelect
-            label="Père"
-            value={muldo.parentIds?.[0] || ""}
-            options={[["", "Inconnu / sauvage"], ...Object.values(byId).filter((c) => c.id !== muldo.id && sexeMuldo(c) === "M").map((c) => [c.id, c.nom])]}
-            onChange={(v) => onPatch({ parentIds: [v || null, muldo.parentIds?.[1] || null] })}
-          />
-          <LabeledSelect
-            label="Mère"
-            value={muldo.parentIds?.[1] || ""}
-            options={[["", "Inconnue / sauvage"], ...Object.values(byId).filter((c) => c.id !== muldo.id && sexeMuldo(c) === "F").map((c) => [c.id, c.nom])]}
-            onChange={(v) => onPatch({ parentIds: [muldo.parentIds?.[0] || null, v || null] })}
-          />
+          {[0, 1].map((index) => {
+            const label = index === 0 ? "Père" : "Mère";
+            const parentReel = muldo.parentIds?.[index] ? byId[muldo.parentIds[index]] : null;
+            return (
+              <div key={index}>
+                <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 4, fontFamily: "Inter, sans-serif" }}>{label}</div>
+                {parentReel ? (
+                  <div style={{ fontSize: 13 }}>{parentReel.nom} <span style={{ color: COLORS.muted, fontSize: 12 }}>({parentReel.couleur})</span></div>
+                ) : (
+                  <RechercheCouleurDeroulante
+                    couleurs={COULEURS_MULDO}
+                    valeur={muldo.parentsCouleurs?.[index] || null}
+                    placeholder="Couleur…"
+                    plierCouleurFn={plierCouleur}
+                    generationFn={generationDeCouleur}
+                    BadgeComponent={MuldoBadge}
+                    onChoisir={(c) => {
+                      const suivant = [...(muldo.parentsCouleurs || [])];
+                      suivant[index] = c;
+                      onPatch({ parentsCouleurs: suivant });
+                    }}
+                    onEffacer={() => {
+                      const suivant = [...(muldo.parentsCouleurs || [])];
+                      suivant[index] = null;
+                      onPatch({ parentsCouleurs: suivant });
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
         <div style={{ fontSize: 11, color: COLORS.muted, fontFamily: "Inter, sans-serif", marginTop: 8 }}>
           Renseigner les parents permet d'éviter les collisions génétiques (consanguinité) lors des suggestions d'accouplement, et améliore la précision de la génération cible et des probabilités affichées dans le GPS.
@@ -3121,7 +3151,7 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
   );
 }
 
-export function RechercheMuldoDeroulante({ muldos, valeurId, onChoisir, placeholder, exclureId }) {
+export function RechercheMuldoDeroulante({ muldos, valeurId, onChoisir, placeholder, exclureId, onEffacer }) {
   const [recherche, setRecherche] = useState("");
   const [ferme, setFerme] = useState(true);
 
@@ -3147,7 +3177,10 @@ export function RechercheMuldoDeroulante({ muldos, valeurId, onChoisir, placehol
         style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
       />
       {choisi && (
-        <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4 }}>→ {etiquette(choisi)}</div>
+        <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+          → {etiquette(choisi)}
+          {onEffacer && <button type="button" className="btn btn-ghost" style={{ padding: "0 6px", fontSize: 11 }} onClick={onEffacer}>×</button>}
+        </div>
       )}
       {!ferme && prefixe && (
         <div style={{

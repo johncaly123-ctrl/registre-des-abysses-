@@ -157,6 +157,10 @@ export function couleursCandidatesAccouplement(a, b, byId, generationDeCouleurFn
       const parent = byId?.[id];
       if (parent?.couleur) couleurs.add(parent.couleur);
     });
+    // Ascendance externe (parent absent du cheptel, connu seulement par sa
+    // couleur — saisie manuelle sur la fiche) : même profondeur qu'un
+    // ancêtre lié par id, juste sans fiche associée.
+    (muldo?.parentsCouleurs || []).forEach((c) => { if (c) couleurs.add(c); });
     return [...couleurs];
   };
   const poolA = poolCote(a);
@@ -209,6 +213,7 @@ export function repartitionProbabilitesAccouplement(
       const parent = byId?.[id];
       if (parent?.couleur) pool.push({ couleur: parent.couleur, profondeur: 1 });
     });
+    (muldo?.parentsCouleurs || []).forEach((c) => { if (c) pool.push({ couleur: c, profondeur: 1 }); });
     return pool;
   };
   const poidsBase = (couleur) =>
