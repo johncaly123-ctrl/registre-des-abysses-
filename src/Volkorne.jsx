@@ -9,6 +9,7 @@ import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
 import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers, RechercheCouleurDeroulante } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
+import { chargerJSON, sauvegarderJSON } from "./stockage.js";
 
 const JAUGES_VOLKORNE = [
   { key: "amour", label: "Amour", icon: Heart },
@@ -1260,28 +1261,20 @@ function normaliserGpsSuiviVolkorne(v) {
   };
 }
 
-function chargerJSON(cle, defaut) {
-  try { const v = JSON.parse(localStorage.getItem(cle)); return v ?? defaut; } catch (e) { return defaut; }
-}
-
 export function useVolkorneElevage() {
   const [cheptel, setCheptel] = useState(() => chargerJSON(STORAGE_KEY_VOLKORNE, []));
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY_VOLKORNE, {}));
   const [journal, setJournal] = useState(() => chargerJSON(STORAGE_JOURNAL_VOLKORNE, []));
   const [naissances, setNaissances] = useState(() => chargerJSON(STORAGE_NAISSANCES_VOLKORNE, []));
   const persisterNaissances = useCallback((next) => {
-    localStorage.setItem(STORAGE_NAISSANCES_VOLKORNE, JSON.stringify(next));
+    sauvegarderJSON(STORAGE_NAISSANCES_VOLKORNE, next);
   }, []);
   const [corbeille, setCorbeille] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_CORBEILLE_VOLKORNE));
-      const limite = Date.now() - CORBEILLE_DUREE_JOURS_VOLKORNE * 24 * 60 * 60 * 1000;
-      const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
-      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(purge));
-      return purge;
-    } catch (e) {
-      return [];
-    }
+    const saved = chargerJSON(STORAGE_CORBEILLE_VOLKORNE, []);
+    const limite = Date.now() - CORBEILLE_DUREE_JOURS_VOLKORNE * 24 * 60 * 60 * 1000;
+    const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
+    if (purge.length !== saved.length) sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, purge);
+    return purge;
   });
   const [selectedId, setSelectedId] = useState(null);
   const [filter, setFilter] = useState("");
@@ -1349,7 +1342,7 @@ export function useVolkorneElevage() {
   const sauvegarderSuiviGps = useCallback((next) => {
     setGpsSuivi(next);
     try {
-      localStorage.setItem(STORAGE_GPS_SESSION_VOLKORNE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_GPS_SESSION_VOLKORNE, next);
     } catch (e) {
       console.error("Erreur de sauvegarde de la session GPS", e);
     }
@@ -1410,7 +1403,7 @@ export function useVolkorneElevage() {
       };
 
       try {
-        localStorage.setItem(STORAGE_GPS_SESSION_VOLKORNE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_GPS_SESSION_VOLKORNE, next);
       } catch (e) {
         console.error(e);
       }
@@ -1434,6 +1427,10 @@ export function useVolkorneElevage() {
                 ...couleursAncetres(c.male, cheptel),
                 ...couleursAncetres(c.femelle, cheptel),
               ])];
+          // La répartition ne pondère que les recombinaisons simples et ignore
+          // les recettes spéciales : le résultat espéré doit rester cliquable
+          // même quand il n'a pas reçu de poids.
+          if (c.resultat && !couleursTriees.includes(c.resultat)) couleursTriees.push(c.resultat);
           return {
             id: crypto.randomUUID(),
             maleId: c.male.id,
@@ -1473,7 +1470,7 @@ export function useVolkorneElevage() {
         consommes: (prev.consommes || []).filter((id) => !aRetirer.has(id)),
       };
       try {
-        localStorage.setItem(STORAGE_GPS_SESSION_VOLKORNE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_GPS_SESSION_VOLKORNE, next);
       } catch (e) {
         console.error(e);
       }
@@ -1505,7 +1502,7 @@ export function useVolkorneElevage() {
   const updateCheptel = useCallback((updater) => {
     setCheptel((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem(STORAGE_KEY_VOLKORNE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_KEY_VOLKORNE, next);
       return next;
     });
   }, []);
@@ -1535,7 +1532,7 @@ export function useVolkorneElevage() {
           ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
           ...prev,
         ].slice(0, 100);
-        localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, next);
         return next;
       });
       setSelectedId((s) => (s && steriles.some((m) => m.id === s) ? null : s));
@@ -1561,11 +1558,11 @@ export function useVolkorneElevage() {
     setCheptel((prev) => {
       const muldo = prev.find((m) => m.id === id);
       const next = prev.filter((m) => m.id !== id);
-      localStorage.setItem(STORAGE_KEY_VOLKORNE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_KEY_VOLKORNE, next);
       if (muldo) {
         setCorbeille((prevCorbeille) => {
           const nextCorbeille = [{ muldo, supprimeLe: new Date().toISOString() }, ...prevCorbeille].slice(0, 100);
-          localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(nextCorbeille));
+          sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, nextCorbeille);
           return nextCorbeille;
         });
       }
@@ -1581,11 +1578,11 @@ export function useVolkorneElevage() {
       const muldos = prev.filter((m) => idsSet.has(m.id));
       const next = prev.filter((m) => !idsSet.has(m.id));
       if (muldos.length) {
-        localStorage.setItem(STORAGE_KEY_VOLKORNE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_KEY_VOLKORNE, next);
         setCorbeille((prevCorbeille) => {
           const supprimeLe = new Date().toISOString();
           const nextCorbeille = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prevCorbeille].slice(0, 100);
-          localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(nextCorbeille));
+          sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, nextCorbeille);
           return nextCorbeille;
         });
       }
@@ -1609,20 +1606,20 @@ export function useVolkorneElevage() {
       if (!entree) return prev;
       updateCheptel((prevCheptel) => [...prevCheptel, entree.muldo]);
       const next = prev.filter((e) => e.muldo.id !== id);
-      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, next);
       return next;
     });
   }, [updateCheptel]);
   const purgerCorbeilleEntree = useCallback((id) => {
     setCorbeille((prev) => {
       const next = prev.filter((e) => e.muldo.id !== id);
-      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, next);
       return next;
     });
   }, []);
   const viderCorbeille = useCallback(() => {
     setCorbeille(() => {
-      localStorage.setItem(STORAGE_CORBEILLE_VOLKORNE, JSON.stringify([]));
+      sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, []);
       return [];
     });
   }, []);
@@ -1637,9 +1634,12 @@ export function useVolkorneElevage() {
     }]);
   }, [updateCheptel]);
 
-  const enregistrerHistorique = useCallback((next) => {
-    setHistoriqueCouleurs(next);
-    localStorage.setItem(STORAGE_HISTORY_KEY_VOLKORNE, JSON.stringify(next));
+  const enregistrerHistorique = useCallback((updateurOuValeur) => {
+    setHistoriqueCouleurs((prev) => {
+      const next = typeof updateurOuValeur === "function" ? updateurOuValeur(prev) : updateurOuValeur;
+      sauvegarderJSON(STORAGE_HISTORY_KEY_VOLKORNE, next);
+      return next;
+    });
   }, []);
   const basculerCouleurHistorique = useCallback((couleur, active) => {
     enregistrerHistorique((prev) => { const n = { ...prev }; if (active) n[couleur] = true; else delete n[couleur]; return n; });
@@ -1702,7 +1702,7 @@ export function useVolkorneElevage() {
         sexe,
         nom: nomCourt,
       }];
-      localStorage.setItem(STORAGE_JOURNAL_VOLKORNE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_JOURNAL_VOLKORNE, next);
       return next;
     });
   }, [naissances, updateCheptel, persisterNaissances]);

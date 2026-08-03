@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { flushToutesEcrituresDebattues } from "./stockage.js";
+import {
+  flushToutesEcrituresDebattues, chargerJSON, sauvegarderJSON,
+  hydraterStockage, reinitialiserStockage, obtenirCacheComplet, remplacerCacheComplet, etatSauvegarde,
+} from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers, SERVEURS_DOFUS, STORAGE_SERVEUR } from "./panneauxElevage.jsx";
 import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
@@ -11,13 +14,13 @@ import { Waves, Save, Plus, Trash2, X } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelOverviewPage, DragodindeCheptelCards, DragodindeDetail, DragodindeBadge, NewDragodindeModal,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
-  CLES_SAUVEGARDE_DRAGODINDE, generationDeCouleurDragodinde, sexeDragodinde, plierCouleurDragodinde,
+  CLES_SAUVEGARDE_DRAGODINDE, STORAGE_KEY_DRAGODINDE, generationDeCouleurDragodinde, sexeDragodinde, plierCouleurDragodinde,
   filtrerCheptelParTexteDragodinde, GENERATIONS_DRAGODINDE,
 } from "./Dragodinde.jsx";
 import {
   useVolkorneElevage, VolkorneCheptelOverviewPage, VolkorneCheptelCards, VolkorneDetail, VolkorneBadge, NewVolkorneModal,
   VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
-  CLES_SAUVEGARDE_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
+  CLES_SAUVEGARDE_VOLKORNE, STORAGE_KEY_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
   filtrerCheptelParTexteVolkorne, GENERATIONS_VOLKORNE,
 } from "./Volkorne.jsx";
 import {
@@ -75,7 +78,15 @@ const ETAPES_PARCOURS_GUIDE = [
 ];
 
 
-// ---------- composant principal ----------
+// ---------- gate de connexion obligatoire ----------
+// Connexion requise pour tout, sauf le tuto (GuidePage) et un lien de partage
+// de cheptel public (?voir=pseudo, resté accessible pour l'attractivité —
+// simplement sans le comparatif "j'ai déjà cette couleur", qui a besoin d'un
+// cheptel local). Tant que la sauvegarde du compte n'est pas remontée de
+// Supabase, on n'affiche ni ne monte AppConnecte : useMuldoElevage & cie
+// lisent chargerJSON() de façon synchrone dès leur premier rendu, donc ils
+// doivent monter APRÈS l'hydratation, jamais avant (sinon ils se figeraient
+// sur des valeurs vides pour toute la session, voir stockage.js).
 export default function App() {
   // Cheptel public en lecture seule (?voir=pseudo) : lu une fois au montage,
   // ne change jamais après (un partage de lien recharge la page).
@@ -83,24 +94,8 @@ export default function App() {
   // Pseudo du parrain capturé sur un lien ?parrain=<pseudo> — transmis à
   // l'inscription (metadata signUp), sans lien avec les paliers d'ailes payants.
   const [parrainCapture] = useState(() => new URLSearchParams(window.location.search).get("parrain") || null);
-  const [toast, setToast] = useState(null);
-  const showToast = (msg, opts = {}) => {
-    setToast({ msg, type: opts.type });
-    setTimeout(() => setToast(null), opts.duration || 2600);
-  };
-  // Permet d'atterrir directement sur une page via ?page=guide (utile pour le
-  // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
-  const [page, setPage] = useState(() => {
-    const demandee = new URLSearchParams(window.location.search).get("page");
-    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "mangeoire", "taverne", "succes", "guide", "nouveautes"];
-    return pagesValides.includes(demandee) ? demandee : "dashboard";
-  });
-  // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
-  // "cheptel" | "synchro" | "gps" | "clonage". Partagé entre les 3, réinitialisé
-  // implicitement en changeant de section (on ne mémorise pas par créature).
-  const [sousPage, setSousPage] = useState("cheptel");
-  // Créature affichée sur la page Succès (elle regroupe les 3 sous un seul onglet).
-  const [succesCreature, setSuccesCreature] = useState("muldo");
+  // Thème clair/sombre : préférence de navigateur (pas de compte), doit donc
+  // fonctionner aussi bien sur l'écran de connexion que dans l'app connectée.
   const [theme, setTheme] = useState(() => {
     const enregistre = localStorage.getItem(STORAGE_THEME);
     if (enregistre === "clair" || enregistre === "sombre") return enregistre;
@@ -110,219 +105,136 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(STORAGE_THEME, theme);
   }, [theme]);
-  // Serveur Dofus de l'éleveur — choisi tout en haut de page (en-tête),
-  // partagé par les 3 créatures pour les prix communautaires. Persisté
-  // localement, et en plus sur le compte si connecté (voir plus bas).
-  const [serveur, setServeurState] = useState(() => localStorage.getItem(STORAGE_SERVEUR) || "");
-  useEffect(() => {
-    localStorage.setItem(STORAGE_SERVEUR, serveur);
-  }, [serveur]);
-  const [onboardingGpsOuvert, setOnboardingGpsOuvert] = useState(false);
-  useEffect(() => {
-    if (sousPage === "gps" && !localStorage.getItem(STORAGE_ONBOARDING_GPS)) {
-      setOnboardingGpsOuvert(true);
-    }
-  }, [sousPage]);
-  const fermerOnboardingGps = () => {
-    localStorage.setItem(STORAGE_ONBOARDING_GPS, "1");
-    setOnboardingGpsOuvert(false);
-  };
-  // Tuto de première visite, site entier (distinct de la découverte GPS
-  // ci-dessus) : déclenché une seule fois au montage, sauf si on arrive sur
-  // le cheptel public de quelqu'un d'autre (?voir=), où il serait hors-propos.
-  const [onboardingSiteOuvert, setOnboardingSiteOuvert] = useState(false);
-  useEffect(() => {
-    if (!pseudoPublic && !localStorage.getItem(STORAGE_ONBOARDING_SITE)) {
-      setOnboardingSiteOuvert(true);
-    }
-  }, []);
-  const fermerOnboardingSite = () => {
-    localStorage.setItem(STORAGE_ONBOARDING_SITE, "1");
-    setOnboardingSiteOuvert(false);
-  };
-  const relancerOnboardingSite = () => setOnboardingSiteOuvert(true);
-  const [demandeClassementTaverne, setDemandeClassementTaverne] = useState(false);
-  const voirClassementDepuisSucces = () => {
-    setDemandeClassementTaverne(true);
-    setPage("taverne");
-  };
-  const [brouillonTaverne, setBrouillonTaverne] = useState("");
-  const partagerDansTaverne = (texte) => {
-    setBrouillonTaverne(texte);
-    setPage("taverne");
-  };
-  const [profil, setProfilState] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_PROFIL));
-      if (saved && typeof saved === "object") {
-        const styleValide = ["dragodinde", "muldo", "volkorne"].includes(saved.styleAiles) ? saved.styleAiles : "muldo";
-        return { pseudo: saved.pseudo || "", soutien: !!saved.soutien, styleAiles: styleValide, niveauAiles: Math.max(1, Math.min(5, Math.ceil((Number(saved.niveauAiles) || 1) / (Number(saved.niveauAiles) > 5 ? 2 : 1)))) };
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return { pseudo: "", soutien: false, styleAiles: "muldo", niveauAiles: 1 };
-  });
-  const setProfil = (next) => {
-    setProfilState(next);
-    try {
-      localStorage.setItem(STORAGE_PROFIL, JSON.stringify(next));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  const compte = useCompte();
-  // Au premier chargement du profil connecté, s'il a déjà un serveur enregistré
-  // (choisi depuis un autre appareil), il prime sur la valeur locale.
-  useEffect(() => {
-    if (compte.profil?.serveur) setServeurState(compte.profil.serveur);
-  }, [compte.profil?.id]);
-  const setServeur = (valeur) => {
-    setServeurState(valeur);
-    if (supabase && compte.session?.user) {
-      supabase.from("profils").update({ serveur: valeur || null }).eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  };
-  const eleveMuldo = useMuldoElevage(showToast, setToast);
-  const eleveDragodinde = useDragodindeElevage();
-  const eleveVolkorne = useVolkorneElevage();
-  // null = jamais démarré (auto-proposé une fois) ; nombre = étape en cours ;
-  // "termine"/"saute" = ne plus proposer automatiquement, relançable manuellement.
-  const [parcoursGuideEtape, setParcoursGuideEtape] = useState(() => {
-    const v = localStorage.getItem(STORAGE_PARCOURS_GUIDE);
-    return v === null ? null : (Number.isFinite(Number(v)) ? Number(v) : v);
-  });
-  useEffect(() => {
-    if (localStorage.getItem(STORAGE_PARCOURS_GUIDE) === null) setParcoursGuideEtape(0);
-  }, []);
-  useEffect(() => {
-    if (typeof parcoursGuideEtape !== "number") return;
-    const ctx = { page, sousPage, naissancesCount: eleveMuldo.naissances.length, journalCount: eleveMuldo.journal.length };
-    if (ETAPES_PARCOURS_GUIDE[parcoursGuideEtape]?.estFait(ctx)) {
-      const suivante = parcoursGuideEtape + 1;
-      const valeur = suivante >= ETAPES_PARCOURS_GUIDE.length ? "termine" : suivante;
-      setParcoursGuideEtape(valeur);
-      localStorage.setItem(STORAGE_PARCOURS_GUIDE, String(valeur));
-      if (valeur === "termine") {
-        showToast("🎉 Parcours guidé terminé ! Tu maîtrises maintenant le cycle GPS → accouplement → naissance.", { type: "objectif", duration: 5000 });
-      }
-    }
-  }, [parcoursGuideEtape, page, sousPage, eleveMuldo.naissances.length, eleveMuldo.journal.length]);
-  const sauterParcoursGuide = () => {
-    setParcoursGuideEtape("saute");
-    localStorage.setItem(STORAGE_PARCOURS_GUIDE, "saute");
-  };
-  const relancerParcoursGuide = () => {
-    setParcoursGuideEtape(0);
-    localStorage.setItem(STORAGE_PARCOURS_GUIDE, "0");
-  };
-  const [profilOuvert, setProfilOuvert] = useState(false);
-  useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
-  // Pousse la génération muldo la plus haute validée vers le profil Supabase
-  // (auto-déclaratif) dès qu'elle change — sert de condition de déblocage
-  // des ailes "muldo", en plus du palier de don.
-  useEffect(() => {
-    if (!supabase || !compte.session?.user || !compte.profil) return;
-    const gen = plusHauteGenerationValidee(eleveMuldo.cheptel, eleveMuldo.historiqueCouleurs);
-    if (compte.profil.succes_generation_muldo !== gen) {
-      supabase.from("profils").update({ succes_generation_muldo: gen })
-        .eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  }, [eleveMuldo.cheptel, eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
-  // Pousse le nombre de couleurs muldo découvertes vers le profil Supabase —
-  // alimente le classement des éleveurs de la Taverne (auto-déclaratif, comme
-  // succes_generation_muldo ci-dessus).
-  useEffect(() => {
-    if (!supabase || !compte.session?.user || !compte.profil) return;
-    const nb = Object.values(eleveMuldo.historiqueCouleurs || {}).filter(Boolean).length;
-    if (compte.profil.couleurs_decouvertes_muldo !== nb) {
-      supabase.from("profils").update({ couleurs_decouvertes_muldo: nb })
-        .eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  }, [eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
-  // Mêmes poussées auto-déclaratives que ci-dessus, pour Dragodinde et Volkorne
-  // — alimentent le classement des éleveurs étendu aux 3 créatures.
-  useEffect(() => {
-    if (!supabase || !compte.session?.user || !compte.profil) return;
-    const gen = plusHauteGenerationValideeGenerique(eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, GENERATIONS_DRAGODINDE);
-    if (compte.profil.succes_generation_dragodinde !== gen) {
-      supabase.from("profils").update({ succes_generation_dragodinde: gen })
-        .eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  }, [eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
-  useEffect(() => {
-    if (!supabase || !compte.session?.user || !compte.profil) return;
-    const nb = Object.values(eleveDragodinde.historiqueCouleurs || {}).filter(Boolean).length;
-    if (compte.profil.couleurs_decouvertes_dragodinde !== nb) {
-      supabase.from("profils").update({ couleurs_decouvertes_dragodinde: nb })
-        .eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  }, [eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
-  useEffect(() => {
-    if (!supabase || !compte.session?.user || !compte.profil) return;
-    const gen = plusHauteGenerationValideeGenerique(eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, GENERATIONS_VOLKORNE);
-    if (compte.profil.succes_generation_volkorne !== gen) {
-      supabase.from("profils").update({ succes_generation_volkorne: gen })
-        .eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  }, [eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
-  useEffect(() => {
-    if (!supabase || !compte.session?.user || !compte.profil) return;
-    const nb = Object.values(eleveVolkorne.historiqueCouleurs || {}).filter(Boolean).length;
-    if (compte.profil.couleurs_decouvertes_volkorne !== nb) {
-      supabase.from("profils").update({ couleurs_decouvertes_volkorne: nb })
-        .eq("id", compte.session.user.id)
-        .then(() => compte.rafraichirProfil());
-    }
-  }, [eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
 
-  // Titre d'onglet dynamique : reflète la page (et, pour les créatures, le
-  // sous-onglet) affichée — plus lisible dans l'historique/les favoris du
-  // navigateur qu'un titre statique unique.
+  const compte = useCompte();
+  const [stockagePret, setStockagePret] = useState(false);
+  const [propositionMigration, setPropositionMigration] = useState(null);
+
   useEffect(() => {
-    // La page cheptel public (?voir=pseudo) gère son propre titre — cet effet
-    // tourne quand même (hooks inconditionnels) mais ne doit pas l'écraser.
-    if (pseudoPublic) return;
-    const NOMS_CREATURE = { muldo: "Muldos", dragodinde: "Dragodindes", volkorne: "Volkornes" };
-    const NOMS_SOUS_PAGE = { cheptel: "Cheptel", synchro: "Synchronisation", gps: "GPS", clonage: "Clonage" };
-    let titre;
-    if (page === "dashboard") titre = "Tableau de bord";
-    else if (page === "mangeoire") titre = "Carburant d'enclos";
-    else if (page === "taverne") titre = "Taverne";
-    else if (page === "succes") titre = "Succès";
-    else if (page === "guide") titre = "Guide";
-    else if (page === "nouveautes") titre = "Quoi de neuf";
-    else if (NOMS_CREATURE[page]) titre = `${NOMS_SOUS_PAGE[sousPage] || ""} ${NOMS_CREATURE[page]}`.trim();
-    else titre = "Registre des Abysses";
-    document.title = `${titre} — Registre des Abysses`;
-  }, [page, sousPage, pseudoPublic]);
+    if (!compte.session?.user) {
+      reinitialiserStockage();
+      setStockagePret(false);
+      setPropositionMigration(null);
+      return;
+    }
+    let annule = false;
+    setStockagePret(false);
+    hydraterStockage(compte.session.user.id).then((etaitVide) => {
+      if (annule) return;
+      const detection = etaitVide ? detecterDonneesLocalesHeritees() : null;
+      if (detection) setPropositionMigration(detection);
+      else setStockagePret(true);
+    });
+    return () => { annule = true; };
+  }, [compte.session?.user?.id]);
 
   if (pseudoPublic) {
+    return <CheptelPublicPage pseudo={pseudoPublic} cheptelViewer={{}} />;
+  }
+
+  if (!compte.session) {
+    return <PortailConnexion compte={compte} parrainCapture={parrainCapture} />;
+  }
+
+  if (propositionMigration) {
     return (
-      <CheptelPublicPage
-        pseudo={pseudoPublic}
-        cheptelViewer={{ muldo: eleveMuldo.cheptel, dragodinde: eleveDragodinde.cheptel, volkorne: eleveVolkorne.cheptel }}
+      <PropositionMigrationLegacy
+        resume={propositionMigration.resume}
+        donnees={propositionMigration.donnees}
+        onFini={() => { setPropositionMigration(null); setStockagePret(true); }}
       />
     );
   }
 
-  if (eleveMuldo.loading) {
+  if (!stockagePret) {
     return (
       <div className="app-shell loading-screen">
-        <Waves size={20} style={{ marginRight: 8 }} /> Remontée des données du cheptel…
+        <TokensCss />
+        <Waves size={20} style={{ marginRight: 8 }} /> Remontée de ta sauvegarde…
       </div>
     );
   }
 
+  return <AppConnecte key={compte.session.user.id} compte={compte} parrainCapture={parrainCapture} theme={theme} setTheme={setTheme} />;
+}
+
+// Écran affiché tant qu'aucun compte n'est connecté : le tuto reste
+// consultable librement, la connexion/inscription est nécessaire pour tout
+// le reste (cheptel, GPS, naissances...).
+function PortailConnexion({ compte, parrainCapture }) {
   return (
     <div className="app-shell">
-      <style>{`
+      <TokensCss />
+      <div className="app-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="brand-mark"><Waves size={22} color="#f0cf72" /></div>
+          <div>
+            <div className="brand-title">Registre des Abysses</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Élevage de Muldos · GPS génération · Succès</div>
+          </div>
+        </div>
+      </div>
+      <div className="main-view" style={{ maxWidth: 720 }}>
+        <div className="panel-card">
+          <h2>Connexion requise</h2>
+          <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 14 }}>
+            Ton cheptel, tes naissances et ton GPS sont désormais liés à ton compte — connecte-toi
+            ou crée un compte pour y accéder. En attendant, découvre le fonctionnement de l'outil :
+          </div>
+          <AuthPanel profilLocal={null} pretMdp={compte.pretMdp} onFini={() => {}} parrainCapture={parrainCapture} />
+        </div>
+        <GuidePage />
+      </div>
+    </div>
+  );
+}
+
+// Proposée une seule fois, à la première connexion d'un compte dont la
+// sauvegarde Supabase est encore vide alors que ce navigateur contient des
+// données d'avant cette migration (usage local sans compte) — jamais de
+// migration automatique silencieuse, l'utilisateur choisit explicitement.
+function PropositionMigrationLegacy({ resume, donnees, onFini }) {
+  const [enCours, setEnCours] = useState(false);
+  const importer = async () => {
+    setEnCours(true);
+    try {
+      await remplacerCacheComplet(donnees);
+      onFini();
+    } catch (e) {
+      console.error(e);
+      setEnCours(false);
+    }
+  };
+  return (
+    <div className="app-shell">
+      <TokensCss />
+      <div className="main-view" style={{ maxWidth: 640, margin: "60px auto" }}>
+        <div className="panel-card">
+          <h2>Données locales trouvées</h2>
+          <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 14 }}>
+            Ce navigateur contient des données d'avant le passage au compte en ligne :{" "}
+            {resume.muldos} muldo(s), {resume.dragodindes} dragodinde(s), {resume.volkornes} volkorne(s).
+            Importer les rattache définitivement à ce compte.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-coral" onClick={importer} disabled={enCours}>
+              {enCours ? "Import en cours…" : "Importer mes données locales existantes"}
+            </button>
+            <button className="btn btn-ghost" onClick={onFini} disabled={enCours}>Ignorer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Design tokens + reset, partagés par l'écran de connexion (PortailConnexion)
+// et l'application connectée (AppConnecte) — un seul <style> embarqué évite
+// de dupliquer ~300 lignes de CSS entre les deux, et les variables (--gold,
+// --cyan...) doivent être identiques des deux côtés du gate de connexion.
+function TokensCss() {
+  return (
+    <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;0,9..144,800;1,9..144,600&display=swap');
         :root {
           --bg: #101b1e;
@@ -631,6 +543,217 @@ export default function App() {
           .brand-title { font-size:19px; }
         }
       `}</style>
+  );
+}
+
+// ---------- composant principal (connecté) ----------
+// Ne monte qu'une fois la connexion établie ET la sauvegarde du compte
+// hydratée (voir le gate App() tout en bas de fichier) : tous les hooks
+// cheptel (useMuldoElevage & cie) peuvent donc lire chargerJSON() de façon
+// synchrone dès leur premier rendu, sans course avec l'hydratation réseau.
+function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, opts = {}) => {
+    setToast({ msg, type: opts.type });
+    setTimeout(() => setToast(null), opts.duration || 2600);
+  };
+  // Indicateur de sauvegarde globale (tous les modules confondus) : reflète
+  // le push réseau débattu vers sauvegardes_elevage, pas une seule créature.
+  const [etatSave, setEtatSave] = useState(() => etatSauvegarde());
+  useEffect(() => {
+    const id = setInterval(() => setEtatSave(etatSauvegarde()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  // Permet d'atterrir directement sur une page via ?page=guide (utile pour le
+  // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
+  const [page, setPage] = useState(() => {
+    const demandee = new URLSearchParams(window.location.search).get("page");
+    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "mangeoire", "taverne", "succes", "guide", "nouveautes"];
+    return pagesValides.includes(demandee) ? demandee : "dashboard";
+  });
+  // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
+  // "cheptel" | "synchro" | "gps" | "clonage". Partagé entre les 3, réinitialisé
+  // implicitement en changeant de section (on ne mémorise pas par créature).
+  const [sousPage, setSousPage] = useState("cheptel");
+  // Créature affichée sur la page Succès (elle regroupe les 3 sous un seul onglet).
+  const [succesCreature, setSuccesCreature] = useState("muldo");
+  // Serveur Dofus de l'éleveur — choisi tout en haut de page (en-tête),
+  // partagé par les 3 créatures pour les prix communautaires. Fait partie de
+  // la sauvegarde du compte comme le reste (plus de double-écriture séparée
+  // vers profils.serveur : ce n'était qu'un précédent hybride local+cloud,
+  // devenu inutile maintenant que tout passe par le même blob).
+  const [serveur, setServeur] = useState(() => chargerJSON(STORAGE_SERVEUR, ""));
+  useEffect(() => {
+    sauvegarderJSON(STORAGE_SERVEUR, serveur);
+  }, [serveur]);
+  const [onboardingGpsOuvert, setOnboardingGpsOuvert] = useState(false);
+  useEffect(() => {
+    if (sousPage === "gps" && !chargerJSON(STORAGE_ONBOARDING_GPS, null)) {
+      setOnboardingGpsOuvert(true);
+    }
+  }, [sousPage]);
+  const fermerOnboardingGps = () => {
+    sauvegarderJSON(STORAGE_ONBOARDING_GPS, "1");
+    setOnboardingGpsOuvert(false);
+  };
+  // Tuto de première visite, site entier (distinct de la découverte GPS
+  // ci-dessus) : déclenché une seule fois au montage. Contrairement au reste
+  // de cet état, reste en localStorage brut (pas dans le blob du compte) :
+  // c'est une préférence de navigateur, pas une donnée de compte, et elle a
+  // justement vocation à se déclencher avant même la première connexion
+  // (voir PortailConnexion) comme après.
+  const [onboardingSiteOuvert, setOnboardingSiteOuvert] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem(STORAGE_ONBOARDING_SITE)) {
+      setOnboardingSiteOuvert(true);
+    }
+  }, []);
+  const fermerOnboardingSite = () => {
+    localStorage.setItem(STORAGE_ONBOARDING_SITE, "1");
+    setOnboardingSiteOuvert(false);
+  };
+  const relancerOnboardingSite = () => setOnboardingSiteOuvert(true);
+  const [demandeClassementTaverne, setDemandeClassementTaverne] = useState(false);
+  const voirClassementDepuisSucces = () => {
+    setDemandeClassementTaverne(true);
+    setPage("taverne");
+  };
+  const [brouillonTaverne, setBrouillonTaverne] = useState("");
+  const partagerDansTaverne = (texte) => {
+    setBrouillonTaverne(texte);
+    setPage("taverne");
+  };
+  const [profil, setProfilState] = useState(() => {
+    const saved = chargerJSON(STORAGE_PROFIL, null);
+    if (saved && typeof saved === "object") {
+      const styleValide = ["dragodinde", "muldo", "volkorne"].includes(saved.styleAiles) ? saved.styleAiles : "muldo";
+      return { pseudo: saved.pseudo || "", soutien: !!saved.soutien, styleAiles: styleValide, niveauAiles: Math.max(1, Math.min(5, Math.ceil((Number(saved.niveauAiles) || 1) / (Number(saved.niveauAiles) > 5 ? 2 : 1)))) };
+    }
+    return { pseudo: "", soutien: false, styleAiles: "muldo", niveauAiles: 1 };
+  });
+  const setProfil = (next) => {
+    setProfilState(next);
+    sauvegarderJSON(STORAGE_PROFIL, next);
+  };
+  const eleveMuldo = useMuldoElevage(showToast, setToast);
+  const eleveDragodinde = useDragodindeElevage();
+  const eleveVolkorne = useVolkorneElevage();
+  // null = jamais démarré (auto-proposé une fois) ; nombre = étape en cours ;
+  // "termine"/"saute" = ne plus proposer automatiquement, relançable manuellement.
+  const [parcoursGuideEtape, setParcoursGuideEtape] = useState(() => {
+    const v = chargerJSON(STORAGE_PARCOURS_GUIDE, null);
+    return v === null ? null : (Number.isFinite(Number(v)) ? Number(v) : v);
+  });
+  useEffect(() => {
+    if (chargerJSON(STORAGE_PARCOURS_GUIDE, null) === null) setParcoursGuideEtape(0);
+  }, []);
+  useEffect(() => {
+    if (typeof parcoursGuideEtape !== "number") return;
+    const ctx = { page, sousPage, naissancesCount: eleveMuldo.naissances.length, journalCount: eleveMuldo.journal.length };
+    if (ETAPES_PARCOURS_GUIDE[parcoursGuideEtape]?.estFait(ctx)) {
+      const suivante = parcoursGuideEtape + 1;
+      const valeur = suivante >= ETAPES_PARCOURS_GUIDE.length ? "termine" : suivante;
+      setParcoursGuideEtape(valeur);
+      sauvegarderJSON(STORAGE_PARCOURS_GUIDE, valeur);
+      if (valeur === "termine") {
+        showToast("🎉 Parcours guidé terminé ! Tu maîtrises maintenant le cycle GPS → accouplement → naissance.", { type: "objectif", duration: 5000 });
+      }
+    }
+  }, [parcoursGuideEtape, page, sousPage, eleveMuldo.naissances.length, eleveMuldo.journal.length]);
+  const sauterParcoursGuide = () => {
+    setParcoursGuideEtape("saute");
+    sauvegarderJSON(STORAGE_PARCOURS_GUIDE, "saute");
+  };
+  const relancerParcoursGuide = () => {
+    setParcoursGuideEtape(0);
+    sauvegarderJSON(STORAGE_PARCOURS_GUIDE, "0");
+  };
+  const [profilOuvert, setProfilOuvert] = useState(false);
+  useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
+  // Pousse la génération muldo la plus haute validée vers le profil Supabase
+  // (auto-déclaratif) dès qu'elle change — sert de condition de déblocage
+  // des ailes "muldo", en plus du palier de don.
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const gen = plusHauteGenerationValidee(eleveMuldo.cheptel, eleveMuldo.historiqueCouleurs);
+    if (compte.profil.succes_generation_muldo !== gen) {
+      supabase.from("profils").update({ succes_generation_muldo: gen })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveMuldo.cheptel, eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
+  // Pousse le nombre de couleurs muldo découvertes vers le profil Supabase —
+  // alimente le classement des éleveurs de la Taverne (auto-déclaratif, comme
+  // succes_generation_muldo ci-dessus).
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const nb = Object.values(eleveMuldo.historiqueCouleurs || {}).filter(Boolean).length;
+    if (compte.profil.couleurs_decouvertes_muldo !== nb) {
+      supabase.from("profils").update({ couleurs_decouvertes_muldo: nb })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
+  // Mêmes poussées auto-déclaratives que ci-dessus, pour Dragodinde et Volkorne
+  // — alimentent le classement des éleveurs étendu aux 3 créatures.
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const gen = plusHauteGenerationValideeGenerique(eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, GENERATIONS_DRAGODINDE);
+    if (compte.profil.succes_generation_dragodinde !== gen) {
+      supabase.from("profils").update({ succes_generation_dragodinde: gen })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const nb = Object.values(eleveDragodinde.historiqueCouleurs || {}).filter(Boolean).length;
+    if (compte.profil.couleurs_decouvertes_dragodinde !== nb) {
+      supabase.from("profils").update({ couleurs_decouvertes_dragodinde: nb })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const gen = plusHauteGenerationValideeGenerique(eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, GENERATIONS_VOLKORNE);
+    if (compte.profil.succes_generation_volkorne !== gen) {
+      supabase.from("profils").update({ succes_generation_volkorne: gen })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil) return;
+    const nb = Object.values(eleveVolkorne.historiqueCouleurs || {}).filter(Boolean).length;
+    if (compte.profil.couleurs_decouvertes_volkorne !== nb) {
+      supabase.from("profils").update({ couleurs_decouvertes_volkorne: nb })
+        .eq("id", compte.session.user.id)
+        .then(() => compte.rafraichirProfil());
+    }
+  }, [eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
+
+  // Titre d'onglet dynamique : reflète la page (et, pour les créatures, le
+  // sous-onglet) affichée — plus lisible dans l'historique/les favoris du
+  // navigateur qu'un titre statique unique.
+  useEffect(() => {
+    const NOMS_CREATURE = { muldo: "Muldos", dragodinde: "Dragodindes", volkorne: "Volkornes" };
+    const NOMS_SOUS_PAGE = { cheptel: "Cheptel", synchro: "Synchronisation", gps: "GPS", clonage: "Clonage" };
+    let titre;
+    if (page === "dashboard") titre = "Tableau de bord";
+    else if (page === "mangeoire") titre = "Carburant d'enclos";
+    else if (page === "taverne") titre = "Taverne";
+    else if (page === "succes") titre = "Succès";
+    else if (page === "guide") titre = "Guide";
+    else if (page === "nouveautes") titre = "Quoi de neuf";
+    else if (NOMS_CREATURE[page]) titre = `${NOMS_SOUS_PAGE[sousPage] || ""} ${NOMS_CREATURE[page]}`.trim();
+    else titre = "Registre des Abysses";
+    document.title = `${titre} — Registre des Abysses`;
+  }, [page, sousPage]);
+
+  return (
+    <div className="app-shell">
+      <TokensCss />
 
       <div className="app-header">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -644,8 +767,9 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 12, color: "var(--muted)", opacity: eleveMuldo.saving ? 1 : 0 }}>
-            <Save size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> sauvegarde…
+          <span style={{ fontSize: 12, color: etatSave.dernierEchec ? "var(--red)" : "var(--muted)", opacity: (etatSave.enAttente || etatSave.dernierEchec) ? 1 : 0 }}>
+            <Save size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+            {etatSave.dernierEchec ? "échec, nouvel essai…" : "sauvegarde…"}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <select
@@ -1568,7 +1692,6 @@ function useCompte() {
 function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
   const [pseudo, setPseudo] = useState(profilLocal?.pseudo || "");
   const [email, setEmail] = useState("");
-  const [identifiant, setIdentifiant] = useState("");
   const [motDePasse, setMotDePasse] = useState("");
   const [emailRenvoi, setEmailRenvoi] = useState("");
   const [mode, setMode] = useState("connexion");
@@ -1581,12 +1704,6 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
   useEffect(() => {
     setMode((m) => (pretMdp ? "nouveau-mdp" : (m === "nouveau-mdp" ? "connexion" : m)));
   }, [pretMdp]);
-
-  const resoudreEmail = async (id) => {
-    if (id.includes("@")) return id.trim().toLowerCase();
-    const { data } = await supabase.rpc("email_pour_pseudo", { p: id });
-    return data || null;
-  };
 
   const valider = async () => {
     setErreur(""); setInfo(""); setChargement(true);
@@ -1601,7 +1718,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
         const { error } = await supabase.auth.signUp({ email: mail, password: motDePasse, options: { data: { pseudo: p, parrain: parrainCapture || undefined } } });
         if (error) throw new Error(/already/i.test(error.message) ? "Un compte existe déjà avec cet email." : error.message);
         setInfo(`Email de confirmation envoyé à ${mail} — clique le lien, puis connecte-toi.`);
-        setMode("connexion"); setIdentifiant(p); setMotDePasse("");
+        setMode("connexion"); setEmail(mail); setMotDePasse("");
       } else if (mode === "oubli") {
         const mail = email.trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) throw new Error("Entre l'adresse email de ton compte.");
@@ -1616,10 +1733,8 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
         setInfo("Mot de passe changé, te voilà connecté !"); setMode("connexion"); setMotDePasse("");
         onFini && onFini();
       } else {
-        const id = identifiant.trim();
-        if (!id) throw new Error("Entre ton pseudo ou ton email.");
-        const mail = await resoudreEmail(id);
-        if (!mail) throw new Error("Pseudo inconnu dans la Taverne.");
+        const mail = email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) throw new Error("Entre l'adresse email de ton compte.");
         const { error } = await supabase.auth.signInWithPassword({ email: mail, password: motDePasse });
         if (error) throw new Error(/confirm/i.test(error.message) ? "Email non confirmé : clique le lien reçu (ou renvoie-le ci-dessous)." : "Identifiants incorrects.");
         setMotDePasse(""); onFini && onFini();
@@ -1653,7 +1768,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
           </>
         )}
         {mode === "connexion" && (
-          <input className="field" placeholder="Pseudo ou email" value={identifiant} onChange={(e) => setIdentifiant(e.target.value)} style={{ width: 210 }} />
+          <input className="field" type="email" placeholder="Ton adresse email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: 210 }} />
         )}
         {mode === "oubli" && (
           <input className="field" type="email" placeholder="L'adresse email de ton compte" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: 240 }} />
@@ -1687,6 +1802,8 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
 function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapture }) {
   const { session, profil, pretMdp, rafraichirProfil } = compte;
   const [description, setDescription] = useState("");
+  const [nouveauPseudo, setNouveauPseudo] = useState("");
+  const [changementPseudoEnCours, setChangementPseudoEnCours] = useState(false);
   const [nouveauMdp, setNouveauMdp] = useState("");
   const [info, setInfo] = useState("");
   const [erreur, setErreur] = useState("");
@@ -1694,6 +1811,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   const [chargementDon, setChargementDon] = useState(0); // palier en cours de paiement, 0 = aucun
 
   useEffect(() => { setDescription(profil?.description || ""); }, [profil]);
+  useEffect(() => { setNouveauPseudo(profil?.pseudo || ""); }, [profil]);
 
   useEffect(() => {
     if (!session) return;
@@ -1724,6 +1842,35 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
     const { error } = await supabase.from("profils").update(patch).eq("id", session.user.id);
     if (error) { setErreur(error.message); return; }
     rafraichirProfil(); setInfo(message);
+  };
+
+  // Séparé de patcher() : seul ce changement a besoin de comprendre le
+  // message d'erreur "pseudo_cooldown:<date>" renvoyé par le trigger SQL
+  // limiter_changement_pseudo (v22) pour l'afficher joliment.
+  const changerPseudo = async () => {
+    setErreur(""); setInfo("");
+    const p = nouveauPseudo.trim();
+    if (p.length < 2 || p.length > 20) { setErreur("Pseudo entre 2 et 20 caractères."); return; }
+    if (p.toLowerCase() === (profil.pseudo || "").toLowerCase()) return;
+    setChangementPseudoEnCours(true);
+    try {
+      const { data: existant } = await supabase.from("profils").select("id").ilike("pseudo", p).neq("id", session.user.id).maybeSingle();
+      if (existant) { setErreur("Ce pseudo est déjà pris."); return; }
+      const { error } = await supabase.from("profils").update({ pseudo: p }).eq("id", session.user.id);
+      if (error) {
+        const cooldown = /^pseudo_cooldown:(.+)$/.exec(error.message);
+        if (cooldown) {
+          const date = new Date(cooldown[1]).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+          setErreur(`Tu pourras rechanger de pseudo le ${date}.`);
+        } else {
+          setErreur(error.message);
+        }
+        return;
+      }
+      rafraichirProfil(); setInfo("Pseudo mis à jour.");
+    } finally {
+      setChangementPseudoEnCours(false);
+    }
   };
   const changerMdp = async () => {
     setErreur(""); setInfo("");
@@ -1774,6 +1921,14 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
             </div>
 
             <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Pseudo — modifiable une fois tous les 30 jours</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input className="field" maxLength={20} value={nouveauPseudo} onChange={(e) => setNouveauPseudo(e.target.value)} style={{ width: 200 }} />
+                <button className="btn btn-coral" disabled={changementPseudoEnCours} onClick={changerPseudo}>Changer</button>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
                 Style d'ailes{niveauEffectif > 0 ? ` (${nomNiveauAiles(profil.style_ailes, niveauEffectif)})` : ""}
               </div>
@@ -1805,7 +1960,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
             <div style={{ marginTop: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input className="field" type="password" placeholder="Nouveau mot de passe" value={nouveauMdp} onChange={(e) => setNouveauMdp(e.target.value)} style={{ width: 200 }} />
               <button className="btn btn-ghost" onClick={changerMdp}>Changer le mot de passe</button>
-              <button className="btn btn-ghost" onClick={() => { supabase.auth.signOut(); onClose(); }}>Se déconnecter</button>
+              <button className="btn btn-ghost" onClick={() => { supabase.auth.signOut(); onClose(); }} style={{ color: "var(--red)", borderColor: "var(--red)" }}>Se déconnecter</button>
             </div>
             {erreur && <div style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>{erreur}</div>}
             {info && <div style={{ color: "var(--green)", fontSize: 12, marginTop: 8 }}>{info}</div>}
@@ -1872,6 +2027,30 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
 
 const STORAGE_LU_SUJETS = "taverne-lu-sujets-v1";
 
+// Découpe un texte de message sur les URLs qu'il contient et rend chaque
+// morceau soit en texte brut, soit en lien cliquable — jamais de
+// dangerouslySetInnerHTML (pas de dépendance de sanitisation dans ce repo,
+// et le texte lui-même n'a besoin d'aucune autre mise en forme).
+const REGEX_URL = /(https?:\/\/[^\s<>"']+)/g;
+function linkifierTexte(texte) {
+  const morceaux = String(texte || "").split(REGEX_URL);
+  return morceaux.map((morceau, i) => {
+    if (i % 2 === 0) return morceau;
+    // Ponctuation de fin de phrase collée à l'URL (ex. "voir https://x.com.") :
+    // on la sort du lien plutôt que de l'avaler dans le href.
+    const fin = /[.,!?;:)\]]+$/.exec(morceau);
+    const lien = fin ? morceau.slice(0, -fin[0].length) : morceau;
+    const reste = fin ? fin[0] : "";
+    if (!lien) return morceau;
+    return (
+      <React.Fragment key={i}>
+        <a href={lien} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>{lien}</a>
+        {reste}
+      </React.Fragment>
+    );
+  });
+}
+
 function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClassementInitialConsomme, brouillonInitial, onBrouillonInitialConsomme }) {
   const { session } = compte;
   const [profilsParId, setProfilsParId] = useState({});
@@ -1880,14 +2059,16 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
   const [vue, setVue] = useState({ type: "liste" });
   const [messages, setMessages] = useState([]);
   const [saisie, setSaisie] = useState("");
-  const [luSujets, setLuSujets] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_LU_SUJETS)) || {}; } catch (e) { return {}; }
-  });
+  const [citeCible, setCiteCible] = useState(null);
+  const [abonneSujet, setAbonneSujet] = useState(false);
+  const [abonnementEnCours, setAbonnementEnCours] = useState(false);
+  const saisieRef = React.useRef(null);
+  const [luSujets, setLuSujets] = useState(() => chargerJSON(STORAGE_LU_SUJETS, {}));
 
   const marquerSujetLu = (sujetId) => {
     setLuSujets((prev) => {
       const next = { ...prev, [sujetId ?? "general"]: new Date().toISOString() };
-      try { localStorage.setItem(STORAGE_LU_SUJETS, JSON.stringify(next)); } catch (e) { console.error(e); }
+      sauvegarderJSON(STORAGE_LU_SUJETS, next);
       return next;
     });
   };
@@ -2060,7 +2241,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
 
   const chargerFil = async (sujetId) => {
     if (!supabase) return;
-    let requete = supabase.from("messages").select("id, auteur, contenu, cree_le").order("cree_le", { ascending: true }).limit(200);
+    let requete = supabase.from("messages").select("id, auteur, contenu, cree_le, cite_message_id").order("cree_le", { ascending: true }).limit(200);
     requete = sujetId === null ? requete.is("sujet_id", null) : requete.eq("sujet_id", sujetId);
     const { data } = await requete;
     setMessages(data || []);
@@ -2104,7 +2285,35 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
 
   useEffect(() => {
     if (vue.type === "sujet") { chargerFil(vue.id); marquerSujetLu(vue.id); }
+    setCiteCible(null);
   }, [vue.type, vue.id]);
+
+  // Abonnement au sujet courant (notifications push) — uniquement pour un
+  // vrai sujet (vue.id !== null), le Comptoir général n'a pas d'id stable.
+  useEffect(() => {
+    if (!session?.user || vue.type !== "sujet" || vue.id === null) { setAbonneSujet(false); return; }
+    let annule = false;
+    supabase.from("abonnements_sujets").select("sujet_id")
+      .eq("utilisateur", session.user.id).eq("sujet_id", vue.id).maybeSingle()
+      .then(({ data }) => { if (!annule) setAbonneSujet(!!data); });
+    return () => { annule = true; };
+  }, [session?.user?.id, vue.type, vue.id]);
+
+  const basculerAbonnementSujet = async () => {
+    if (!session?.user || vue.id === null) return;
+    setAbonnementEnCours(true);
+    try {
+      if (abonneSujet) {
+        await supabase.from("abonnements_sujets").delete().eq("utilisateur", session.user.id).eq("sujet_id", vue.id);
+        setAbonneSujet(false);
+      } else {
+        await supabase.from("abonnements_sujets").insert({ utilisateur: session.user.id, sujet_id: vue.id });
+        setAbonneSujet(true);
+      }
+    } finally {
+      setAbonnementEnCours(false);
+    }
+  };
 
   useEffect(() => {
     finFil.current?.scrollIntoView({ behavior: "smooth" });
@@ -2116,9 +2325,10 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
     if (!contenu || !session?.user || vue.type !== "sujet") return;
     setSaisie("");
     const { error } = await supabase.from("messages").insert({
-      auteur: session.user.id, contenu, sujet_id: vue.id,
+      auteur: session.user.id, contenu, sujet_id: vue.id, cite_message_id: citeCible?.id ?? null,
     });
     if (error) setErreur("Message refusé : " + error.message);
+    else setCiteCible(null);
   };
 
   const creerSujet = async () => {
@@ -2286,32 +2496,72 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
               </button>
             )}
           </div>
-          <div style={{ maxHeight: 460, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 6 }}>
+          {vue.id !== null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid var(--line)" }}>
+              <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => { finFil.current?.scrollIntoView({ behavior: "smooth" }); saisieRef.current?.focus(); }}>↓ Répondre</button>
+              {session && (
+                <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={abonnementEnCours} onClick={basculerAbonnementSujet}>
+                  {abonneSujet ? "🔕 Se désabonner" : "🔔 S'abonner"}
+                </button>
+              )}
+              {session && !abonneSujet && !pushActif && (
+                <span style={{ color: "var(--muted)", fontSize: 11 }}>Active les notifications push (en haut) pour recevoir les réponses.</span>
+              )}
+            </div>
+          )}
+          <div style={{ maxHeight: 460, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 6 }}>
             {messages.length === 0 && (
               <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
                 Personne n'a encore parlé ici… lance la discussion ! 🍺
               </div>
             )}
-            {messages.map((m) => (
-              <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, borderBottom: "1px solid rgba(255,255,255,.04)", paddingBottom: 10 }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
-                  <AuteurAile id={m.auteur} taille={32} />
-                  <span style={{ color: "var(--muted)", fontSize: 10 }}>
-                    {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                  </span>
+            {messages.map((m) => {
+              const citee = m.cite_message_id ? messages.find((x) => x.id === m.cite_message_id) : null;
+              return (
+                <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
+                    <AuteurAile id={m.auteur} taille={32} />
+                    <span style={{ color: "var(--muted)", fontSize: 10 }}>
+                      {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                  <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                    {citee && (
+                      <div style={{ borderLeft: "2px solid var(--gold)", background: "rgba(0,0,0,.15)", borderRadius: 8, padding: "6px 10px", marginBottom: 6, fontSize: 12, color: "var(--muted)" }}>
+                        <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                          {profilsParId[citee.auteur]?.pseudo || "Éleveur"} a écrit :
+                        </div>
+                        <div style={{ overflowWrap: "anywhere" }}>{citee.contenu.slice(0, 200)}</div>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 13, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{linkifierTexte(m.contenu)}</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 0 auto" }}>
+                    {session && (
+                      <button className="btn btn-ghost" title="Citer ce message" style={{ padding: "3px 6px", fontSize: 11 }} onClick={() => { setCiteCible(m); saisieRef.current?.focus(); }}>
+                        Citer
+                      </button>
+                    )}
+                    {session?.user?.id === m.auteur && (
+                      <button className="btn btn-ghost" title="Supprimer ce message" style={{ padding: "3px 6px", fontSize: 11, color: "var(--red)" }} onClick={() => supprimerMessage(m.id)}>
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontSize: 13, paddingTop: 4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", flex: "1 1 auto" }}>{m.contenu}</div>
-                {session?.user?.id === m.auteur && (
-                  <button className="btn btn-ghost" title="Supprimer ce message" style={{ padding: "3px 6px", fontSize: 11, color: "var(--red)", flex: "0 0 auto" }} onClick={() => supprimerMessage(m.id)}>
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
             <div ref={finFil} />
           </div>
+          {citeCible && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 12, padding: "6px 10px", background: "rgba(0,0,0,.15)", border: "1px solid var(--line)", borderRadius: 8, fontSize: 12, color: "var(--muted)" }}>
+              <span>en réponse à <b>{profilsParId[citeCible.auteur]?.pseudo || "Éleveur"}</b> : {citeCible.contenu.slice(0, 80)}</span>
+              <button className="btn btn-ghost" style={{ padding: "2px 6px", fontSize: 11 }} onClick={() => setCiteCible(null)}>✕</button>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <input
+              ref={saisieRef}
               className="field"
               placeholder={session ? "Ta réponse… (2000 caractères max)" : "Connecte-toi pour répondre"}
               maxLength={2000}
@@ -2807,6 +3057,13 @@ function SoutienPanel({ profil, setProfil }) {
   );
 }
 
+// Liste canonique de tout ce qui vit dans la sauvegarde du compte (le blob
+// jsonb de la table sauvegardes_elevage) — sert à la fois à l'export/import
+// manuel (SauvegardePanel) et à la détection de données locales héritées
+// d'avant cette migration (voir detecterDonneesLocalesHeritees). Exclut
+// volontairement STORAGE_THEME et STORAGE_ONBOARDING_SITE : préférences de
+// navigateur, pas de compte — elles doivent fonctionner même sans connexion
+// (voir PortailConnexion) et restent donc en localStorage brut.
 const CLES_SAUVEGARDE = [
   STORAGE_KEY,
   STORAGE_HISTORY_KEY,
@@ -2820,20 +3077,46 @@ const CLES_SAUVEGARDE = [
   STORAGE_CORBEILLE,
   STORAGE_PRIX_KAMAS_DRAGODINDE,
   STORAGE_PRIX_KAMAS_VOLKORNE,
+  STORAGE_SERVEUR,
+  STORAGE_ONBOARDING_GPS,
+  STORAGE_PARCOURS_GUIDE,
+  STORAGE_LU_SUJETS,
   ...CLES_SAUVEGARDE_DRAGODINDE,
   ...CLES_SAUVEGARDE_VOLKORNE,
   ...CLES_SAUVEGARDE_MANGEOIRE,
 ];
 
+// Détecte, à la première connexion d'un compte dont la sauvegarde est encore
+// vide, des données laissées par une session d'avant cette migration
+// (localStorage brut, jamais lié à un compte) — pour proposer un import
+// explicite plutôt que de les laisser inaccessibles. Ne modifie rien :
+// lecture seule, retourne un résumé de comptage ou null si rien à migrer.
+function detecterDonneesLocalesHeritees() {
+  let trouve = false;
+  const donnees = {};
+  CLES_SAUVEGARDE.forEach((cle) => {
+    const brut = localStorage.getItem(cle);
+    if (brut === null) return;
+    trouve = true;
+    try { donnees[cle] = JSON.parse(brut); } catch { donnees[cle] = brut; }
+  });
+  if (!trouve) return null;
+  const compter = (cle) => (Array.isArray(donnees[cle]) ? donnees[cle].length : 0);
+  return {
+    donnees,
+    resume: {
+      muldos: compter(STORAGE_KEY),
+      dragodindes: compter(STORAGE_KEY_DRAGODINDE),
+      volkornes: compter(STORAGE_KEY_VOLKORNE),
+    },
+  };
+}
+
 function SauvegardePanel({ showToast }) {
-  const exporter = () => {
-    flushToutesEcrituresDebattues();
-    const donnees = {};
-    CLES_SAUVEGARDE.forEach((cle) => {
-      const valeur = localStorage.getItem(cle);
-      if (valeur !== null) donnees[cle] = valeur;
-    });
-    const contenu = JSON.stringify({ format: "muldo-manager", version: 1, date: new Date().toISOString(), donnees }, null, 2);
+  const exporter = async () => {
+    await flushToutesEcrituresDebattues();
+    const donnees = obtenirCacheComplet();
+    const contenu = JSON.stringify({ format: "muldo-manager", version: 2, date: new Date().toISOString(), donnees }, null, 2);
     const blob = new Blob([contenu], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const lien = document.createElement("a");
@@ -2851,25 +3134,34 @@ function SauvegardePanel({ showToast }) {
     e.target.value = "";
     if (!fichier) return;
     const lecteur = new FileReader();
-    lecteur.onload = () => {
+    lecteur.onload = async () => {
       try {
         const parsed = JSON.parse(String(lecteur.result));
         if (parsed?.format !== "muldo-manager" || !parsed.donnees || typeof parsed.donnees !== "object") {
           showToast("Fichier invalide : ce n'est pas une sauvegarde de cet outil.");
           return;
         }
+        // v1 : sauvegardes prises avant la migration Supabase, où chaque
+        // valeur est la chaîne brute telle que localStorage la stockait (pas
+        // forcément du JSON valide, ex. le thème stocké sans guillemets).
+        const versionSource = parsed.version || 1;
+        const donnees = {};
         let restaurees = 0;
-        CLES_SAUVEGARDE.forEach((cle) => {
-          if (typeof parsed.donnees[cle] === "string") {
-            localStorage.setItem(cle, parsed.donnees[cle]);
-            restaurees += 1;
+        Object.entries(parsed.donnees).forEach(([cle, valeur]) => {
+          if (versionSource === 1) {
+            if (typeof valeur !== "string") return;
+            try { donnees[cle] = JSON.parse(valeur); } catch { donnees[cle] = valeur; }
+          } else {
+            donnees[cle] = valeur;
           }
+          restaurees += 1;
         });
         if (!restaurees) {
           showToast("Sauvegarde vide : rien à restaurer.");
           return;
         }
-        // Rechargement : toute l'appli se réhydrate depuis le stockage restauré.
+        await remplacerCacheComplet(donnees);
+        // Rechargement : toute l'appli se réhydrate depuis le compte restauré.
         window.location.reload();
       } catch (err) {
         console.error(err);
@@ -2885,7 +3177,7 @@ function SauvegardePanel({ showToast }) {
         <div>
           <b>Sauvegarde</b>
           <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-            Tout vit dans le stockage de CE navigateur : exporte régulièrement un fichier JSON
+            Tout est enregistré sur ton compte : exporte régulièrement un fichier JSON en plus
             (cheptel, généalogies, naissances, journal, prix, scans). L'import restaure tout et recharge la page.
           </div>
         </div>

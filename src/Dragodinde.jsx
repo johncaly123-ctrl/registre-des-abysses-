@@ -9,6 +9,7 @@ import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
 import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
 import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers, RechercheCouleurDeroulante } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
+import { chargerJSON, sauvegarderJSON } from "./stockage.js";
 
 const JAUGES_DRAGODINDE = [
   { key: "amour", label: "Amour", icon: Heart },
@@ -1196,28 +1197,20 @@ function normaliserGpsSuiviDragodinde(v) {
   };
 }
 
-function chargerJSON(cle, defaut) {
-  try { const v = JSON.parse(localStorage.getItem(cle)); return v ?? defaut; } catch (e) { return defaut; }
-}
-
 export function useDragodindeElevage() {
   const [cheptel, setCheptel] = useState(() => chargerJSON(STORAGE_KEY_DRAGODINDE, []));
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY_DRAGODINDE, {}));
   const [journal, setJournal] = useState(() => chargerJSON(STORAGE_JOURNAL_DRAGODINDE, []));
   const [naissances, setNaissances] = useState(() => chargerJSON(STORAGE_NAISSANCES_DRAGODINDE, []));
   const persisterNaissances = useCallback((next) => {
-    localStorage.setItem(STORAGE_NAISSANCES_DRAGODINDE, JSON.stringify(next));
+    sauvegarderJSON(STORAGE_NAISSANCES_DRAGODINDE, next);
   }, []);
   const [corbeille, setCorbeille] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_CORBEILLE_DRAGODINDE));
-      const limite = Date.now() - CORBEILLE_DUREE_JOURS_DRAGODINDE * 24 * 60 * 60 * 1000;
-      const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
-      localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(purge));
-      return purge;
-    } catch (e) {
-      return [];
-    }
+    const saved = chargerJSON(STORAGE_CORBEILLE_DRAGODINDE, []);
+    const limite = Date.now() - CORBEILLE_DUREE_JOURS_DRAGODINDE * 24 * 60 * 60 * 1000;
+    const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
+    if (purge.length !== saved.length) sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, purge);
+    return purge;
   });
   const [selectedId, setSelectedId] = useState(null);
   const [filter, setFilter] = useState("");
@@ -1285,7 +1278,7 @@ export function useDragodindeElevage() {
   const sauvegarderSuiviGps = useCallback((next) => {
     setGpsSuivi(next);
     try {
-      localStorage.setItem(STORAGE_GPS_SESSION_DRAGODINDE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
     } catch (e) {
       console.error("Erreur de sauvegarde de la session GPS", e);
     }
@@ -1346,7 +1339,7 @@ export function useDragodindeElevage() {
       };
 
       try {
-        localStorage.setItem(STORAGE_GPS_SESSION_DRAGODINDE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
       } catch (e) {
         console.error(e);
       }
@@ -1370,6 +1363,10 @@ export function useDragodindeElevage() {
                 ...couleursAncetres(c.male, cheptel),
                 ...couleursAncetres(c.femelle, cheptel),
               ])];
+          // La répartition ne pondère que les recombinaisons simples et ignore
+          // les recettes spéciales : le résultat espéré doit rester cliquable
+          // même quand il n'a pas reçu de poids.
+          if (c.resultat && !couleursTriees.includes(c.resultat)) couleursTriees.push(c.resultat);
           return {
             id: crypto.randomUUID(),
             maleId: c.male.id,
@@ -1409,7 +1406,7 @@ export function useDragodindeElevage() {
         consommes: (prev.consommes || []).filter((id) => !aRetirer.has(id)),
       };
       try {
-        localStorage.setItem(STORAGE_GPS_SESSION_DRAGODINDE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
       } catch (e) {
         console.error(e);
       }
@@ -1441,7 +1438,7 @@ export function useDragodindeElevage() {
   const updateCheptel = useCallback((updater) => {
     setCheptel((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem(STORAGE_KEY_DRAGODINDE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_KEY_DRAGODINDE, next);
       return next;
     });
   }, []);
@@ -1471,7 +1468,7 @@ export function useDragodindeElevage() {
           ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
           ...prev,
         ].slice(0, 100);
-        localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, next);
         return next;
       });
       setSelectedId((s) => (s && steriles.some((m) => m.id === s) ? null : s));
@@ -1497,11 +1494,11 @@ export function useDragodindeElevage() {
     setCheptel((prev) => {
       const muldo = prev.find((m) => m.id === id);
       const next = prev.filter((m) => m.id !== id);
-      localStorage.setItem(STORAGE_KEY_DRAGODINDE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_KEY_DRAGODINDE, next);
       if (muldo) {
         setCorbeille((prevCorbeille) => {
           const nextCorbeille = [{ muldo, supprimeLe: new Date().toISOString() }, ...prevCorbeille].slice(0, 100);
-          localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(nextCorbeille));
+          sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, nextCorbeille);
           return nextCorbeille;
         });
       }
@@ -1517,11 +1514,11 @@ export function useDragodindeElevage() {
       const muldos = prev.filter((m) => idsSet.has(m.id));
       const next = prev.filter((m) => !idsSet.has(m.id));
       if (muldos.length) {
-        localStorage.setItem(STORAGE_KEY_DRAGODINDE, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_KEY_DRAGODINDE, next);
         setCorbeille((prevCorbeille) => {
           const supprimeLe = new Date().toISOString();
           const nextCorbeille = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prevCorbeille].slice(0, 100);
-          localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(nextCorbeille));
+          sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, nextCorbeille);
           return nextCorbeille;
         });
       }
@@ -1545,20 +1542,20 @@ export function useDragodindeElevage() {
       if (!entree) return prev;
       updateCheptel((prevCheptel) => [...prevCheptel, entree.muldo]);
       const next = prev.filter((e) => e.muldo.id !== id);
-      localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, next);
       return next;
     });
   }, [updateCheptel]);
   const purgerCorbeilleEntree = useCallback((id) => {
     setCorbeille((prev) => {
       const next = prev.filter((e) => e.muldo.id !== id);
-      localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, next);
       return next;
     });
   }, []);
   const viderCorbeille = useCallback(() => {
     setCorbeille(() => {
-      localStorage.setItem(STORAGE_CORBEILLE_DRAGODINDE, JSON.stringify([]));
+      sauvegarderJSON(STORAGE_CORBEILLE_DRAGODINDE, []);
       return [];
     });
   }, []);
@@ -1573,9 +1570,12 @@ export function useDragodindeElevage() {
     }]);
   }, [updateCheptel]);
 
-  const enregistrerHistorique = useCallback((next) => {
-    setHistoriqueCouleurs(next);
-    localStorage.setItem(STORAGE_HISTORY_KEY_DRAGODINDE, JSON.stringify(next));
+  const enregistrerHistorique = useCallback((updateurOuValeur) => {
+    setHistoriqueCouleurs((prev) => {
+      const next = typeof updateurOuValeur === "function" ? updateurOuValeur(prev) : updateurOuValeur;
+      sauvegarderJSON(STORAGE_HISTORY_KEY_DRAGODINDE, next);
+      return next;
+    });
   }, []);
   const basculerCouleurHistorique = useCallback((couleur, active) => {
     enregistrerHistorique((prev) => { const n = { ...prev }; if (active) n[couleur] = true; else delete n[couleur]; return n; });
@@ -1638,7 +1638,7 @@ export function useDragodindeElevage() {
         sexe,
         nom: nomCourt,
       }];
-      localStorage.setItem(STORAGE_JOURNAL_DRAGODINDE, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_JOURNAL_DRAGODINDE, next);
       return next;
     });
   }, [naissances, updateCheptel, persisterNaissances]);

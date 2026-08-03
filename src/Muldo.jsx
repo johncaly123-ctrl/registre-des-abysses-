@@ -9,7 +9,7 @@
 // ============================================================
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Trash2, Heart, Zap, Sparkles, Droplets, AlertTriangle, X, Skull, Baby } from "lucide-react";
-import { creerEcritureDebattue } from "./stockage.js";
+import { chargerJSON, sauvegarderJSON, creerEcritureDebattue } from "./stockage.js";
 import {
   BebesARenommerPanel, BoutonFiche,
   exporterFicheImage, copierPressePapiers, LabeledSelect, StatCard, RechercheCouleurDeroulante,
@@ -59,10 +59,12 @@ export const STORAGE_CORBEILLE = "muldo-corbeille-v1";
 export const CORBEILLE_DUREE_JOURS = 30;
 
 export function useMuldoElevage(showToast, setToast) {
-  const [cheptel, setCheptel] = useState(CHEPTEL_INITIAL_AUTO);
+  const [cheptel, setCheptel] = useState(() => {
+    const saved = chargerJSON(STORAGE_KEY, null);
+    return Array.isArray(saved) ? saved.map(normaliserMuldo) : CHEPTEL_INITIAL_AUTO;
+  });
   const [selectedId, setSelectedId] = useState(null);
   const [ficheRapideId, setFicheRapideId] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -80,44 +82,40 @@ export function useMuldoElevage(showToast, setToast) {
   const [modePurification, setModePurification] = useState(false);
   const [optimakina, setOptimakina] = useState(false);
   const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
-  const [historiqueCouleurs, setHistoriqueCouleurs] = useState({});
+  const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY, {}));
 
-  const [naissances, setNaissances] = useState([]);
+  const [naissances, setNaissances] = useState(() => {
+    const saved = chargerJSON(STORAGE_NAISSANCES, []);
+    return Array.isArray(saved) ? saved : [];
+  });
 
   const [instantanes, setInstantanes] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_INSTANTANES));
-      return Array.isArray(saved) ? saved : [];
-    } catch (e) {
-      return [];
-    }
+    const saved = chargerJSON(STORAGE_INSTANTANES, []);
+    return Array.isArray(saved) ? saved : [];
   });
   const [journal, setJournal] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_JOURNAL));
-      return Array.isArray(saved) ? saved : [];
-    } catch (e) {
-      return [];
-    }
+    const saved = chargerJSON(STORAGE_JOURNAL, []);
+    return Array.isArray(saved) ? saved : [];
   });
   const [corbeille, setCorbeille] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_CORBEILLE));
-      const limite = Date.now() - CORBEILLE_DUREE_JOURS * 24 * 60 * 60 * 1000;
-      const purge = (Array.isArray(saved) ? saved : []).filter((e) => new Date(e.supprimeLe).getTime() > limite);
-      localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(purge));
-      return purge;
-    } catch (e) {
-      return [];
-    }
+    const saved = chargerJSON(STORAGE_CORBEILLE, []);
+    const limite = Date.now() - CORBEILLE_DUREE_JOURS * 24 * 60 * 60 * 1000;
+    const liste = Array.isArray(saved) ? saved : [];
+    const purge = liste.filter((e) => new Date(e.supprimeLe).getTime() > limite);
+    if (purge.length !== liste.length) sauvegarderJSON(STORAGE_CORBEILLE, purge);
+    return purge;
   });
-  const [gpsSuivi, setGpsSuivi] = useState({
-    mode: "couleur",
-    objectif: "Prune",
-    purification: false,
-    consommes: [],
-    historique: [],
-    totalInitial: 0,
+  const [gpsSuivi, setGpsSuivi] = useState(() => {
+    const parsed = chargerJSON(STORAGE_GPS_SESSION, null);
+    if (!parsed) return { mode: "couleur", objectif: "Prune", purification: false, consommes: [], historique: [], totalInitial: 0 };
+    return {
+      mode: parsed.mode || "couleur",
+      objectif: parsed.objectif || "Prune",
+      purification: Boolean(parsed.purification),
+      consommes: Array.isArray(parsed.consommes) ? parsed.consommes : [],
+      historique: Array.isArray(parsed.historique) ? parsed.historique : [],
+      totalInitial: Number(parsed.totalInitial || 0),
+    };
   });
 
   const byId = useMemo(() => Object.fromEntries(cheptel.map((m) => [m.id, m])), [cheptel]);
@@ -192,7 +190,7 @@ export function useMuldoElevage(showToast, setToast) {
         nom: nomCourt,
       }];
       try {
-        localStorage.setItem(STORAGE_JOURNAL, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_JOURNAL, next);
       } catch (e) {
         console.error(e);
       }
@@ -324,7 +322,7 @@ export function useMuldoElevage(showToast, setToast) {
   const sauvegarderSuiviGps = useCallback((next) => {
     setGpsSuivi(next);
     try {
-      localStorage.setItem(STORAGE_GPS_SESSION, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_GPS_SESSION, next);
     } catch (e) {
       console.error("Erreur de sauvegarde de la session GPS", e);
     }
@@ -406,7 +404,7 @@ export function useMuldoElevage(showToast, setToast) {
       };
 
       try {
-        localStorage.setItem(STORAGE_GPS_SESSION, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_GPS_SESSION, next);
       } catch (e) {
         console.error(e);
       }
@@ -433,6 +431,11 @@ export function useMuldoElevage(showToast, setToast) {
                 ...couleursAncetres(c.male, cheptel),
                 ...couleursAncetres(c.femelle, cheptel),
               ])];
+          // La répartition ne pondère que les recombinaisons simples et ignore
+          // les recettes spéciales (ex. Doré et Amande x Roux et Indigo ->
+          // Turquoise) : le résultat espéré doit rester cliquable même quand
+          // il n'a pas reçu de poids.
+          if (c.resultat && !couleursTriees.includes(c.resultat)) couleursTriees.push(c.resultat);
           return {
             id: uid(),
             maleId: c.male.id,
@@ -450,7 +453,7 @@ export function useMuldoElevage(showToast, setToast) {
       if (!ajouts.length) return prev;
       const suivant = [...prev, ...ajouts];
       try {
-        localStorage.setItem(STORAGE_NAISSANCES, JSON.stringify(suivant));
+        sauvegarderJSON(STORAGE_NAISSANCES, suivant);
       } catch (e) {
         console.error(e);
       }
@@ -482,7 +485,7 @@ export function useMuldoElevage(showToast, setToast) {
         consommes: (prev.consommes || []).filter((id) => !aRetirer.has(id)),
       };
       try {
-        localStorage.setItem(STORAGE_GPS_SESSION, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_GPS_SESSION, next);
       } catch (e) {
         console.error(e);
       }
@@ -493,7 +496,7 @@ export function useMuldoElevage(showToast, setToast) {
         const suivantes = anciennes.filter((n) => !(n.maleId === maleId && n.femelleId === femelleId));
         if (suivantes.length === anciennes.length) return anciennes;
         try {
-          localStorage.setItem(STORAGE_NAISSANCES, JSON.stringify(suivantes));
+          sauvegarderJSON(STORAGE_NAISSANCES, suivantes);
         } catch (e) {
           console.error(e);
         }
@@ -528,11 +531,7 @@ export function useMuldoElevage(showToast, setToast) {
 
   const enregistrerHistoriqueCouleurs = useCallback((nextHistory) => {
     setHistoriqueCouleurs(nextHistory);
-    try {
-      localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(nextHistory));
-    } catch (e) {
-      console.error("Erreur de sauvegarde historique couleurs", e);
-    }
+    sauvegarderJSON(STORAGE_HISTORY_KEY, nextHistory);
   }, []);
 
   const basculerCouleurHistorique = useCallback((couleur, active) => {
@@ -540,11 +539,7 @@ export function useMuldoElevage(showToast, setToast) {
       const next = { ...prev };
       if (active) next[couleur] = true;
       else delete next[couleur];
-      try {
-        localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(next));
-      } catch (e) {
-        console.error("Erreur de sauvegarde historique couleurs", e);
-      }
+      sauvegarderJSON(STORAGE_HISTORY_KEY, next);
       return next;
     });
   }, []);
@@ -553,7 +548,7 @@ export function useMuldoElevage(showToast, setToast) {
     setHistoriqueCouleurs((prev) => {
       const next = { ...prev };
       (GENERATIONS_MULDO[generation] || []).forEach((couleur) => { next[couleur] = true; });
-      localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(next));
+      sauvegarderJSON(STORAGE_HISTORY_KEY, next);
       return next;
     });
   }, []);
@@ -570,77 +565,20 @@ export function useMuldoElevage(showToast, setToast) {
     enregistrerHistoriqueCouleurs(next);
   }, [cheptel, enregistrerHistoriqueCouleurs]);
 
-  // chargement initial
+  // L'état est chargé de façon synchrone dès les useState ci-dessus (cache
+  // déjà hydraté avant que ce hook ne monte, voir le gate de connexion dans
+  // App.jsx) : plus besoin d'un effet de "chargement initial" ni d'un état
+  // loading séparé.
   useEffect(() => {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  const savedHistory = localStorage.getItem(STORAGE_HISTORY_KEY);
-  const savedGpsSession = localStorage.getItem(STORAGE_GPS_SESSION);
-  const savedNaissances = localStorage.getItem(STORAGE_NAISSANCES);
-
-  if (savedNaissances) {
-    try {
-      const parsed = JSON.parse(savedNaissances);
-      if (Array.isArray(parsed)) setNaissances(parsed);
-    } catch (e) {
-      console.error("Naissances en attente illisibles", e);
-    }
-  }
-
-  if (saved) {
-    try {
-      const parsedCheptel = JSON.parse(saved);
-      if (Array.isArray(parsedCheptel)) setCheptel(parsedCheptel.map(normaliserMuldo));
-    } catch (e) {
-      console.error("Cheptel illisible", e);
-    }
-  }
-
-  if (savedHistory) {
-    try {
-      const parsedHistory = JSON.parse(savedHistory);
-      if (parsedHistory && typeof parsedHistory === "object") setHistoriqueCouleurs(parsedHistory);
-    } catch (e) {
-      console.error("Historique des couleurs illisible", e);
-    }
-  }
-
-  if (savedGpsSession) {
-    try {
-      const parsed = JSON.parse(savedGpsSession);
-      setGpsSuivi({
-        mode: parsed.mode || "couleur",
-        objectif: parsed.objectif || "Prune",
-        purification: Boolean(parsed.purification),
-        consommes: Array.isArray(parsed.consommes) ? parsed.consommes : [],
-        historique: Array.isArray(parsed.historique) ? parsed.historique : [],
-        totalInitial: Number(parsed.totalInitial || 0),
+    setHistoriqueCouleurs((prev) => {
+      const next = { ...prev };
+      cheptel.forEach((m) => {
+        if (m.couleur) next[m.couleur] = true;
       });
-    } catch (e) {
-      console.error("Session GPS illisible", e);
-    }
-  }
-
-  setLoading(false);
-}, []);
-
-useEffect(() => {
-  if (loading) return;
-
-  setHistoriqueCouleurs((prev) => {
-    const next = { ...prev };
-    cheptel.forEach((m) => {
-      if (m.couleur) next[m.couleur] = true;
+      sauvegarderJSON(STORAGE_HISTORY_KEY, next);
+      return next;
     });
-
-    try {
-      localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(next));
-    } catch (e) {
-      console.error("Erreur de sauvegarde historique couleurs", e);
-    }
-
-    return next;
-  });
-}, [cheptel, loading]);
+  }, [cheptel]);
 
 const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), []);
   const persist = useCallback(async (next) => {
@@ -676,29 +614,17 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
         if (dernier.total === point.total && dernier.fertiles === point.fertiles
           && dernier.couleurs === point.couleurs && dernier.naissances === point.naissances) return prev;
         const next = [...prev.slice(0, -1), point];
-        try {
-          localStorage.setItem(STORAGE_INSTANTANES, JSON.stringify(next));
-        } catch (e) {
-          console.error(e);
-        }
+        sauvegarderJSON(STORAGE_INSTANTANES, next);
         return next;
       }
       const next = [...prev, point].slice(-365);
-      try {
-        localStorage.setItem(STORAGE_INSTANTANES, JSON.stringify(next));
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_INSTANTANES, next);
       return next;
     });
   }, [cheptel, journal.length]);
 
   const persisterNaissances = (next) => {
-    try {
-      localStorage.setItem(STORAGE_NAISSANCES, JSON.stringify(next));
-    } catch (e) {
-      console.error(e);
-    }
+    sauvegarderJSON(STORAGE_NAISSANCES, next);
   };
 
   // Naissance confirmée en jeu : on enregistre la couleur RÉELLEMENT obtenue
@@ -756,7 +682,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
         nom: nomCourt,
       }];
       try {
-        localStorage.setItem(STORAGE_JOURNAL, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_JOURNAL, next);
       } catch (e) {
         console.error(e);
       }
@@ -816,7 +742,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
         nom: m.nom,
       }];
       try {
-        localStorage.setItem(STORAGE_JOURNAL, JSON.stringify(next));
+        sauvegarderJSON(STORAGE_JOURNAL, next);
       } catch (e) {
         console.error(e);
       }
@@ -835,7 +761,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     if (muldo) {
       setCorbeille((prev) => {
         const next = [{ muldo, supprimeLe: new Date().toISOString() }, ...prev].slice(0, 100);
-        try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+        sauvegarderJSON(STORAGE_CORBEILLE, next);
         return next;
       });
     }
@@ -852,7 +778,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     setCorbeille((prev) => {
       const supprimeLe = new Date().toISOString();
       const next = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prev].slice(0, 100);
-      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+      sauvegarderJSON(STORAGE_CORBEILLE, next);
       return next;
     });
   };
@@ -874,7 +800,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     updateCheptel((prev) => [...prev, entree.muldo]);
     setCorbeille((prev) => {
       const next = prev.filter((e) => e.muldo.id !== id);
-      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+      sauvegarderJSON(STORAGE_CORBEILLE, next);
       return next;
     });
   };
@@ -882,7 +808,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
   const purgerCorbeilleEntree = (id) => {
     setCorbeille((prev) => {
       const next = prev.filter((e) => e.muldo.id !== id);
-      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+      sauvegarderJSON(STORAGE_CORBEILLE, next);
       return next;
     });
   };
@@ -890,7 +816,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
   const viderCorbeille = () => {
     if (!window.confirm("Vider définitivement la corbeille ? Cette action est irréversible.")) return;
     setCorbeille(() => {
-      try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify([])); } catch (e) { console.error(e); }
+      sauvegarderJSON(STORAGE_CORBEILLE, []);
       return [];
     });
   };
@@ -924,7 +850,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
           ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
           ...prev,
         ].slice(0, 100);
-        try { localStorage.setItem(STORAGE_CORBEILLE, JSON.stringify(next)); } catch (e) { console.error(e); }
+        sauvegarderJSON(STORAGE_CORBEILLE, next);
         return next;
       });
       if (selectedId && steriles.some((m) => m.id === selectedId)) setSelectedId(null);
@@ -1038,8 +964,6 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     setSelectedId,
     ficheRapideId,
     setFicheRapideId,
-    loading,
-    setLoading,
     saving,
     setSaving,
     filter,
@@ -2669,10 +2593,7 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
   const [texte, setTexte] = useState("");
   const [preview, setPreview] = useState("");
   const [ocrEnCours, setOcrEnCours] = useState(false);
-  const [scans, setScans] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_SYNC_KEY) || "{}"); }
-    catch { return {}; }
-  });
+  const [scans, setScans] = useState(() => chargerJSON(STORAGE_SYNC_KEY, {}));
   const [snapshotAvant, setSnapshotAvant] = useState(null);
 
   const lignes = useMemo(() => analyserTexteCaptureMuldo(texte), [texte]);
@@ -2698,7 +2619,7 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
       },
     };
     setScans(next);
-    localStorage.setItem(STORAGE_SYNC_KEY, JSON.stringify(next));
+    sauvegarderJSON(STORAGE_SYNC_KEY, next);
     setTexte("");
     showToast(`Scan ${typeActuel.label} enregistré : ${lignes.reduce((n, l) => n + l.total, 0)} monture(s).`);
   };
@@ -2707,7 +2628,7 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
     const next = { ...scans };
     delete next[key];
     setScans(next);
-    localStorage.setItem(STORAGE_SYNC_KEY, JSON.stringify(next));
+    sauvegarderJSON(STORAGE_SYNC_KEY, next);
   };
 
   const femelles = mapScanParCouleur(scans.femelles?.lignes);

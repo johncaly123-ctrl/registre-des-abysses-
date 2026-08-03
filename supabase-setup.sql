@@ -376,3 +376,110 @@ select id, case niveau_ailes when 1 then 5 when 2 then 8 when 3 then 12 when 4 t
 from profils
 where niveau_ailes between 1 and 5
 on conflict (stripe_session_id) do nothing;
+
+-- v19 : source unique de verite pour les donnees d'elevage d'un compte
+-- (cheptels, naissances, journal, corbeille, session GPS, instantanes, prix
+-- personnels, preferences UI...) -- remplace les ~30 cles localStorage
+-- dispersees par un seul blob JSON par compte. Contrairement a
+-- cheptels_publics (v14), qui est un instantane PUBLIC restreint publie a la
+-- main, ceci est prive et continu (une ligne = l'etat courant complet).
+create table if not exists sauvegardes_elevage (
+  utilisateur uuid primary key references profils(id) on delete cascade,
+  donnees jsonb not null default '{}'::jsonb,
+  maj_le timestamptz not null default now()
+);
+alter table sauvegardes_elevage enable row level security;
+drop policy if exists "voir sa propre sauvegarde" on sauvegardes_elevage;
+create policy "voir sa propre sauvegarde" on sauvegardes_elevage for select using (auth.uid() = utilisateur);
+drop policy if exists "creer sa propre sauvegarde" on sauvegardes_elevage;
+create policy "creer sa propre sauvegarde" on sauvegardes_elevage for insert with check (auth.uid() = utilisateur);
+drop policy if exists "modifier sa propre sauvegarde" on sauvegardes_elevage;
+create policy "modifier sa propre sauvegarde" on sauvegardes_elevage for update using (auth.uid() = utilisateur) with check (auth.uid() = utilisateur);
+-- Pas de policy delete cote client : la suppression du compte (cascade
+-- depuis profils/auth.users) suffit.
+
+create or replace function toucher_maj_sauvegarde_elevage() returns trigger as $$
+begin
+  new.maj_le := now();
+  return new;
+end;
+$$ language plpgsql;
+drop trigger if exists trg_maj_sauvegarde_elevage on sauvegardes_elevage;
+create trigger trg_maj_sauvegarde_elevage before update on sauvegardes_elevage
+  for each row execute function toucher_maj_sauvegarde_elevage();
+
+-- v20 : citation d'un message dans une reponse (Taverne). on delete set null
+-- pour que la suppression du message cite ne casse jamais l'affichage de la
+-- citation -- pas de policy a toucher, l'insert existant
+-- (auth.uid() = auteur) ne restreint aucune autre colonne.
+alter table messages add column if not exists cite_message_id bigint references messages(id) on delete set null;
+
+-- v21 : abonnement par sujet aux notifications push, en plus des messages
+-- prives (v10/v11). Volontairement limite aux vrais sujets (sujet_id
+-- bigint, jamais null) -- le Comptoir general (sujet_id null) est hors
+-- perimetre.
+create table if not exists abonnements_sujets (
+  utilisateur uuid not null references profils(id) on delete cascade,
+  sujet_id bigint not null references sujets(id) on delete cascade,
+  cree_le timestamptz not null default now(),
+  primary key (utilisateur, sujet_id)
+);
+alter table abonnements_sujets enable row level security;
+drop policy if exists "voir ses abonnements de sujet" on abonnements_sujets;
+create policy "voir ses abonnements de sujet" on abonnements_sujets for select using (auth.uid() = utilisateur);
+drop policy if exists "creer son abonnement de sujet" on abonnements_sujets;
+create policy "creer son abonnement de sujet" on abonnements_sujets for insert with check (auth.uid() = utilisateur);
+drop policy if exists "supprimer son abonnement de sujet" on abonnements_sujets;
+create policy "supprimer son abonnement de sujet" on abonnements_sujets for delete using (auth.uid() = utilisateur);
+
+-- Declenche la meme Edge Function "rapid-function" que v11 (voir
+-- supabase/functions/envoyer-push/index.ts) a chaque nouveau message poste
+-- dans un vrai sujet.
+create or replace function public.notifier_nouveau_message_sujet()
+returns trigger as $$
+begin
+  perform net.http_post(
+    url := 'https://fcdculpkrcuhtexmqojz.supabase.co/functions/v1/rapid-function',
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    body := jsonb_build_object('record', to_jsonb(new))
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_nouveau_message_sujet on messages;
+create trigger on_nouveau_message_sujet
+after insert on messages
+for each row when (new.sujet_id is not null)
+execute function public.notifier_nouveau_message_sujet();
+
+-- v22 : changement de pseudo limite a une fois tous les 30 jours. A la
+-- difference de protege_niveau_ailes (v3), qui revert silencieusement une
+-- modif interdite, ici l'utilisateur EST legitime a tenter le changement et
+-- merite une vraie erreur (avec date de reeligibilite). Colonne nullable :
+-- null = jamais change = eligible immediatement (comptes existants non
+-- bloques retroactivement).
+alter table profils add column if not exists pseudo_change_le timestamptz;
+
+create or replace function public.limiter_changement_pseudo() returns trigger as $$
+begin
+  if new.pseudo is distinct from old.pseudo
+     and coalesce(auth.jwt() ->> 'role', '') in ('authenticated', 'anon') then
+    if old.pseudo_change_le is not null and now() - old.pseudo_change_le < interval '30 days' then
+      raise exception 'pseudo_cooldown:%', to_char((old.pseudo_change_le + interval '30 days') at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+    end if;
+    new.pseudo_change_le := now();
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_limiter_changement_pseudo on profils;
+create trigger trg_limiter_changement_pseudo before update on profils
+  for each row execute function public.limiter_changement_pseudo();
+
+-- v23 : authentification email uniquement (fin de la connexion par pseudo)
+-- -- AuthPanel n'appelle plus resoudreEmail/email_pour_pseudo ; cette RPC
+-- security definer, grantee a `anon`, servait exclusivement a ca et
+-- constituait une legere surface de sondage d'existence de pseudo.
+drop function if exists email_pour_pseudo(text);

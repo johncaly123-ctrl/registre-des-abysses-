@@ -8,6 +8,7 @@ import { Trash2, ChevronRight, Loader2 } from "lucide-react";
 import { COLORS } from "./muldoGenetique.js";
 import { supabase } from "./supabaseClient.js";
 import { bonusProbabiliteGenerationCible } from "./geneticsUtils.js";
+import { chargerJSON, sauvegarderJSON } from "./stockage.js";
 
 // Nom de serveur Dofus — liste figée (évite les doublons de type "Rafal" vs
 // "rafal " qui fragmenteraient les prix communautaires par serveur). Choisi
@@ -1641,19 +1642,11 @@ export function formatKamas(n) {
 export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurFn, nomHdv, labelExtraction, icone, badge: Badge, creature, userId, serveur }) {
   const storageKeySourcePrix = `${storageKey}-source-v1`;
   const [sourcePrix, setSourcePrix] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKeySourcePrix);
-      return saved === "communaute" || saved === "perso" ? saved : "perso";
-    } catch (_e) {
-      return "perso";
-    }
+    const saved = chargerJSON(storageKeySourcePrix, "perso");
+    return saved === "communaute" || saved === "perso" ? saved : "perso";
   });
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKeySourcePrix, sourcePrix);
-    } catch (e) {
-      console.error(e);
-    }
+    sauvegarderJSON(storageKeySourcePrix, sourcePrix);
   }, [sourcePrix, storageKeySourcePrix]);
   // Le serveur se choisit tout en haut de la page (en-tête) — partagé entre
   // les 3 créatures, pas de champ dupliqué ici.
@@ -1692,27 +1685,19 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
   };
 
   const [config, setConfig] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey));
-      if (saved && typeof saved === "object") {
-        return {
-          prix: saved.prix || {},
-          decoteSterile: Number.isFinite(saved.decoteSterile) ? saved.decoteSterile : 20,
-          prixAmbre: Number.isFinite(saved.prixAmbre) ? saved.prixAmbre : 20000,
-        };
-      }
-    } catch (e) {
-      console.error("Grille de prix illisible", e);
+    const saved = chargerJSON(storageKey, null);
+    if (saved && typeof saved === "object") {
+      return {
+        prix: saved.prix || {},
+        decoteSterile: Number.isFinite(saved.decoteSterile) ? saved.decoteSterile : 20,
+        prixAmbre: Number.isFinite(saved.prixAmbre) ? saved.prixAmbre : 20000,
+      };
     }
     return { prix: {}, decoteSterile: 20, prixAmbre: 20000 };
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(config));
-    } catch (e) {
-      console.error(e);
-    }
+    sauvegarderJSON(storageKey, config);
   }, [config, storageKey]);
 
   const lignes = useMemo(() => {
