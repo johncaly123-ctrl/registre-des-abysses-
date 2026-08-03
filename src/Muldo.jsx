@@ -160,7 +160,12 @@ export function useMuldoElevage(showToast, setToast) {
     // Indigo+Doré) — si le bébé reçoit la génétique du second, il a comme
     // parents enregistrés Indigo+Doré, pas les deux Indigo clonés.
     const parentGenealogie = genealogieChoisie === "B" ? parentB : parentA;
+    // parentIds (parent réel dans le cheptel) ET parentsCouleurs (couleur
+    // saisie à la main quand le parent n'est pas/plus dans le cheptel) sont
+    // tous les deux à reporter — un parent peut être connu via l'un OU
+    // l'autre selon la case.
     const parentsHerites = parentGenealogie.parentIds || [];
+    const couleursHeritees = parentGenealogie.parentsCouleurs || [];
     const nouveau = {
       id: crypto.randomUUID(),
       nom: nomCourt,
@@ -181,6 +186,7 @@ export function useMuldoElevage(showToast, setToast) {
       reproductionsRestantes: 1,
       parentIds: parentsHerites,
       parents: parentsHerites,
+      parentsCouleurs: couleursHeritees,
       note: `Clonage : ${parentA.nom || parentA.id} + ${parentB.nom || parentB.id}, génétique de ${parentGenealogie.nom || parentGenealogie.id}${couleurValide ? "" : " — résultat tiré au hasard, corrige couleur/sexe si besoin"}`,
     };
     copierPressePapiers(nomCourt);
@@ -1742,7 +1748,12 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
   // du couple cloné), pas le couple lui-même — d'où l'aperçu ci-dessous pour
   // que le choix soit éclairé.
   const genealogieDe = (m) => {
-    const parents = (m?.parentIds || []).map((id) => (muldos || []).find((x) => x.id === id)?.couleur).filter(Boolean);
+    // Un parent peut être connu via parentIds (parent réel dans le cheptel)
+    // OU parentsCouleurs (couleur saisie à la main, ex. parent absent du
+    // cheptel) — les deux cases comptent, pas seulement parentIds.
+    const parents = [0, 1]
+      .map((i) => (m?.parentIds?.[i] ? (muldos || []).find((x) => x.id === m.parentIds[i])?.couleur : null) || m?.parentsCouleurs?.[i] || null)
+      .filter(Boolean);
     return parents.length ? parents.join(" + ") : "aucune généalogie connue";
   };
   const genA = A ? generationDeCouleur(A.couleur) : null;

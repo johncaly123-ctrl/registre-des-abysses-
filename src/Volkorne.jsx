@@ -1128,7 +1128,9 @@ export function VolkorneClonagePage({ cheptel, fusionA, fusionB, setFusionA, set
   const A = cheptel.find((m) => m.id === fusionA) || null;
   const B = cheptel.find((m) => m.id === fusionB) || null;
   const genealogieDe = (m) => {
-    const parents = (m?.parentIds || []).map((id) => cheptel.find((x) => x.id === id)?.couleur).filter(Boolean);
+    const parents = [0, 1]
+      .map((i) => (m?.parentIds?.[i] ? cheptel.find((x) => x.id === m.parentIds[i])?.couleur : null) || m?.parentsCouleurs?.[i] || null)
+      .filter(Boolean);
     return parents.length ? parents.join(" + ") : "aucune généalogie connue";
   };
   const genA = A ? generationDeCouleurVolkorne(A.couleur) : null;
@@ -1671,12 +1673,17 @@ export function useVolkorneElevage() {
     // généalogiques enregistrés deviennent les propres parents de celui-là
     // (les grands-parents du couple cloné), pas le couple lui-même.
     const parentGenealogie = genealogieChoisie === "B" ? parentB : parentA;
+    // parentIds (parent réel dans le cheptel) ET parentsCouleurs (couleur
+    // saisie à la main quand le parent n'est pas/plus dans le cheptel) sont
+    // tous les deux à reporter.
     const parentsHerites = parentGenealogie.parentIds || [];
+    const couleursHeritees = parentGenealogie.parentsCouleurs || [];
     updateCheptel((prev) => prev.filter((m) => m.id !== fusionA && m.id !== fusionB).concat({
       id: crypto.randomUUID(), nom: genererNomCourtVolkorne(couleurResultat), couleur: couleurResultat,
       generation: generationDeCouleurVolkorne(couleurResultat), sexe: sexeResultat, statut: "Fertile", sterile: false,
       reproRestantes: 1, reproductionsRestantes: 1, amour: 0, endurance: 0, maturite: 0, serenite: 50,
       parentIds: parentsHerites,
+      parentsCouleurs: couleursHeritees,
     }));
     setFusionA(""); setFusionB("");
   }, [fusionA, fusionB, byId, updateCheptel]);
