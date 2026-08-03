@@ -716,15 +716,25 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
   // partagé — pas de table dédiée, l'état est purement éphémère (pas de
   // policy RLS applicable ici, Presence n'est pas gouverné par Postgres).
   // Contenu volontairement limité (pseudo + ailes), rien de sensible.
+  // Un seul channel/abonnement pour toute l'appli (et son écouteur "sync" est
+  // attaché ICI, avant le subscribe()) : le client Supabase renvoie le MÊME
+  // channel pour un topic déjà enregistré, et refuse d'ajouter un écouteur
+  // presence après coup ("cannot add presence callbacks... after subscribe()")
+  // — donc pas de second channel créé plus bas dans ModerationPage, l'état
+  // est simplement redescendu en prop.
+  const [enLigne, setEnLigne] = useState([]);
   useEffect(() => {
     if (!supabase || !compte.session?.user || !compte.profil?.pseudo) return undefined;
     const canal = supabase.channel("presence-eleveurs", { config: { presence: { key: compte.session.user.id } } });
+    canal.on("presence", { event: "sync" }, () => {
+      setEnLigne(Object.values(canal.presenceState()).flat());
+    });
     canal.subscribe((statut) => {
       if (statut === "SUBSCRIBED") {
         canal.track({ pseudo: compte.profil.pseudo, styleAiles: compte.profil.style_ailes, niveauAiles: compte.profil.niveau_ailes, depuis: Date.now() });
       }
     });
-    return () => { supabase.removeChannel(canal); };
+    return () => { supabase.removeChannel(canal); setEnLigne([]); };
   }, [compte.session, compte.profil?.pseudo, compte.profil?.style_ailes, compte.profil?.niveau_ailes]);
   // Pousse la génération muldo la plus haute validée vers le profil Supabase
   // (auto-déclaratif) dès qu'elle change — sert de condition de déblocage
@@ -985,7 +995,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
             />
           )}
 
-          {page === "moderation" && compte.estModo && <ModerationPage compte={compte} />}
+          {page === "moderation" && compte.estModo && <ModerationPage compte={compte} enLigne={enLigne} />}
 
           {page === "succes" && (
             <>
@@ -2859,18 +2869,7 @@ function FicheAdminSection({ profilId }) {
 // tous les comptes connectés, voir l'effet dans AppConnecte) + recherche d'un
 // éleveur par pseudo, ouvrant sa fiche détaillée (FicheAdminSection via
 // ProfilPublicModal, cf. admin_fiche_utilisateur SQL v27).
-function ModerationPage({ compte }) {
-  const [enLigne, setEnLigne] = useState([]);
-  useEffect(() => {
-    if (!supabase) return undefined;
-    const canal = supabase.channel("presence-eleveurs");
-    canal.on("presence", { event: "sync" }, () => {
-      setEnLigne(Object.values(canal.presenceState()).flat());
-    });
-    canal.subscribe();
-    return () => { supabase.removeChannel(canal); };
-  }, []);
-
+function ModerationPage({ compte, enLigne }) {
   const [recherche, setRecherche] = useState("");
   const [resultats, setResultats] = useState([]);
   const [chargement, setChargement] = useState(false);
