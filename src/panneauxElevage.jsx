@@ -75,13 +75,14 @@ export function CouleurCopiable({ couleur, gras = true, BadgeComponent }) {
   );
 }
 
-export function NomCopiable({ nom, gras = true }) {
+export function NomCopiable({ nom, gras = true, onCopie }) {
   const [copie, setCopie] = useState(false);
   const onClick = async (e) => {
     e.stopPropagation();
     if (await copierPressePapiers(nom)) {
       setCopie(true);
       setTimeout(() => setCopie(false), 1200);
+      onCopie?.();
     }
   };
   return (
@@ -1898,6 +1899,132 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+export function BarreEmpilee({ segments, hauteur = 14 }) {
+  const total = segments.reduce((n, s) => n + s.valeur, 0) || 1;
+  return (
+    <div style={{ display: "flex", height: hauteur, borderRadius: 7, overflow: "hidden", background: "rgba(255,255,255,.05)" }}>
+      {segments.map((s) => s.valeur > 0 && (
+        <div key={s.label} title={`${s.label} : ${s.valeur}`} style={{ width: `${s.valeur / total * 100}%`, background: s.couleur }} />
+      ))}
+    </div>
+  );
+}
+
+// Panneau "Progression" partagé entre les 3 créatures : répartition par
+// génération, équilibres mâle/femelle et fertile/stérile, naissances des 14
+// derniers jours, courbe d'évolution sur les instantanés quotidiens. Reçoit
+// generationDeCouleurFn/sexeFn/reproductibleFn en props (comme GpsDofusPage)
+// plutôt que d'importer un moteur de créature précis.
+export function GraphiquesPanel({ cheptel, journal, instantanes, generationDeCouleurFn, sexeFn, reproductibleFn, nomEntitePluriel = "Muldos" }) {
+  const parGeneration = new Map();
+  (cheptel || []).forEach((m) => {
+    const g = generationDeCouleurFn(m.couleur);
+    parGeneration.set(g, (parGeneration.get(g) || 0) + 1);
+  });
+  const generations = Array.from({ length: 10 }, (_, i) => ({ label: `G${i + 1}`, valeur: parGeneration.get(i + 1) || 0 }));
+  const maxGeneration = Math.max(1, ...generations.map((g) => g.valeur));
+
+  const males = (cheptel || []).filter((m) => sexeFn(m) === "M").length;
+  const femelles = (cheptel || []).filter((m) => sexeFn(m) === "F").length;
+  const fertiles = (cheptel || []).filter(reproductibleFn).length;
+  const nonFertiles = (cheptel || []).length - fertiles;
+
+  // Naissances des 14 derniers jours
+  const jours = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  const naissancesParJour = jours.map((jour) => ({
+    jour,
+    valeur: (journal || []).filter((n) => String(n.date || "").slice(0, 10) === jour).length,
+  }));
+  const maxNaissances = Math.max(1, ...naissancesParJour.map((j) => j.valeur));
+
+  // Courbe d'évolution (instantanés quotidiens)
+  const points = (instantanes || []).slice(-60);
+  const courbe = (serie, couleur) => {
+    if (points.length < 2) return null;
+    const valeurs = points.map(serie);
+    const min = Math.min(...valeurs);
+    const max = Math.max(...valeurs, min + 1);
+    const coords = valeurs.map((v, i) => `${(i / (points.length - 1)) * 330 + 5},${95 - ((v - min) / (max - min)) * 85}`).join(" ");
+    return <polyline points={coords} fill="none" stroke={couleur} strokeWidth="2" />;
+  };
+
+  return (
+    <div className="panel-card" style={{ marginTop: 16 }}>
+      <h2 style={{ marginTop: 0 }}>Progression</h2>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
+
+        <div style={{ flex: "1 1 260px", minWidth: 240 }}>
+          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>Cheptel par génération</div>
+          {generations.map((g) => (
+            <div key={g.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
+              <span style={{ width: 30, fontSize: 11, color: "var(--muted)" }}>{g.label}</span>
+              <div style={{ flex: 1, height: 12, borderRadius: 6, background: "rgba(255,255,255,.05)" }}>
+                <div style={{ width: `${g.valeur / maxGeneration * 100}%`, height: "100%", borderRadius: 6, background: "linear-gradient(90deg, var(--accent), var(--gold2))", opacity: 0.35 + 0.65 * (g.valeur / maxGeneration), minWidth: g.valeur ? 4 : 0, transition: "width .4s ease" }} />
+              </div>
+              <span style={{ width: 28, fontSize: 11, textAlign: "right" }}>{g.valeur || ""}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ flex: "1 1 220px", minWidth: 200 }}>
+          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>Équilibres</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>♂ {males} / ♀ {femelles}</div>
+          <BarreEmpilee segments={[
+            { label: "Mâles", valeur: males, couleur: "#6fa8dc" },
+            { label: "Femelles", valeur: femelles, couleur: "#d98ec0" },
+          ]} />
+          <div style={{ fontSize: 12, color: "var(--muted)", margin: "10px 0 4px" }}>Fertiles {fertiles} / Stériles+séniles {nonFertiles}</div>
+          <BarreEmpilee segments={[
+            { label: "Fertiles", valeur: fertiles, couleur: "var(--gold)" },
+            { label: "Stériles/séniles", valeur: nonFertiles, couleur: "#8a7a63" },
+          ]} />
+
+          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, margin: "14px 0 6px" }}>Naissances (14 jours)</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 46 }}>
+            {naissancesParJour.map((j) => (
+              <div key={j.jour} title={`${j.jour} : ${j.valeur} naissance(s)`} style={{ flex: 1, height: `${Math.max(j.valeur / maxNaissances * 100, j.valeur ? 12 : 3)}%`, background: j.valeur ? "linear-gradient(180deg, var(--gold2), var(--accent))" : "rgba(255,255,255,.08)", borderRadius: 3, transition: "height .4s ease" }} />
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--muted)", display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+            <span>il y a 14 j</span><span>aujourd'hui</span>
+          </div>
+        </div>
+
+        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+            Évolution (un point par jour d'ouverture)
+          </div>
+          {points.length < 2 ? (
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>
+              La courbe se construit toute seule : un instantané du cheptel est pris à chaque première
+              ouverture de la journée. Reviens demain pour voir les premiers tracés.
+            </div>
+          ) : (
+            <>
+              <svg viewBox="0 0 340 100" style={{ width: "100%", height: "auto" }}>
+                <line x1="5" y1="95" x2="335" y2="95" stroke="rgba(255,255,255,.15)" strokeWidth="1" />
+                {courbe((p) => p.total, "var(--gold)")}
+                {courbe((p) => p.couleurs, "#6fa8dc")}
+                {courbe((p) => p.naissances, "#d98ec0")}
+              </svg>
+              <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <span><span style={{ color: "var(--gold)" }}>—</span> {nomEntitePluriel.toLowerCase()} ({points[points.length - 1].total})</span>
+                <span><span style={{ color: "#6fa8dc" }}>—</span> couleurs ({points[points.length - 1].couleurs})</span>
+                <span><span style={{ color: "#d98ec0" }}>—</span> naissances cumulées ({points[points.length - 1].naissances})</span>
+              </div>
+            </>
+          )}
+        </div>
+
       </div>
     </div>
   );

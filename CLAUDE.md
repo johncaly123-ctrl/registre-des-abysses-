@@ -7,9 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Registre des Abysses — a French-language companion web app for breeding "muldos" (mounts) in the
 game Dofus: colour-genetics GPS/pathfinder for pairings, OCR-based stable sync from screenshots,
 births/genealogy tracking, cloning, herd valuation, and a community layer (accounts + forum) with a
-cosmetic donation system ("ailes de soutien"). Community tool, not affiliated with Ankama. All
-breeding/herd data lives client-side in `localStorage`; Supabase is optional and only backs accounts,
-public profiles, and the forum.
+cosmetic donation system ("ailes de soutien"). Community tool, not affiliated with Ankama.
+
+A Supabase account is **mandatory** to use the app at all (`App()` renders `<PortailConnexion>` and
+nothing else while `!compte.session` — there is no anonymous/offline mode). This is a deliberate
+change from the tool's original all-`localStorage` design (see `src/stockage.js` below) — do not
+assume "Supabase is optional" from older comments/docs; only the theme preference and the
+first-visit-onboarding flag are still read straight from browser `localStorage`
+(`STORAGE_THEME`, `STORAGE_ONBOARDING_SITE`), since those must work before a session exists.
 
 ## Commands
 
@@ -18,48 +23,84 @@ npm install        # install dependencies
 npm run dev         # Vite dev server
 npm run build        # production build -> dist/
 npm run preview      # serve the dist/ build locally
+npm run lint         # eslint . (react-hooks/exhaustive-deps etc. — currently warnings only, 0 errors)
+npm run test         # vitest run — unit tests for the genetics/OCR engine (muldoGenetique.js, muldoOCR.js, geneticsUtils.js)
+npm run test:e2e     # playwright test — browser specs in e2e/ (GPS, naissance, corbeille, clonage, synchro)
+npm run test:e2e:ui  # playwright test --ui
 ```
 
-There is no lint script and no test suite configured in this repo.
+`.github/workflows/ci.yml` runs lint + test + build on every push/PR to `main` (plus a separate e2e
+job running Playwright against Chromium) — but it's still worth running these by hand before a
+non-trivial change lands, rather than finding out from a red CI run. Test coverage is currently
+concentrated on the shared genetics core and the Muldo module; Dragodinde.jsx/Volkorne.jsx's own
+scoring/GPS logic has no dedicated unit tests yet.
 
 ## Architecture
 
-### Single-file app
+### Multi-file app, one hook+pages module per creature
 
-Almost the entire application lives in `src/App.jsx` (~7,200 lines). `src/main.jsx` just mounts
-`<App />` into `#root`; `src/index.css` is a 4-line reset (do not reintroduce Vite's default
-template CSS — it breaks the sticky layout). There is no router: page switching is a plain
-`useState("page")` in `App()`, driven by `AppSidebar`'s nav list (`dashboard`, `cheptel`,
-`synchronisation`, `gps`, `clonage`, `taverne`, `succes`). All design tokens/CSS live in a single
-`<style>{`...`}`</style>` block rendered inside `App()` (CSS custom properties like `--gold`,
-`--gold2`, `--cyan`, `--muted`, `--font-display`), not in separate stylesheets or a CSS framework.
-Components style with inline `style={{}}` objects referencing those CSS variables.
+The app was originally a single ~7,200-line `App.jsx`; it has since been split so each of the three
+breedable creatures (muldo, dragodinde, volkorne) owns its own module, mirroring the same shape:
 
-Roughly, `App.jsx` is laid out as:
-- **Domain/genetics engine** (top of file, before `export default function App()`): colour list
-  (`COULEURS_MULDO`), generation table (`GENERATIONS_MULDO`), breeding recipes
-  (`RECETTES_SPECIALES_MULDO`), and the pathfinding/optimisation functions that plan how to reach a
-  target colour or generation (`meilleureRecettePourCouleur`, `construirePlanPourCouleur`,
-  `optimiserSessionAccouplements` — uses a Hungarian-algorithm-style `affectationMaximale` for optimal
-  male/female pairing, `choisirObjectifGpsAutomatique`, `progressionParGeneration`, etc.).
-- **OCR text parsing**: `canonicaliserCouleur`, `correspondanceFloue` (Levenshtein-based fuzzy
+- **`src/Muldo.jsx`** (~3,200 lines), **`src/Dragodinde.jsx`**, **`src/Volkorne.jsx`** (~2,000 lines
+  each): each exports a `use<Creature>Elevage()` hook (owns that creature's herd state + all
+  `localStorage` persistence for it) and every page/panel specific to that creature — cheptel
+  overview/cards, detail panel, creation modal, synchro/OCR import, GPS page wiring, clonage page,
+  succès page. **This is deliberate duplication, not an oversight**: the colour/generation genetics
+  engine (recipes, pathfinding, GPS scoring) is a full copy per creature rather than one shared
+  parametrised engine — see the comment at the top of `Dragodinde.jsx`/`Volkorne.jsx`. When fixing a
+  bug or adding a feature in one creature's file, check whether the same fix is needed in the other
+  two; nothing enforces parity automatically, and drift between the three is an easy way to
+  reintroduce the "why does Muldo have X but not Dragodinde" class of bug.
+- **`src/muldoGenetique.js`** / **`src/geneticsUtils.js`**: `geneticsUtils.js` holds the handful of
+  genuinely creature-agnostic helpers (Hungarian-algorithm `affectationMaximale`, Levenshtein
+  `distanceLevenshtein`, `nomEnDoublon`, `couleursAncetres`, generic GPS-objective-picking) reused by
+  all three `use<Creature>Elevage()` hooks; `muldoGenetique.js` is Muldo's own colour/generation/recipe
+  engine plus OCR canonicalisation helpers, and re-exports the shared `geneticsUtils.js` functions it
+  needs so Muldo.jsx only imports from one place.
+- **`src/panneauxElevage.jsx`**: components genuinely shared across the three creatures where the
+  UI/behaviour really is identical — `GpsDofusPage` (the whole GPS session UI, driven entirely by
+  props/callbacks passed in per creature), `NomCopiable`/`CouleurCopiable`, `BebesARenommerPanel`,
+  `ArbreGenealogiquePanel`, `CorbeillePanel`, `StatsCroisementsPanel`, `EstimationKamasTable`, the
+  server selector. Each shared component takes the creature-specific bits as props
+  (`BadgeComponent`, `generationDeCouleurFn`, `plierCouleurFn`, `couleursToutes`, …) rather than
+  importing a specific creature's module.
+- **`src/muldoOCR.js`**: `canonicaliserCouleur`, `correspondanceFloue` (Levenshtein-based fuzzy
   matching), `analyserTexteCaptureMuldo` reassemble the raw text Tesseract.js extracts from in-game
-  screenshots into structured herd rows — handling OCR quirks (misread digits, wrapped names,
-  two-column layouts).
-- **`export default function App()`** (~line 1448): owns essentially all top-level state (herd,
-  filters, GPS session, profile, journal, snapshots…) and persists most of it to `localStorage`
-  under versioned keys (`STORAGE_KEY`, `STORAGE_HISTORY_KEY`, `STORAGE_GPS_SESSION`,
-  `STORAGE_NAISSANCES`, `STORAGE_JOURNAL`, `STORAGE_INSTANTANES`, `STORAGE_PROFIL`, …). The full list
-  used for the manual export/import backup feature (`SauvegardePanel`) is `CLES_SAUVEGARDE`.
-- **Page/panel components** below `App()`: one function per page or panel (e.g.
-  `CheptelOverviewPage`, `GpsDofusPage`, `SynchronisationFiltresPage`, `ClonagePage`, `TavernePage`,
-  `SuccesDofusPage`, `ArbreGenealogiquePanel`, `GraphiquesPanel`, `SauvegardePanel`, `SoutienPanel`).
+  screenshots into structured herd rows for Muldo — handling OCR quirks (misread digits, wrapped
+  names, two-column layouts). Dragodinde/Volkorne's synchro pages currently do a much simpler
+  "append everything pasted" import with no equivalent reconciliation/canonicalisation pass.
+- **`src/Mangeoire.jsx`**: enclosure-feed recipe cost/profitability calculator, independent page.
+- **`src/GuidePage.jsx`**, **`src/OnboardingOverlay.jsx`**: static help content and the first-visit /
+  first-GPS-session guided tour overlays.
+- **`src/stockage.js`**: despite the name of its API (`chargerJSON`/`sauvegarderJSON`, kept
+  unchanged so callers didn't need touching), this is **not** `localStorage` — it's an in-memory
+  cache (`{ [cle]: valeur }`) hydrated once per session from a single Supabase row
+  (`sauvegardes_elevage`, one JSON blob per user, see `hydraterStockage(utilisateurId)`) and pushed
+  back with a debounced, coalesced, auto-retrying network write (`marquerSale`/`pousserMaintenant`,
+  800ms debounce / 1.6s retry). `sauvegarderJSON` itself can't fail (it only touches the in-memory
+  cache and schedules a push) — write failures surface later, asynchronously, via
+  `etatSauvegarde()` (`{ enAttente, dernierEchec }`, shown as the "sauvegarde…" / "échec, nouvel
+  essai…" indicator in `App.jsx`'s header) rather than by throwing where `sauvegarderJSON` was
+  called. `creerEcritureDebattue` adds a *second*, shorter local debounce (400ms) in front of this
+  for rapid-fire UI events (slider drag, keystrokes) before a value even reaches the cache.
+- **`src/pushNotifications.js`**, **`src/ErrorBoundary.jsx`**: web push subscription helpers and a
+  top-level React error boundary.
+- **`src/App.jsx`** (~3,250 lines): the shell — login/connected gate, top nav/sidebar, shared CSS
+  design tokens (`<style>` block with `--gold`, `--gold2`, `--cyan`, `--muted`, `--font-display`
+  custom properties; no router, page switching is a plain `useState("page")`), account/Supabase auth
+  (`useCompte`), the Taverne (forum) page, `SauvegardePanel` (manual export/import backup —
+  `CLES_SAUVEGARDE` is the full list of keys it covers), `SoutienPanel` (ailes de soutien), and the
+  top-level wiring that instantiates all three `use<Creature>Elevage()` hooks and threads their props
+  into each creature's pages. `src/main.jsx` just mounts `<App />` into `#root`; `src/index.css` is a
+  4-line reset (do not reintroduce Vite's default template CSS — it breaks the sticky layout).
 
 ### Conventions
 
 - Identifiers, comments, and all user-facing text are in French; keep new code consistent with that.
 - Functional components + hooks only; no class components, no external state library (plain
-  `useState`/`useMemo`/`useCallback`, state is threaded via props from `App()`).
+  `useState`/`useMemo`/`useCallback`; each creature's state lives in its own `use<Creature>Elevage()`
+  hook and is threaded to that creature's pages via props — see Architecture above).
 - No CSS modules/Tailwind/styled-components — styling is the single embedded `<style>` block plus
   inline `style` objects using the CSS variables it defines.
 - Persistence is `localStorage`, read/written directly with versioned key constants (`...-v1`,
@@ -95,16 +136,17 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
   do not use extracted in-game assets in anything published (they're Ankama property).
 - `PseudoAvecAiles` wraps a username with `DemiAile`s and a gradient-text ornament when the user has
   `soutien` — used throughout the Taverne (forum) to show off supporter status.
-- Two parallel sources of truth: a local, unauthenticated preview (`profil.soutien` /
-  `profil.niveauAiles` / `profil.styleAiles` in `SoutienPanel`, stored in `localStorage` under
-  `STORAGE_PROFIL`) purely for trying out the look before donating, versus the authoritative
-  Supabase columns `profils.style_ailes` / `profils.niveau_ailes` shown once logged in
-  (`ProfilModal`, `TavernePage`). `style_ailes` is user-editable via the app; `niveau_ailes` is
-  **not** — see Supabase section below. There is no payment integration yet: donations (via the
+- Two parallel sources of truth: a per-account, non-authoritative preview (`profil.soutien` /
+  `profil.niveauAiles` / `profil.styleAiles` in `SoutienPanel`, persisted like everything else
+  through `chargerJSON`/`sauvegarderJSON` under `STORAGE_PROFIL` — see `src/stockage.js` above,
+  it is **not** raw browser `localStorage`) purely for trying out the look before donating, versus
+  the authoritative Supabase columns `profils.style_ailes` / `profils.niveau_ailes` shown once
+  logged in (`ProfilModal`, `TavernePage`). `style_ailes` is user-editable via the app; `niveau_ailes`
+  is **not** — see Supabase section below. There is no payment integration yet: donations (via the
   PayPal link in `LIEN_DON`, `src/configSupabase.js`) are reconciled and tiers assigned manually by
   an admin directly in Supabase.
 
-### Supabase (optional backend)
+### Supabase (mandatory backend)
 
 - `src/configSupabase.js` hardcodes the project URL and the **publishable** (browser-safe) key —
   this is intentional per the file's own comment; the secret/service key must never be added here.

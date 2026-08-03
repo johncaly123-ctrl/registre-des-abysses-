@@ -4,10 +4,10 @@
 // de App.jsx, adapté à la génétique et au vocabulaire dragodinde. Voir
 // C:\Users\Caly\.claude\plans\dazzling-painting-shamir.md pour le contexte.
 // ============================================================
-import { useState, useMemo, useCallback } from "react";
-import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X } from "lucide-react";
-import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique } from "./geneticsUtils.js";
-import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers, RechercheCouleurDeroulante } from "./panneauxElevage.jsx";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { Trash2, Baby, Heart, Zap, Sparkles, Droplets, X, AlertTriangle } from "lucide-react";
+import { affectationMaximale, distanceLevenshtein, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique, nomEnDoublon } from "./geneticsUtils.js";
+import { CouleurCopiable, NomCopiable, exporterFicheImage, GpsDofusPage, LabeledSelect, copierPressePapiers, RechercheCouleurDeroulante, BebesARenommerPanel } from "./panneauxElevage.jsx";
 import { CAPACITES_MULDO, capacitesMuldo } from "./muldoGenetique.js";
 import { chargerJSON, sauvegarderJSON } from "./stockage.js";
 
@@ -149,7 +149,7 @@ export function canonicaliserCouleurDetailDragodinde(brut) {
 export function canonicaliserCouleurDragodinde(brut) {
   return canonicaliserCouleurDetailDragodinde(brut).couleur;
 }
-function analyserTexteCaptureDragodinde(texte) {
+export function analyserTexteCaptureDragodinde(texte) {
   const lignes = String(texte || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const entrees = [];
   const quantitesEnBloc = [];
@@ -197,7 +197,7 @@ function reproRestantesDragodinde(m) {
   if (rest !== undefined && rest !== null) return Number(rest) || 0;
   return Math.max(0, Number(m?.reproMax ?? 1) - Number(m?.reproDone ?? 0));
 }
-function dragodindeReproductible(m) {
+export function dragodindeReproductible(m) {
   if (!m) return false;
   const sterileBrut = String(m.sterile ?? "").toLowerCase();
   if (m.sterile === true || sterileBrut === "oui" || sterileBrut === "true" || sterileBrut.includes("st")) return false;
@@ -588,8 +588,16 @@ export function DragodindeDetail({ m, byId, onPatch, onDelete }) {
   const partners = useMemo(() => geneticPartnersDragodinde(m, Object.values(byId), byId), [m, byId]);
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}><NomCopiable nom={m.nom || m.couleur} /></h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <input className="field" style={{ fontSize: 18, fontWeight: 700, padding: "4px 8px", background: "transparent", border: "1px solid transparent" }}
+            value={m.nom || ""} onChange={(e) => onPatch({ nom: e.target.value })} />
+          {nomEnDoublon(Object.values(byId), m.nom, m.id) && (
+            <div style={{ fontSize: 11.5, color: "#e0a03c", marginTop: 4, paddingLeft: 8, display: "flex", alignItems: "center", gap: 5 }}>
+              <AlertTriangle size={12} /> Un autre dragodinde porte déjà ce nom.
+            </div>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-ghost" onClick={() => exporterFicheImage(m, { teintesFn: teintesDeCouleurDragodinde, slugFn: slugCouleurDragodinde, nomCreature: "dragodindes" })} title="Télécharger une image de cette fiche">🖼️ Exporter</button>
           <button className="btn btn-ghost" onClick={onDelete}><Trash2 size={13} /> Retirer</button>
@@ -607,6 +615,26 @@ export function DragodindeDetail({ m, byId, onPatch, onDelete }) {
             <option value="Fertile">Fertile</option><option value="Féconde">Féconde</option><option value="Stérile">Stérile</option>
           </select>
         </label>
+        <div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Reproduction 3.5</div>
+          <button
+            className={`btn ${dragodindeReproductible(m) ? "btn-coral" : "btn-ghost"}`}
+            style={{ width: "100%" }}
+            onClick={() => {
+              const devientSterile = dragodindeReproductible(m);
+              onPatch({
+                statut: devientSterile ? "Stérile" : "Fertile",
+                sterile: devientSterile,
+                reproDone: devientSterile ? 1 : 0,
+                reproMax: 1,
+                reproRestantes: devientSterile ? 0 : 1,
+                reproductionsRestantes: devientSterile ? 0 : 1,
+              });
+            }}
+          >
+            {dragodindeReproductible(m) ? "1 reproduction disponible" : "Stérile — remettre fertile"}
+          </button>
+        </div>
         <label style={{ fontSize: 11, color: "var(--muted)" }}>Niveau (optionnel, pour la génération cible)
           <input
             className="field"
@@ -719,24 +747,42 @@ export function DragodindeDetail({ m, byId, onPatch, onDelete }) {
 // génération/couleur/sexe reste en place après chaque création — la modale
 // ne se ferme plus toute seule — et le nom généré est copié automatiquement,
 // prêt à coller dans le renommage en jeu, pour enchaîner sans ressaisir.
-export function NewDragodindeModal({ onClose, onCreate }) {
+export function NewDragodindeModal({ cheptel, onClose, onCreate }) {
   const [filtreGeneration, setFiltreGeneration] = useState("1");
   const couleursProposees = GENERATIONS_DRAGODINDE[Number(filtreGeneration)] || [];
   const [couleur, setCouleur] = useState(couleursProposees[0] || COULEURS_DRAGODINDE[0]);
   const [sexe, setSexe] = useState("Femelle");
   const [dernierNom, setDernierNom] = useState("");
+  const [nom, setNom] = useState("");
+  const [nomPersonnalise, setNomPersonnalise] = useState(false);
+  const [optionsOuvertes, setOptionsOuvertes] = useState(false);
+  const [capacite1, setCapacite1] = useState("Aucune");
+  const [capacite2, setCapacite2] = useState("Aucune");
+  const [pere, setPere] = useState("");
+  const [mere, setMere] = useState("");
+  const males = (cheptel || []).filter((m) => m.sexe === "Mâle");
+  const femelles = (cheptel || []).filter((m) => m.sexe === "Femelle");
 
   const changerGeneration = (v) => {
     setFiltreGeneration(v);
     const liste = GENERATIONS_DRAGODINDE[Number(v)] || [];
     if (liste.length && !liste.includes(couleur)) setCouleur(liste[0]);
   };
+  const changerCouleur = (c) => {
+    setCouleur(c);
+    if (!nomPersonnalise) setNom("");
+  };
 
   const creer = () => {
-    const nom = genererNomCourtDragodinde(couleur);
-    onCreate({ nom, couleur, sexe, statut: "Féconde" });
-    copierPressePapiers(nom);
-    setDernierNom(nom);
+    const nomFinal = (nomPersonnalise && nom.trim()) || genererNomCourtDragodinde(couleur);
+    if (nomEnDoublon(cheptel, nomFinal) && !confirm(`Un dragodinde nommé « ${nomFinal} » existe déjà dans le cheptel. Créer quand même ?`)) return;
+    onCreate({
+      nom: nomFinal, couleur, sexe, statut: "Féconde",
+      capacites: [capacite1, capacite2].filter((c) => c && c !== "Aucune"),
+      parentIds: [pere || null, mere || null],
+    });
+    copierPressePapiers(nomFinal);
+    setDernierNom(nomFinal);
   };
 
   return (
@@ -752,7 +798,7 @@ export function NewDragodindeModal({ onClose, onCreate }) {
         <LabeledSelect label="Génération" value={filtreGeneration} onChange={changerGeneration}
           options={Array.from({ length: 10 }, (_, i) => [String(i + 1), `Génération ${i + 1}`])} />
         <div style={{ marginTop: 8 }}>
-          <LabeledSelect label={`Couleur (${couleursProposees.length} choix)`} value={couleur} onChange={setCouleur}
+          <LabeledSelect label={`Couleur (${couleursProposees.length} choix)`} value={couleur} onChange={changerCouleur}
             options={couleursProposees.map((c) => [c, c])} />
         </div>
         <div style={{ marginTop: 8 }}>
@@ -764,6 +810,29 @@ export function NewDragodindeModal({ onClose, onCreate }) {
         </div>
         <button className="btn btn-coral" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={creer}>+ Créer (copie le nom)</button>
         {dernierNom && <div style={{ marginTop: 8, fontSize: 12, color: "var(--green)" }}>✓ « {dernierNom} » créé et copié — colle-le en jeu, puis clique à nouveau.</div>}
+
+        <button type="button" className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 14, fontSize: 12 }} onClick={() => setOptionsOuvertes((o) => !o)}>
+          {optionsOuvertes ? "▾" : "▸"} Options avancées (nom, capacités, généalogie)
+        </button>
+        {optionsOuvertes && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                className="field"
+                placeholder="Nom du dragodinde"
+                value={nom}
+                onChange={(e) => { setNom(e.target.value); setNomPersonnalise(e.target.value.trim() !== ""); }}
+                title="Nom proposé automatiquement (valide pour le renommage en jeu) — modifie-le librement"
+              />
+              <button type="button" className="btn btn-ghost" title="Proposer un autre nom" style={{ padding: "0 12px", flexShrink: 0 }}
+                onClick={() => { setNom(genererNomCourtDragodinde(couleur)); setNomPersonnalise(false); }}>↻</button>
+            </div>
+            <LabeledSelect label="Capacité 1" value={capacite1} options={CAPACITES_MULDO.map((c) => [c, c])} onChange={setCapacite1} />
+            <LabeledSelect label="Capacité 2" value={capacite2} options={CAPACITES_MULDO.map((c) => [c, c])} onChange={setCapacite2} />
+            <LabeledSelect label="Père (optionnel)" value={pere} options={[["", "Inconnu / sauvage"], ...males.map((m) => [m.id, m.nom])]} onChange={setPere} />
+            <LabeledSelect label="Mère (optionnel)" value={mere} options={[["", "Inconnue / sauvage"], ...femelles.map((m) => [m.id, m.nom])]} onChange={setMere} />
+          </div>
+        )}
         <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={onClose}>Fermer</button>
       </div>
     </div>
@@ -934,51 +1003,478 @@ export function DragodindeCheptelOverviewPage({ cheptel, filter, setFilter, sele
   );
 }
 
-export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToast }) {
+function mapScanParCouleurDragodinde(lignes) {
+  return Object.fromEntries((lignes || []).map((ligne) => [ligne.couleur, Number(ligne.total || 0)]));
+}
+
+function creerDragodindeSynchronise(couleur, sexe, index) {
+  return {
+    id: crypto.randomUUID(),
+    nom: `${couleur} ${sexe === "F" ? "♀" : "♂"} #${index}`,
+    sexe: sexe === "F" ? "Femelle" : "Mâle",
+    couleur,
+    generation: generationDeCouleurDragodinde(couleur),
+    statut: "Féconde",
+    sterile: false,
+    reproRestantes: 1,
+    reproductionsRestantes: 1,
+    capacites: [],
+    amour: 100,
+    endurance: 100,
+    maturite: 100,
+    serenite: 50,
+    note: "Créé automatiquement depuis la synchronisation par capture.",
+    dateAjout: new Date().toISOString(),
+  };
+}
+
+// Miroir de SynchronisationFiltresPage (Muldo.jsx) : scans séparés par sexe
+// (+ capacités) accumulés, puis rapprochement différentiel avec le cheptel
+// existant plutôt qu'un import qui ajoute bêtement tout ce qui est collé —
+// protège les dragodindes reliés à une généalogie connue.
+export function DragodindeSynchronisationPage({ cheptel, updateCheptel, showToast, onVoirMuldo, onSupprimerMuldo }) {
+  const TYPES_SCAN = [
+    { key: "femelles", label: "Femelles", sexe: "F" },
+    { key: "males", label: "Mâles", sexe: "M" },
+    ...CAPACITES_MULDO.filter((c) => c !== "Aucune").map((c) => ({ key: `capacite:${c}`, label: c, capacite: c })),
+  ];
+
+  const [typeScan, setTypeScan] = useState("femelles");
   const [texte, setTexte] = useState("");
-  const analyse = useMemo(() => analyserTexteCaptureDragodinde(texte), [texte]);
-  const importer = () => {
-    let index = 1;
-    const nouveaux = [];
-    analyse.forEach((ligne) => {
-      for (let i = 0; i < (ligne.total || 0); i += 1) {
-        nouveaux.push({
-          id: crypto.randomUUID(), nom: `${ligne.couleur} #${index}`, couleur: ligne.couleur,
-          generation: generationDeCouleurDragodinde(ligne.couleur), sexe: i % 2 === 0 ? "Mâle" : "Femelle",
-          statut: "Féconde", sterile: false, reproRestantes: 1, reproductionsRestantes: 1,
-          amour: 100, endurance: 100, maturite: 100, serenite: 50,
-          note: "Créé automatiquement depuis le screen du cheptel dragodinde.",
-          dateAjout: new Date().toISOString(),
-        });
-        index += 1;
+  const [preview, setPreview] = useState("");
+  const [ocrEnCours, setOcrEnCours] = useState(false);
+  const [scans, setScans] = useState(() => chargerJSON(STORAGE_SYNC_KEY_DRAGODINDE, {}));
+  const [snapshotAvant, setSnapshotAvant] = useState(null);
+
+  const lignes = useMemo(() => analyserTexteCaptureDragodinde(texte), [texte]);
+  const typeActuel = TYPES_SCAN.find((t) => t.key === typeScan) || TYPES_SCAN[0];
+
+  const enregistrerScan = () => {
+    if (!lignes.length) {
+      showToast("Aucune couleur reconnue. Utilise le texte OCR de la colonne Couleurs.");
+      return;
+    }
+    const inconnues = lignes.filter((l) => l.reconnu === false);
+    if (inconnues.length) {
+      showToast(`Couleur(s) non reconnue(s) : ${inconnues.map((l) => l.couleur).join(", ")}. Corrige le texte avant d'enregistrer.`);
+      return;
+    }
+    const next = { ...scans, [typeScan]: { type: typeScan, label: typeActuel.label, date: new Date().toISOString(), lignes } };
+    setScans(next);
+    sauvegarderJSON(STORAGE_SYNC_KEY_DRAGODINDE, next);
+    setTexte("");
+    showToast(`Scan ${typeActuel.label} enregistré : ${lignes.reduce((n, l) => n + l.total, 0)} monture(s).`);
+  };
+
+  const supprimerScan = (key) => {
+    const next = { ...scans };
+    delete next[key];
+    setScans(next);
+    sauvegarderJSON(STORAGE_SYNC_KEY_DRAGODINDE, next);
+  };
+
+  const femelles = mapScanParCouleurDragodinde(scans.femelles?.lignes);
+  const males = mapScanParCouleurDragodinde(scans.males?.lignes);
+  const capacites = Object.fromEntries(
+    Object.entries(scans)
+      .filter(([key]) => key.startsWith("capacite:"))
+      .map(([key, scan]) => [key.slice("capacite:".length), mapScanParCouleurDragodinde(scan.lignes)])
+  );
+
+  const couleurs = [...new Set([
+    ...Object.keys(femelles),
+    ...Object.keys(males),
+    ...Object.values(capacites).flatMap((m) => Object.keys(m)),
+  ])].sort((a, b) => a.localeCompare(b, "fr"));
+
+  const totalFemelles = Object.values(femelles).reduce((a, b) => a + b, 0);
+  const totalMales = Object.values(males).reduce((a, b) => a + b, 0);
+
+  // ---------- Rapprochement différentiel (recommandé) ----------
+  const idsParentsConnus = new Set(cheptel.flatMap((m) => m.parentIds || m.parents || []));
+  const dragodindeProtege = (m) => (m.parentIds || m.parents || []).length > 0 || idsParentsConnus.has(m.id);
+
+  const diffRapprochement = (() => {
+    if (!scans.femelles || !scans.males) return [];
+    const attendu = new Map();
+    couleurs.forEach((couleur) => {
+      const nf = Number(femelles[couleur] || 0);
+      const nm = Number(males[couleur] || 0);
+      if (nf) attendu.set(`${couleur}|F`, nf);
+      if (nm) attendu.set(`${couleur}|M`, nm);
+    });
+    const groupes = new Map();
+    cheptel.forEach((m) => {
+      const s = sexeDragodinde(m);
+      if (!s) return;
+      const cle = `${m.couleur}|${s}`;
+      if (!groupes.has(cle)) groupes.set(cle, []);
+      groupes.get(cle).push(m);
+    });
+    const cles = new Set([...attendu.keys(), ...groupes.keys()]);
+    const diff = [];
+    cles.forEach((cle) => {
+      const [couleur, sexe] = cle.split("|");
+      const enJeu = attendu.get(cle) || 0;
+      const membres = groupes.get(cle) || [];
+      const ecart = enJeu - membres.length;
+      if (!ecart) return;
+      let aRetirer = [];
+      let bloques = 0;
+      let protegesListe = [];
+      if (ecart < 0) {
+        const candidats = membres
+          .filter((m) => !dragodindeProtege(m))
+          .sort((x, y) => Number(dragodindeReproductible(x)) - Number(dragodindeReproductible(y)));
+        aRetirer = candidats.slice(0, -ecart);
+        bloques = -ecart - aRetirer.length;
+        if (bloques > 0) protegesListe = membres.filter(dragodindeProtege);
+      }
+      diff.push({ cle, couleur, sexe, enJeu, dansAppli: membres.length, ecart, aRetirer, bloques, protegesListe });
+    });
+    return diff.sort((a, b) => a.couleur.localeCompare(b.couleur, "fr") || a.sexe.localeCompare(b.sexe, "fr"));
+  })();
+
+  const totalAjouts = diffRapprochement.filter((d) => d.ecart > 0).reduce((n, d) => n + d.ecart, 0);
+  const totalRetraits = diffRapprochement.reduce((n, d) => n + d.aRetirer.length, 0);
+  const totalBloques = diffRapprochement.reduce((n, d) => n + d.bloques, 0);
+
+  const appliquerRapprochement = () => {
+    if (!scans.femelles || !scans.males) {
+      showToast("Enregistre d'abord un scan Femelles et un scan Mâles.");
+      return;
+    }
+    if (!diffRapprochement.length) {
+      showToast("Aucun écart : l'appli est déjà alignée sur le jeu.");
+      return;
+    }
+    setSnapshotAvant(cheptel);
+    const idsARetirer = new Set(diffRapprochement.flatMap((d) => d.aRetirer.map((m) => m.id)));
+    const ajouts = [];
+    diffRapprochement.forEach((d) => {
+      if (d.ecart > 0) {
+        const existants = cheptel.filter((m) => m.couleur === d.couleur && sexeDragodinde(m) === d.sexe).length;
+        for (let i = 1; i <= d.ecart; i += 1) {
+          ajouts.push(creerDragodindeSynchronise(d.couleur, d.sexe, existants + i));
+        }
       }
     });
-    updateCheptel((prev) => [...prev, ...nouveaux]);
-    showToast(`${nouveaux.length} dragodinde(s) importé(s) depuis la capture.`);
-    setTexte("");
+    updateCheptel((prev) => [...prev.filter((m) => !idsARetirer.has(m.id)), ...ajouts]);
+    showToast(`Rapprochement appliqué : +${ajouts.length} ajouté(s), −${idsARetirer.size} retiré(s), généalogies intactes.`);
   };
+
+  const appliquerAuCheptel = () => {
+    if (!scans.femelles || !scans.males) {
+      showToast("Enregistre d'abord un scan Femelles et un scan Mâles.");
+      return;
+    }
+    setSnapshotAvant(cheptel);
+    const nouveau = [];
+    couleurs.forEach((couleur) => {
+      const nf = Number(femelles[couleur] || 0);
+      const nm = Number(males[couleur] || 0);
+      for (let i = 1; i <= nf; i += 1) nouveau.push(creerDragodindeSynchronise(couleur, "F", i));
+      for (let i = 1; i <= nm; i += 1) nouveau.push(creerDragodindeSynchronise(couleur, "M", i));
+    });
+    updateCheptel(nouveau);
+    showToast(`Cheptel reconstruit : ${nouveau.length} monture(s), dont ${totalFemelles} femelles et ${totalMales} mâles.`);
+  };
+
+  const restaurer = () => {
+    if (!snapshotAvant) return;
+    updateCheptel(snapshotAvant);
+    setSnapshotAvant(null);
+    showToast("Ancien cheptel restauré.");
+  };
+
+  const preparerImageOCR = async (file) => {
+    const bitmap = await createImageBitmap(file);
+    const scale = 3;
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width * scale;
+    canvas.height = bitmap.height * scale;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const gris = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      const valeur = gris >= 105 ? 255 : 0;
+      data[i] = valeur; data[i + 1] = valeur; data[i + 2] = valeur; data[i + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Prétraitement OCR impossible")), "image/png");
+    });
+  };
+
+  const lireOCR = async (files) => {
+    try {
+      setOcrEnCours(true);
+      let texteFinal = "";
+      const { default: Tesseract } = await import("tesseract.js");
+      for (let i = 0; i < files.length; i++) {
+        const imagePreparee = await preparerImageOCR(files[i]);
+        const result = await Tesseract.recognize(imagePreparee, "fra", {
+          tessedit_pageseg_mode: "6",
+          preserve_interword_spaces: "1",
+          logger: (message) => {
+            if (message.status === "recognizing text") {
+              console.log(`OCR ${i + 1}/${files.length} : ${Math.round((message.progress || 0) * 100)}%`);
+            }
+          },
+        });
+        texteFinal += `\n--- Capture ${i + 1} ---\n${result.data.text || ""}`;
+        setTexte(texteFinal);
+      }
+      showToast(`OCR amélioré terminé : ${files.length} capture(s)`);
+    } catch (e) {
+      console.error(e);
+      showToast("Erreur OCR");
+    } finally {
+      setOcrEnCours(false);
+    }
+  };
+
+  const onFile = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    setPreview(URL.createObjectURL(files[0]));
+    await lireOCR(files);
+  };
+
   return (
-    <div className="panel-card">
-      <h2 style={{ marginTop: 0 }}>Synchronisation Dragodinde</h2>
-      <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
-        Colle ici le texte OCR de ta capture (filtre de recherche "Dragodinde" en jeu), exemple :<br />
-        Dragodinde Dorée 15<br />Dragodinde Amande 9
-      </div>
-      <textarea className="field" rows={8} value={texte} onChange={(e) => setTexte(e.target.value)} style={{ width: "100%", resize: "vertical" }} />
-      <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>
-        {analyse.length} couleur(s) détectée(s) · {analyse.filter((a) => a.reconnu).length} reconnue(s)
-      </div>
-      {analyse.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          {analyse.map((a) => (
-            <div key={a.couleur} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0", color: !a.reconnu ? "#e8896a" : a.confiance === "corrigee" ? "#e0a94e" : "inherit" }} title={a.confiance === "corrigee" ? "Couleur corrigée automatiquement (lecture OCR incertaine) — vérifie qu'elle est correcte." : undefined}>
-              <span><DragodindeBadge couleur={a.couleur} taille={14} /> {a.couleur}{!a.reconnu && " (non reconnu)"}{a.confiance === "corrigee" && " ⚠️"}</span>
-              <span>{a.total}</span>
-            </div>
-          ))}
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ color: "var(--gold)", fontSize: 12, fontWeight: 950, letterSpacing: 1.6, textTransform: "uppercase" }}>Synchronisation Dofus</div>
+        <h1 style={{ margin: "6px 0", fontSize: 34 }}>Compteurs des filtres</h1>
+        <div style={{ color: "var(--muted)", maxWidth: 900 }}>
+          Fais une capture avec le filtre Femelle, une autre avec le filtre Mâle, puis les capacités utiles. Colle le texte OCR de chaque capture ici. Les compteurs servent à reconstruire le cheptel par couleur et par sexe.
         </div>
-      )}
-      <button className="btn btn-coral" style={{ marginTop: 12 }} disabled={!analyse.length} onClick={importer}>Importer dans le cheptel</button>
+      </div>
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <h2 style={{ marginTop: 0 }}>1 — Ajouter un scan</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 12, marginBottom: 12 }}>
+          <select className="field" value={typeScan} onChange={(e) => setTypeScan(e.target.value)}>
+            {TYPES_SCAN.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+          <label className="btn btn-ghost" style={{ cursor: "pointer" }}>
+            Choisir la capture
+            <input type="file" multiple accept="image/*" onChange={onFile} style={{ display: "none" }} />
+          </label>
+        </div>
+
+        {ocrEnCours && <div style={{ marginBottom: 12 }}>Lecture OCR en cours...</div>}
+        {preview && <img src={preview} alt="Aperçu du scan" style={{ display: "block", maxWidth: 420, maxHeight: 300, objectFit: "contain", borderRadius: 12, border: "1px solid var(--line)", marginBottom: 12 }} />}
+
+        <textarea
+          className="field"
+          rows={8}
+          value={texte}
+          onChange={(e) => setTexte(e.target.value)}
+          placeholder={'Colle le texte OCR de la liste, par exemple :\nDragodinde Dorée 15\nDragodinde Amande 9'}
+        />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>
+            {lignes.length} couleur(s) · {lignes.reduce((n, l) => n + l.total, 0)} monture(s) reconnue(s)
+          </span>
+          <button className="btn btn-coral" onClick={enregistrerScan}>Enregistrer ce scan</button>
+        </div>
+        {lignes.some((l) => l.reconnu === false) && (
+          <div style={{ color: "#e8896a", fontSize: 12, marginTop: 8 }}>
+            ⚠ Couleur(s) non reconnue(s) : {lignes.filter((l) => l.reconnu === false).map((l) => `« ${l.couleur} »`).join(", ")} — corrige-les dans le texte ci-dessus (l'enregistrement est bloqué tant qu'il en reste).
+          </div>
+        )}
+        {lignes.some((l) => l.confiance === "corrigee") && (
+          <div style={{ color: "#e0a94e", fontSize: 12, marginTop: 8 }}>
+            ⚠️ Couleur(s) corrigée(s) automatiquement (lecture OCR incertaine, vérifie avant d'enregistrer) : {lignes.filter((l) => l.confiance === "corrigee").map((l) => `« ${l.couleur} »`).join(", ")}.
+          </div>
+        )}
+      </div>
+
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <h2 style={{ marginTop: 0 }}>2 — Scans enregistrés</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+          {TYPES_SCAN.map((t) => {
+            const scan = scans[t.key];
+            const total = scan?.lignes?.reduce((n, l) => n + l.total, 0) || 0;
+            return (
+              <div key={t.key} className={`success-chip ${scan ? "success-ok" : "success-miss"}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <b>{t.label}</b>
+                  {scan && <button className="btn btn-ghost" style={{ padding: "4px 7px" }} onClick={() => supprimerScan(t.key)}>×</button>}
+                </div>
+                <div style={{ marginTop: 6, color: "var(--muted)", fontSize: 12 }}>{scan ? `${total} monture(s) · ${scan.lignes.length} couleur(s)` : "Pas encore scanné"}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="panel-card">
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>3 — Rapprochement avec l'appli <span style={{ color: "var(--green)", fontSize: 13 }}>(recommandé)</span></h2>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 5 }}>
+              Compare le scan au cheptel existant et n'agit que sur les écarts. Les dragodindes à généalogie
+              (nommés, parents ou enfants connus) ne sont jamais retirés automatiquement.
+            </div>
+          </div>
+          <button
+            className="btn btn-coral"
+            disabled={!diffRapprochement.length}
+            style={!diffRapprochement.length ? { opacity: 0.5 } : undefined}
+            onClick={appliquerRapprochement}
+          >
+            Appliquer ({totalAjouts ? `+${totalAjouts}` : ""}{totalAjouts && totalRetraits ? " / " : ""}{totalRetraits ? `−${totalRetraits}` : ""}{!totalAjouts && !totalRetraits ? "aucun écart" : ""})
+          </button>
+        </div>
+
+        {(!scans.femelles || !scans.males) && (
+          <div style={{ color: "var(--muted)", fontSize: 13, padding: "10px 0" }}>
+            Enregistre les scans Femelles et Mâles pour voir les écarts avec ton cheptel.
+          </div>
+        )}
+        {scans.femelles && scans.males && !diffRapprochement.length && (
+          <div style={{ color: "var(--green)", fontSize: 13, padding: "10px 0" }}>
+            ✓ Aucun écart : l'appli est parfaitement alignée sur ton enclos.
+          </div>
+        )}
+        {diffRapprochement.length > 0 && (
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
+              <thead>
+                <tr>
+                  {["Couleur", "Sexe", "En jeu", "Dans l'appli", "Écart", "Action prévue"].map((h) => (
+                    <th key={h} style={{ textAlign: "left", padding: "8px", borderBottom: "1px solid var(--line)", color: "var(--gold2)", fontSize: 12 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {diffRapprochement.map((d) => (
+                  <tr key={d.cle}>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontWeight: 700 }}>
+                      <DragodindeBadge couleur={d.couleur} taille={16} /> {d.couleur}
+                    </td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)" }}>{d.sexe === "F" ? "♀" : "♂"}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)" }}>{d.enJeu}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)" }}>{d.dansAppli}</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontWeight: 800, color: d.ecart > 0 ? "var(--green)" : "var(--red)" }}>
+                      {d.ecart > 0 ? `+${d.ecart}` : d.ecart}
+                    </td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontSize: 12, color: "var(--muted)" }}>
+                      {d.ecart > 0 && `créer ${d.ecart} fiche(s)`}
+                      {d.ecart < 0 && d.aRetirer.length > 0 && (
+                        <span>
+                          retirer{" "}
+                          {d.aRetirer.map((m, i) => (
+                            <span key={m.id}>
+                              {i > 0 && ", "}
+                              <button
+                                type="button"
+                                onClick={() => onVoirMuldo && onVoirMuldo(m.id)}
+                                title="Voir la fiche de ce dragodinde"
+                                style={{ background: "none", border: "none", padding: 0, color: "inherit", font: "inherit", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
+                              >
+                                {m.nom || m.id.slice(0, 5)}
+                              </button>
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      {d.bloques > 0 && (
+                        <div style={{ color: "var(--gold)", marginTop: d.aRetirer.length ? 6 : 0 }}>
+                          ⚠ protégé(s) par leur généalogie :
+                          <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, marginLeft: 6 }}>
+                            {d.protegesListe.map((m) => (
+                              <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid rgba(214,166,74,.4)", borderRadius: 8, padding: "2px 6px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => onVoirMuldo && onVoirMuldo(m.id)}
+                                  title="Voir la fiche (généalogie, notes) avant de décider"
+                                  style={{ background: "none", border: "none", padding: 0, color: "var(--gold2)", font: "inherit", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
+                                >
+                                  {m.nom || m.couleur}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onSupprimerMuldo && onSupprimerMuldo(m)}
+                                  title="Supprimer manuellement ce dragodinde (confirmation demandée)"
+                                  style={{ background: "none", border: "none", padding: 0, color: "var(--red)", cursor: "pointer", fontSize: 13, lineHeight: 1 }}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {totalBloques > 0 && (
+              <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 10 }}>
+                Les dragodindes protégés ne sont jamais supprimés automatiquement : vérifie leur sort en jeu,
+                puis retire-les depuis leur fiche si nécessaire.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="panel-card">
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>4 — Tableau du scan · reconstruction complète</h2>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 5 }}>{totalFemelles} femelles · {totalMales} mâles · {totalFemelles + totalMales} total</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {snapshotAvant && <button className="btn btn-ghost" onClick={restaurer}>Annuler la dernière application</button>}
+            <button
+              className="btn btn-ghost"
+              style={{ borderColor: "rgba(216,91,79,.55)", color: "#e8896a" }}
+              title="Efface tout le cheptel actuel — noms, généalogies et capacités compris — et le recrée depuis les compteurs du scan. À réserver à une remise à zéro volontaire."
+              onClick={appliquerAuCheptel}
+            >
+              ⚠ Tout reconstruire (efface les généalogies)
+            </button>
+          </div>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+            <thead>
+              <tr>
+                {['Couleur', 'Femelles', 'Mâles', 'Total', ...Object.keys(capacites)].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1px solid var(--line)", color: "var(--gold2)", fontSize: 12 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {couleurs.map((couleur) => (
+                <tr key={couleur}>
+                  <td style={{ padding: "9px 8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontWeight: 850 }}>{couleur}</td>
+                  <td style={{ padding: "9px 8px", borderBottom: "1px solid rgba(91,71,51,.45)" }}>{femelles[couleur] || 0}</td>
+                  <td style={{ padding: "9px 8px", borderBottom: "1px solid rgba(91,71,51,.45)" }}>{males[couleur] || 0}</td>
+                  <td style={{ padding: "9px 8px", borderBottom: "1px solid rgba(91,71,51,.45)", fontWeight: 900 }}>{Number(femelles[couleur] || 0) + Number(males[couleur] || 0)}</td>
+                  {Object.entries(capacites).map(([nom, map]) => (
+                    <td key={nom} style={{ padding: "9px 8px", borderBottom: "1px solid rgba(91,71,51,.45)" }}>{map[couleur] || 0}</td>
+                  ))}
+                </tr>
+              ))}
+              {!couleurs.length && <tr><td colSpan={4 + Object.keys(capacites).length} style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Enregistre les scans Femelles et Mâles pour remplir le tableau.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 12 }}>
+          Les scans de capacités donnent des quantités par couleur. Ils ne permettent pas encore de savoir précisément quelle monture individuelle possède chaque capacité.
+        </div>
+      </div>
     </div>
   );
 }
@@ -1044,22 +1540,73 @@ export function DragodindeGpsPage({
 }
 
 
-function suggererClonagesDragodinde(cheptel) {
-  const candidats = (cheptel || []).filter((m) => !dragodindeReproductible(m));
-  const parGen = new Map();
+// Miroir de suggererClonages (Muldo.jsx) : classe les duos de stériles selon
+// leur utilité vis-à-vis de l'objectif GPS courant (proximité + bonus si plus
+// aucun fertile de cette couleur), pas juste par ordre d'apparition.
+function suggererClonagesDragodinde(cheptel, objectif, generationFiltre) {
+  const candidats = (cheptel || [])
+    .filter((m) => !dragodindeReproductible(m))
+    .filter((m) => !generationFiltre || generationDeCouleurDragodinde(m.couleur) === generationFiltre);
+  if (candidats.length < 2) return [];
+  const { distances } = distancesEtParentsVersObjectifDragodinde(objectif);
+  const fertilesParCouleur = new Map();
+  (cheptel || []).filter(dragodindeReproductible).forEach((m) => {
+    fertilesParCouleur.set(m.couleur, (fertilesParCouleur.get(m.couleur) || 0) + 1);
+  });
+  const scoreCouleur = (couleur) => {
+    const d = distances[couleur];
+    let score = d === undefined ? 0 : Math.max(0, 8 - d) * 10;
+    if (!fertilesParCouleur.get(couleur)) score += 30;
+    return score;
+  };
+  const raisonCouleur = (couleur) => {
+    const morceaux = [];
+    const d = distances[couleur];
+    if (d === 0) morceaux.push("c'est l'objectif du GPS !");
+    else if (d !== undefined) morceaux.push(`à ${d} étape(s) de l'objectif`);
+    if (!fertilesParCouleur.get(couleur)) morceaux.push("plus aucun fertile de cette couleur");
+    return morceaux.join(" · ") || "hors du chemin de l'objectif";
+  };
+
+  const parGeneration = new Map();
   candidats.forEach((m) => {
     const g = generationDeCouleurDragodinde(m.couleur);
-    if (!parGen.has(g)) parGen.set(g, []);
-    parGen.get(g).push(m);
+    if (!parGeneration.has(g)) parGeneration.set(g, []);
+    parGeneration.get(g).push(m);
   });
+
   const paires = [];
-  parGen.forEach((membres) => {
-    for (let i = 0; i < membres.length; i += 1) for (let j = i + 1; j < membres.length; j += 1) paires.push({ a: membres[i], b: membres[j] });
+  parGeneration.forEach((membres, generation) => {
+    for (let i = 0; i < membres.length; i += 1) {
+      for (let j = i + 1; j < membres.length; j += 1) {
+        const a = membres[i];
+        const b = membres[j];
+        const memeCouleur = a.couleur === b.couleur;
+        const score = memeCouleur
+          ? scoreCouleur(a.couleur) + 5
+          : (scoreCouleur(a.couleur) + scoreCouleur(b.couleur)) / 2;
+        paires.push({ a, b, generation, score, memeCouleur });
+      }
+    }
   });
-  return paires.slice(0, 6);
+
+  paires.sort((x, y) => y.score - x.score);
+  const utilises = new Set();
+  const retenues = [];
+  paires.forEach((p) => {
+    if (retenues.length >= 6 || p.score <= 0) return;
+    if (utilises.has(p.a.id) || utilises.has(p.b.id)) return;
+    utilises.add(p.a.id);
+    utilises.add(p.b.id);
+    retenues.push({
+      ...p,
+      raisons: [...new Set([p.a.couleur, p.b.couleur])].map((c) => ({ couleur: c, texte: raisonCouleur(c) })),
+    });
+  });
+  return retenues;
 }
 
-export function DragodindeClonagePage({ cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion }) {
+export function DragodindeClonagePage({ cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion, objectif, journal }) {
   const [choix, setChoix] = useState({ couleur: null, sexe: null, genealogie: null });
   const A = cheptel.find((m) => m.id === fusionA) || null;
   const B = cheptel.find((m) => m.id === fusionB) || null;
@@ -1072,69 +1619,191 @@ export function DragodindeClonagePage({ cheptel, fusionA, fusionB, setFusionA, s
   const genA = A ? generationDeCouleurDragodinde(A.couleur) : null;
   const genB = B ? generationDeCouleurDragodinde(B.couleur) : null;
   const memeGeneration = A && B && genA === genB;
+
   const candidatsSteriles = useMemo(() => cheptel.filter((m) => !dragodindeReproductible(m)), [cheptel]);
-  const suggestions = useMemo(() => suggererClonagesDragodinde(cheptel), [cheptel]);
+  const generationsDisponibles = useMemo(
+    () => [...new Set(candidatsSteriles.map((m) => generationDeCouleurDragodinde(m.couleur)))].sort((a, b) => a - b),
+    [candidatsSteriles]
+  );
+  const [genFiltre, setGenFiltre] = useState("toutes");
+  const suggestionsClonage = suggererClonagesDragodinde(cheptel, objectif, genFiltre === "toutes" ? null : Number(genFiltre));
+
+  const candidatsPour = useCallback((autre) => {
+    if (!autre) {
+      return [...candidatsSteriles].sort((x, y) =>
+        (x.couleur || "").localeCompare(y.couleur || "", "fr") || (x.nom || "").localeCompare(y.nom || "", "fr")
+      );
+    }
+    const genRef = generationDeCouleurDragodinde(autre.couleur);
+    const sexeAutre = sexeDragodinde(autre);
+    const priorite = (m) => {
+      if (m.couleur === autre.couleur && sexeDragodinde(m) === sexeAutre) return 0;
+      if (m.couleur === autre.couleur) return 1;
+      return 2;
+    };
+    return candidatsSteriles
+      .filter((m) => generationDeCouleurDragodinde(m.couleur) === genRef)
+      .sort((x, y) => priorite(x) - priorite(y)
+        || (x.couleur || "").localeCompare(y.couleur || "", "fr")
+        || (x.nom || "").localeCompare(y.nom || "", "fr"));
+  }, [candidatsSteriles]);
+  const candidatsA = useMemo(() => candidatsPour(B), [candidatsPour, B]);
+  const candidatsB = useMemo(() => candidatsPour(A), [candidatsPour, A]);
+
   const sexeA = A ? sexeDragodinde(A) : null;
   const sexeB = B ? sexeDragodinde(B) : null;
   const sexeImpose = sexeA && sexeA === sexeB ? sexeA : null;
   const sexeChoisi = sexeImpose || choix.sexe;
+
   return (
     <div>
       <div className="panel-card">
-        <h2 style={{ marginTop: 0 }}>Clonage des dragodindes stériles</h2>
+        <h2 style={{ marginTop: 0 }}>Clonage des stériles</h2>
         <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
-          Deux dragodindes stériles de même génération sont détruits pour créer un nouveau dragodinde fertile.
+          Deux dragodindes stériles de <b>même génération</b> sont détruits pour créer un nouveau dragodinde
+          <b> Fertile</b>, d'une des deux couleurs (tirage du jeu). Le bébé reprend la génétique d'un seul des
+          deux parents (à choisir) : ses parents généalogiques deviennent les propres parents de celui-là, pas
+          le couple cloné. Les capacités sont perdues et les jauges remises à zéro.{" "}
+          {candidatsSteriles.length} stérile(s) disponible(s) pour le clonage. Une fois le premier dragodinde
+          choisi, le second se limite à sa génération, en priorité même couleur/même sexe, puis même couleur,
+          puis le reste.
         </div>
-        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-          <RechercheDragodindeDeroulante muldos={candidatsSteriles} valeurId={fusionA} exclureId={fusionB} onChoisir={setFusionA} placeholder="Dragodinde A…" />
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <RechercheDragodindeDeroulante muldos={candidatsA} valeurId={fusionA} exclureId={fusionB} onChoisir={setFusionA} placeholder="Dragodinde A : nom ou couleur…" />
           <span style={{ color: "var(--gold2)", fontSize: 20, alignSelf: "center" }}>+</span>
-          <RechercheDragodindeDeroulante muldos={candidatsSteriles} valeurId={fusionB} exclureId={fusionA} onChoisir={setFusionB} placeholder="Dragodinde B…" />
+          <RechercheDragodindeDeroulante muldos={candidatsB} valeurId={fusionB} exclureId={fusionA} onChoisir={setFusionB} placeholder="Dragodinde B : nom ou couleur…" />
         </div>
       </div>
+
       <div className="panel-card" style={{ marginTop: 16 }}>
         <b>Résultat du clonage</b>
-        {!A || !B ? <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 8 }}>Choisis deux dragodindes stériles.</div>
-        : !memeGeneration ? <div style={{ color: "#e8896a", fontSize: 13, marginTop: 8 }}>⚠ Générations différentes.</div>
-        : (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-              {[...new Set([A.couleur, B.couleur])].map((c) => (
-                <button key={c} className="pill" style={{ border: choix.couleur === c ? "1px solid var(--gold)" : "1px solid transparent", cursor: "pointer", background: "none" }} onClick={() => setChoix((p) => ({ ...p, couleur: c }))}>{c}</button>
-              ))}
+        {!A || !B ? (
+          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 8 }}>
+            Choisis deux dragodindes stériles pour voir ce que le clonage peut donner.
+          </div>
+        ) : !memeGeneration ? (
+          <div style={{ color: "#e8896a", fontSize: 13, marginTop: 8 }}>
+            ⚠ Générations différentes (G{genA} + G{genB}) : le clonage est impossible en jeu.
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, fontSize: 14 }}>
+            <div>
+              Un dragodinde <b>Fertile</b> de génération <b className="chiffre-hero" style={{ color: "var(--gold2)" }}>G{genA}</b>, au choix du jeu (≈ 50/50) :
             </div>
-            <div style={{ marginTop: 10 }}>
-              {sexeImpose ? <span className="pill">{sexeImpose === "M" ? "♂ Mâle" : "♀ Femelle"} — imposé</span> : (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+              {A.couleur === B.couleur ? (
+                <span className="pill" style={{ padding: "6px 12px", fontSize: 14, border: "1px solid var(--gold)", color: "var(--gold)" }}>
+                  {A.couleur} — imposé (mêmes couleurs des deux parents)
+                </span>
+              ) : (
+                [A.couleur, B.couleur].map((couleur) => (
+                  <button
+                    key={couleur}
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setChoix((prev) => ({ ...prev, couleur }))}
+                    style={choix.couleur === couleur ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+                  >
+                    {couleur}
+                  </button>
+                ))
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>Sexe obtenu :</span>
+              {sexeImpose ? (
+                <span className="pill" style={{ padding: "6px 12px", fontSize: 14, border: "1px solid var(--gold)", color: "var(--gold)" }}>
+                  {sexeImpose === "M" ? "♂ Mâle" : "♀ Femelle"} — imposé (les deux parents sont {sexeImpose === "M" ? "mâles" : "femelles"})
+                </span>
+              ) : (
                 <>
-                  <button className="btn btn-ghost" style={choix.sexe === "M" ? { borderColor: "var(--gold)" } : undefined} onClick={() => setChoix((p) => ({ ...p, sexe: "M" }))}>♂ Mâle</button>
-                  <button className="btn btn-ghost" style={choix.sexe === "F" ? { borderColor: "var(--gold)" } : undefined} onClick={() => setChoix((p) => ({ ...p, sexe: "F" }))}>♀ Femelle</button>
+                  <button type="button" className="btn btn-ghost" style={choix.sexe === "M" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((prev) => ({ ...prev, sexe: "M" }))}>♂ Mâle</button>
+                  <button type="button" className="btn btn-ghost" style={choix.sexe === "F" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((prev) => ({ ...prev, sexe: "F" }))}>♀ Femelle</button>
                 </>
               )}
             </div>
             <div style={{ marginTop: 10 }}>
               <span style={{ color: "var(--muted)", fontSize: 12 }}>Génétique reçue (l'autre lignée est perdue) :</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                <button type="button" className="btn btn-ghost" style={choix.genealogie === "A" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((p) => ({ ...p, genealogie: "A" }))}>{A.nom || "Dragodinde A"} — parents : {genealogieDe(A)}</button>
-                <button type="button" className="btn btn-ghost" style={choix.genealogie === "B" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((p) => ({ ...p, genealogie: "B" }))}>{B.nom || "Dragodinde B"} — parents : {genealogieDe(B)}</button>
+                <button type="button" className="btn btn-ghost" style={choix.genealogie === "A" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((prev) => ({ ...prev, genealogie: "A" }))}>{A.nom || "Dragodinde A"} — parents : {genealogieDe(A)}</button>
+                <button type="button" className="btn btn-ghost" style={choix.genealogie === "B" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((prev) => ({ ...prev, genealogie: "B" }))}>{B.nom || "Dragodinde B"} — parents : {genealogieDe(B)}</button>
               </div>
             </div>
-            <button className="btn btn-coral" style={{ marginTop: 12 }} disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie)}
-              onClick={() => { onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi, choix.genealogie); setChoix({ couleur: null, sexe: null, genealogie: null }); }}>
-              Cloner
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
+              {sexeImpose ? "Sexe imposé par les parents" : "Sexe aléatoire"} · capacités perdues · jauges à zéro.
+            </div>
+            <button
+              className="btn btn-coral"
+              style={{ marginTop: 12, opacity: (A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie ? 1 : 0.5 }}
+              disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie)}
+              onClick={() => {
+                onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi, choix.genealogie);
+                setChoix({ couleur: null, sexe: null, genealogie: null });
+              }}
+            >
+              Cloner — enregistrer ce résultat
             </button>
+            {!((A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie) && (
+              <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
+                Fais le clonage en jeu, puis sélectionne la couleur, le sexe et la génétique réellement obtenus.
+              </div>
+            )}
           </div>
         )}
+        {A && B && A.id === B.id && (
+          <div style={{ color: "#e8896a", fontSize: 13, marginTop: 8 }}>⚠ Choisis deux dragodindes différents.</div>
+        )}
       </div>
-      {suggestions.length > 0 && (
-        <div className="panel-card" style={{ marginTop: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Clonages suggérés</h2>
-          {suggestions.map((s) => (
-            <div key={`${s.a.id}|${s.b.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,.06)" }}>
-              <span><DragodindeBadge couleur={s.a.couleur} taille={16} /> <NomCopiable nom={s.a.nom} /> + <DragodindeBadge couleur={s.b.couleur} taille={16} /> <NomCopiable nom={s.b.nom} /></span>
-              <button className="btn btn-ghost" onClick={() => { setFusionA(s.a.id); setFusionB(s.b.id); }}>Choisir ce duo</button>
-            </div>
-          ))}
+
+      <div className="panel-card" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Clonages suggérés</h2>
+          {generationsDisponibles.length > 1 && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+              Génération :
+              <select className="field" value={genFiltre} onChange={(e) => setGenFiltre(e.target.value)} style={{ padding: "4px 8px", fontSize: 12 }}>
+                <option value="toutes">Toutes</option>
+                {generationsDisponibles.map((g) => <option key={g} value={g}>G{g}</option>)}
+              </select>
+            </label>
+          )}
         </div>
-      )}
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10, marginTop: 6 }}>
+          Classés selon ton objectif GPS actuel (<b style={{ color: "var(--gold2)" }}>{objectif}</b>) :
+          priorité aux couleurs proches de l'objectif et à celles dont tu n'as plus aucun fertile.
+          Un clic remplit les deux sélecteurs — fais le clonage en jeu, puis enregistre le résultat réel.
+          Limité à 6 suggestions à la fois.
+        </div>
+        {suggestionsClonage.length === 0 && (
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>
+            Aucune suggestion {genFiltre !== "toutes" ? `pour la génération ${genFiltre}` : "pour le moment"}.
+          </div>
+        )}
+        {suggestionsClonage.map((s, i) => (
+          <div key={`${s.a.id}|${s.b.id}`} className="message-row" style={{
+            display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+            borderTop: "1px solid rgba(255,255,255,.06)", padding: "9px 0",
+            animationDelay: `${i * 35}ms`,
+          }}>
+            <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <DragodindeBadge couleur={s.a.couleur} taille={17} /> {s.a.nom ? <NomCopiable nom={s.a.nom} onCopie={() => setFusionA(s.a.id)} /> : s.a.couleur}
+              <span style={{ color: "var(--gold2)" }}>+</span>
+              <DragodindeBadge couleur={s.b.couleur} taille={17} /> {s.b.nom ? <NomCopiable nom={s.b.nom} onCopie={() => setFusionB(s.b.id)} /> : s.b.couleur}
+              <span className="pill" style={{ padding: "2px 8px", fontSize: 11 }}>G{s.generation}</span>
+            </span>
+            <span style={{ color: "var(--muted)", fontSize: 12, flex: 1, minWidth: 200 }}>
+              {s.memeCouleur
+                ? <>résultat garanti : <b>{s.a.couleur}</b> — {s.raisons[0].texte}</>
+                : s.raisons.map((r, i2) => (
+                    <span key={r.couleur}>{i2 > 0 && " · "}<b>{r.couleur}</b> : {r.texte}</span>
+                  ))}
+            </span>
+            <button className="btn btn-ghost" onClick={() => { setFusionA(s.a.id); setFusionB(s.b.id); }}>Choisir ce duo</button>
+          </div>
+        ))}
+      </div>
+
+      <BebesARenommerPanel journal={journal} BadgeComponent={DragodindeBadge} />
     </div>
   );
 }
@@ -1195,8 +1864,11 @@ export const STORAGE_JOURNAL_DRAGODINDE = "dragodinde-journal-naissances-v1";
 export const STORAGE_NAISSANCES_DRAGODINDE = "dragodinde-naissances-attente-v1";
 export const STORAGE_CORBEILLE_DRAGODINDE = "dragodinde-corbeille-v1";
 export const STORAGE_GPS_SESSION_DRAGODINDE = "dragodinde-gps-session-v1";
+export const STORAGE_GPS_PARAMS_DRAGODINDE = "dragodinde-gps-parametres-v1";
+export const STORAGE_INSTANTANES_DRAGODINDE = "dragodinde-instantanes-v1";
+export const STORAGE_SYNC_KEY_DRAGODINDE = "dragodinde-synchronisation-filtres-v1";
 export const CORBEILLE_DUREE_JOURS_DRAGODINDE = 30;
-export const CLES_SAUVEGARDE_DRAGODINDE = [STORAGE_KEY_DRAGODINDE, STORAGE_HISTORY_KEY_DRAGODINDE, STORAGE_JOURNAL_DRAGODINDE, STORAGE_NAISSANCES_DRAGODINDE, STORAGE_CORBEILLE_DRAGODINDE, STORAGE_GPS_SESSION_DRAGODINDE];
+export const CLES_SAUVEGARDE_DRAGODINDE = [STORAGE_KEY_DRAGODINDE, STORAGE_HISTORY_KEY_DRAGODINDE, STORAGE_JOURNAL_DRAGODINDE, STORAGE_NAISSANCES_DRAGODINDE, STORAGE_CORBEILLE_DRAGODINDE, STORAGE_GPS_SESSION_DRAGODINDE, STORAGE_GPS_PARAMS_DRAGODINDE, STORAGE_INSTANTANES_DRAGODINDE, STORAGE_SYNC_KEY_DRAGODINDE];
 
 const GPS_SUIVI_DEFAUT_DRAGODINDE = { mode: "couleur", objectif: "Ébène", purification: false, consommes: [], historique: [], totalInitial: 0 };
 function normaliserGpsSuiviDragodinde(v) {
@@ -1215,6 +1887,10 @@ export function useDragodindeElevage() {
   const [cheptel, setCheptel] = useState(() => chargerJSON(STORAGE_KEY_DRAGODINDE, []));
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY_DRAGODINDE, {}));
   const [journal, setJournal] = useState(() => chargerJSON(STORAGE_JOURNAL_DRAGODINDE, []));
+  const [instantanes, setInstantanes] = useState(() => {
+    const saved = chargerJSON(STORAGE_INSTANTANES_DRAGODINDE, []);
+    return Array.isArray(saved) ? saved : [];
+  });
   const [naissances, setNaissances] = useState(() => chargerJSON(STORAGE_NAISSANCES_DRAGODINDE, []));
   const persisterNaissances = useCallback((next) => {
     sauvegarderJSON(STORAGE_NAISSANCES_DRAGODINDE, next);
@@ -1231,14 +1907,29 @@ export function useDragodindeElevage() {
   const [showNew, setShowNew] = useState(false);
   const [fusionA, setFusionA] = useState("");
   const [fusionB, setFusionB] = useState("");
-  const [modeGps, setModeGps] = useState("couleur");
-  const [objectifGps, setObjectifGps] = useState("Ébène");
-  const [generationGps, setGenerationGps] = useState(3);
-  const [generationCollectionMin, setGenerationCollectionMin] = useState(2);
-  const [generationCollectionMax, setGenerationCollectionMax] = useState(10);
-  const [purification, setPurification] = useState(false);
-  const [optimakina, setOptimakina] = useState(false);
-  const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
+  // Réglages GPS persistés (voir Muldo.jsx / STORAGE_GPS_PARAMS pour le raisonnement).
+  const parametresGpsInitiaux = useMemo(() => chargerJSON(STORAGE_GPS_PARAMS_DRAGODINDE, null) || {}, []);
+  const [modeGps, setModeGps] = useState(parametresGpsInitiaux.mode ?? "couleur");
+  const [objectifGps, setObjectifGps] = useState(parametresGpsInitiaux.objectifCouleur ?? "Ébène");
+  const [generationGps, setGenerationGps] = useState(parametresGpsInitiaux.generationCible ?? 3);
+  const [generationCollectionMin, setGenerationCollectionMin] = useState(parametresGpsInitiaux.generationMin ?? 2);
+  const [generationCollectionMax, setGenerationCollectionMax] = useState(parametresGpsInitiaux.generationMax ?? 10);
+  const [purification, setPurification] = useState(parametresGpsInitiaux.purification ?? false);
+  const [optimakina, setOptimakina] = useState(parametresGpsInitiaux.optimakina ?? false);
+  const [niveauMinimumSession, setNiveauMinimumSession] = useState(parametresGpsInitiaux.niveauMinimumSession ?? 0);
+
+  useEffect(() => {
+    sauvegarderJSON(STORAGE_GPS_PARAMS_DRAGODINDE, {
+      mode: modeGps,
+      objectifCouleur: objectifGps,
+      generationCible: generationGps,
+      generationMin: generationCollectionMin,
+      generationMax: generationCollectionMax,
+      purification,
+      optimakina,
+      niveauMinimumSession,
+    });
+  }, [modeGps, objectifGps, generationGps, generationCollectionMin, generationCollectionMax, purification, optimakina, niveauMinimumSession]);
   const [gpsSuivi, setGpsSuivi] = useState(() => normaliserGpsSuiviDragodinde(chargerJSON(STORAGE_GPS_SESSION_DRAGODINDE, GPS_SUIVI_DEFAUT_DRAGODINDE)));
 
   const byId = useMemo(() => Object.fromEntries(cheptel.map((m) => [m.id, m])), [cheptel]);
@@ -1289,13 +1980,13 @@ export function useDragodindeElevage() {
     [cheptelGpsDisponible, objectifGpsActif, purification, optimakina, niveauMinimumSession]
   );
 
+  // sauvegarderJSON (src/stockage.js) écrit dans un cache en mémoire poussé
+  // en arrière-plan vers Supabase — elle ne lève jamais d'exception ici ; un
+  // échec réseau se voit via l'indicateur "sauvegarde…/échec" de l'en-tête
+  // (etatSauvegarde()), pas par une erreur synchrone à ce point d'appel.
   const sauvegarderSuiviGps = useCallback((next) => {
     setGpsSuivi(next);
-    try {
-      sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
-    } catch (e) {
-      console.error("Erreur de sauvegarde de la session GPS", e);
-    }
+    sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
   }, []);
 
   const synchroniserContexteGps = useCallback(() => {
@@ -1352,11 +2043,7 @@ export function useDragodindeElevage() {
         totalInitial: base.totalInitial || optimiserSessionAccouplementsDragodinde(cheptel, objectifGpsActif, purification).couples.length,
       };
 
-      try {
-        sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
       return next;
     });
 
@@ -1419,11 +2106,7 @@ export function useDragodindeElevage() {
         historique,
         consommes: (prev.consommes || []).filter((id) => !aRetirer.has(id)),
       };
-      try {
-        sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_GPS_SESSION_DRAGODINDE, next);
 
       const [maleId, femelleId] = dernierePaire || [];
       setNaissances((anciennes) => {
@@ -1456,6 +2139,33 @@ export function useDragodindeElevage() {
       return next;
     });
   }, []);
+
+  // Instantané quotidien pour la courbe de progression : un point par jour,
+  // pris dès que le cheptel est chargé (limité aux 365 derniers).
+  useEffect(() => {
+    if (!cheptel.length) return;
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+    setInstantanes((prev) => {
+      const point = {
+        date: aujourdhui,
+        total: cheptel.length,
+        fertiles: cheptel.filter(dragodindeReproductible).length,
+        couleurs: new Set(cheptel.map((m) => m.couleur)).size,
+        naissances: journal.length,
+      };
+      const dernier = prev[prev.length - 1];
+      if (dernier && dernier.date === aujourdhui) {
+        if (dernier.total === point.total && dernier.fertiles === point.fertiles
+          && dernier.couleurs === point.couleurs && dernier.naissances === point.naissances) return prev;
+        const next = [...prev.slice(0, -1), point];
+        sauvegarderJSON(STORAGE_INSTANTANES_DRAGODINDE, next);
+        return next;
+      }
+      const next = [...prev, point].slice(-365);
+      sauvegarderJSON(STORAGE_INSTANTANES_DRAGODINDE, next);
+      return next;
+    });
+  }, [cheptel, journal.length]);
 
   // Raccourci de début de session : bascule en masse tous les "Fertile"
   // (bébés/pas encore marqués prêts) vers "Féconde" (prêt à s'accoupler),
@@ -1677,7 +2387,7 @@ export function useDragodindeElevage() {
   }, [persisterNaissances]);
 
   return {
-    cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, addMuldo, byId, historiqueCouleurs, journal, naissances, corbeille,
+    cheptel, selectedId, setSelectedId, filter, setFilter, showNew, setShowNew, addMuldo, byId, historiqueCouleurs, journal, instantanes, naissances, corbeille,
     patchMuldo, deleteMuldo, deleteMuldos, marquerStatutMuldos,
     syncProps: { cheptel, updateCheptel },
     gpsProps: {
@@ -1709,7 +2419,7 @@ export function useDragodindeElevage() {
       onNettoyerSterilesPuisDemarrer: nettoyerSterilesPuisDemarrerSession,
       journal,
     },
-    clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion },
+    clonageProps: { cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion, objectif: objectifGpsActif, journal },
     succesProps: { historiqueCouleurs, cheptel, onToggleCouleur: basculerCouleurHistorique, onValidateGeneration: validerGeneration, journal },
     naissancesProps: { naissances, onConfirmer: confirmerNaissance, onSupprimer: supprimerNaissance },
     corbeilleProps: { corbeille, onRestaurer: restaurerMuldo, onPurger: purgerCorbeilleEntree, onVider: viderCorbeille, dureeJours: CORBEILLE_DUREE_JOURS_DRAGODINDE },

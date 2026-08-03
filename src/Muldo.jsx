@@ -27,19 +27,11 @@ import {
   optimiserSessionAccouplements, progressionParGeneration,
   choisirObjectifGpsAutomatique, collisionScore,
   collisionLabel, readinessScore, getNextAction, generationGoalScore,
-  geneticPartners,
+  geneticPartners, nomEnDoublon,
 } from "./muldoGenetique.js";
 import { analyserTexteCaptureMuldo } from "./muldoOCR.js";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
-// Comparaison insensible à la casse/espaces pour repérer un nom déjà pris
-// dans le cheptel (les noms générés automatiquement sont destinés à être
-// renommés en jeu, donc seuls les vrais doublons de nom saisi comptent).
-const nomEnDoublon = (liste, nom, excludeId) => {
-  const cible = (nom || "").trim().toLowerCase();
-  if (!cible) return false;
-  return liste.some((m) => m.id !== excludeId && (m.nom || "").trim().toLowerCase() === cible);
-};
 const STATUTS = ["Fertile", "Féconde", "Stérile"];
 const JAUGES = [
   { key: "amour", label: "Amour", icon: Heart },
@@ -52,6 +44,7 @@ export const STORAGE_KEY = "cheptel-muldos-v1";
 export const STORAGE_HISTORY_KEY = "muldo-historique-couleurs-v1";
 export const STORAGE_SYNC_KEY = "muldo-synchronisation-filtres-v1";
 export const STORAGE_GPS_SESSION = "gps-session-v1";
+export const STORAGE_GPS_PARAMS = "gps-parametres-v1";
 export const STORAGE_NAISSANCES = "muldo-naissances-attente-v1";
 export const STORAGE_JOURNAL = "muldo-journal-naissances-v1";
 export const STORAGE_INSTANTANES = "muldo-instantanes-v1";
@@ -74,14 +67,32 @@ export function useMuldoElevage(showToast, setToast) {
   const [captureText, setCaptureText] = useState("");
   const [capturePreview, setCapturePreview] = useState("");
   const [objectifGeneration] = useState(6);
-  const [objectifGps, setObjectifGps] = useState("Prune");
-  const [modeGps, setModeGps] = useState("couleur");
-  const [generationGps, setGenerationGps] = useState(7);
-  const [generationCollectionMin, setGenerationCollectionMin] = useState(2);
-  const [generationCollectionMax, setGenerationCollectionMax] = useState(10);
-  const [modePurification, setModePurification] = useState(false);
-  const [optimakina, setOptimakina] = useState(false);
-  const [niveauMinimumSession, setNiveauMinimumSession] = useState(0);
+  // Réglages GPS (mode, cible, options) : chargés une fois depuis le localStorage
+  // pour que le choix de l'utilisateur survive à un rechargement/reconnexion —
+  // sinon on retombe silencieusement sur "couleur"/Prune à chaque fois et le
+  // plan de croisements change sous ses pieds.
+  const parametresGpsInitiaux = useMemo(() => chargerJSON(STORAGE_GPS_PARAMS, null) || {}, []);
+  const [objectifGps, setObjectifGps] = useState(parametresGpsInitiaux.objectifCouleur ?? "Prune");
+  const [modeGps, setModeGps] = useState(parametresGpsInitiaux.mode ?? "couleur");
+  const [generationGps, setGenerationGps] = useState(parametresGpsInitiaux.generationCible ?? 7);
+  const [generationCollectionMin, setGenerationCollectionMin] = useState(parametresGpsInitiaux.generationMin ?? 2);
+  const [generationCollectionMax, setGenerationCollectionMax] = useState(parametresGpsInitiaux.generationMax ?? 10);
+  const [modePurification, setModePurification] = useState(parametresGpsInitiaux.purification ?? false);
+  const [optimakina, setOptimakina] = useState(parametresGpsInitiaux.optimakina ?? false);
+  const [niveauMinimumSession, setNiveauMinimumSession] = useState(parametresGpsInitiaux.niveauMinimumSession ?? 0);
+
+  useEffect(() => {
+    sauvegarderJSON(STORAGE_GPS_PARAMS, {
+      mode: modeGps,
+      objectifCouleur: objectifGps,
+      generationCible: generationGps,
+      generationMin: generationCollectionMin,
+      generationMax: generationCollectionMax,
+      purification: modePurification,
+      optimakina,
+      niveauMinimumSession,
+    });
+  }, [modeGps, objectifGps, generationGps, generationCollectionMin, generationCollectionMax, modePurification, optimakina, niveauMinimumSession]);
   const [historiqueCouleurs, setHistoriqueCouleurs] = useState(() => chargerJSON(STORAGE_HISTORY_KEY, {}));
 
   const [naissances, setNaissances] = useState(() => {
@@ -203,11 +214,7 @@ export function useMuldoElevage(showToast, setToast) {
         sexe: sexeResultat === "Femelle" ? "F" : "M",
         nom: nomCourt,
       }];
-      try {
-        sauvegarderJSON(STORAGE_JOURNAL, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_JOURNAL, next);
       return next;
     });
     setFusionA("");
@@ -333,13 +340,13 @@ export function useMuldoElevage(showToast, setToast) {
     [cheptelGpsDisponible, objectifGpsActif, modePurification, optimakina, niveauMinimumSession]
   );
 
+  // sauvegarderJSON (src/stockage.js) écrit dans un cache en mémoire poussé
+  // en arrière-plan vers Supabase — elle ne lève jamais d'exception ici ; un
+  // échec réseau se voit via l'indicateur "sauvegarde…/échec" de l'en-tête
+  // (etatSauvegarde()), pas par une erreur synchrone à ce point d'appel.
   const sauvegarderSuiviGps = useCallback((next) => {
     setGpsSuivi(next);
-    try {
-      sauvegarderJSON(STORAGE_GPS_SESSION, next);
-    } catch (e) {
-      console.error("Erreur de sauvegarde de la session GPS", e);
-    }
+    sauvegarderJSON(STORAGE_GPS_SESSION, next);
   }, []);
 
   const synchroniserContexteGps = useCallback(() => {
@@ -417,11 +424,7 @@ export function useMuldoElevage(showToast, setToast) {
         ).couples.length,
       };
 
-      try {
-        sauvegarderJSON(STORAGE_GPS_SESSION, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_GPS_SESSION, next);
       return next;
     });
 
@@ -466,11 +469,7 @@ export function useMuldoElevage(showToast, setToast) {
         });
       if (!ajouts.length) return prev;
       const suivant = [...prev, ...ajouts];
-      try {
-        sauvegarderJSON(STORAGE_NAISSANCES, suivant);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_NAISSANCES, suivant);
       return suivant;
     });
   }, [
@@ -498,22 +497,14 @@ export function useMuldoElevage(showToast, setToast) {
         historique,
         consommes: (prev.consommes || []).filter((id) => !aRetirer.has(id)),
       };
-      try {
-        sauvegarderJSON(STORAGE_GPS_SESSION, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_GPS_SESSION, next);
 
       // Retire aussi la naissance en attente correspondant à ce couple annulé.
       const [maleId, femelleId] = dernierePaire || [];
       setNaissances((anciennes) => {
         const suivantes = anciennes.filter((n) => !(n.maleId === maleId && n.femelleId === femelleId));
         if (suivantes.length === anciennes.length) return anciennes;
-        try {
-          sauvegarderJSON(STORAGE_NAISSANCES, suivantes);
-        } catch (e) {
-          console.error(e);
-        }
+        sauvegarderJSON(STORAGE_NAISSANCES, suivantes);
         return suivantes;
       });
 
@@ -695,11 +686,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
         sexe,
         nom: nomCourt,
       }];
-      try {
-        sauvegarderJSON(STORAGE_JOURNAL, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_JOURNAL, next);
       return next;
     });
     copierPressePapiers(nomCourt);
@@ -755,11 +742,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
         sexe: sexeMuldo(m) || m.sexe,
         nom: m.nom,
       }];
-      try {
-        sauvegarderJSON(STORAGE_JOURNAL, next);
-      } catch (e) {
-        console.error(e);
-      }
+      sauvegarderJSON(STORAGE_JOURNAL, next);
       return next;
     });
   };
@@ -1635,10 +1618,25 @@ export function slugCouleur(couleur) {
 }
 
 
+// Glow discret sur les badges des couleurs rares (hautes générations) pour
+// qu'elles se distinguent visuellement comme "précieuses" dans les listes —
+// réutilise l'animation aile-lueur (déjà utilisée pour le palier de soutien
+// le plus haut) plutôt que d'en définir une nouvelle.
+function glowGenerationMuldo(couleur) {
+  const gen = generationDeCouleur(couleur);
+  if (gen >= 9) {
+    return { filter: "drop-shadow(0 0 4px rgba(240,207,114,.85)) drop-shadow(0 0 8px rgba(69,224,211,.5))", animation: "aile-lueur 2.4s ease-in-out infinite" };
+  }
+  if (gen >= 7) {
+    return { filter: "drop-shadow(0 0 3px rgba(240,207,114,.55))" };
+  }
+  return null;
+}
+
 export function MuldoBadge({ couleur, taille = 22 }) {
   const [imageKo, setImageKo] = useState(false);
   const teintes = teintesDeCouleur(couleur);
-  const r = taille / 2;
+  const glow = glowGenerationMuldo(couleur);
 
   if (!imageKo) {
     return (
@@ -1647,13 +1645,13 @@ export function MuldoBadge({ couleur, taille = 22 }) {
         alt=""
         title={couleur}
         onError={() => setImageKo(true)}
-        style={{ width: taille, height: taille, objectFit: "contain", verticalAlign: "middle", borderRadius: 4 }}
+        style={{ width: taille, height: taille, objectFit: "contain", verticalAlign: "middle", borderRadius: 4, ...glow }}
       />
     );
   }
 
   return (
-    <svg width={taille} height={taille} viewBox="0 0 24 24" style={{ verticalAlign: "middle", flexShrink: 0 }}>
+    <svg width={taille} height={taille} viewBox="0 0 24 24" style={{ verticalAlign: "middle", flexShrink: 0, ...glow }}>
       <title>{couleur}</title>
       {teintes.length >= 2 ? (
         <>
@@ -1778,7 +1776,7 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
   // Une fois l'un des deux muldos choisi, l'autre sélecteur se limite à sa
   // génération et priorise : même couleur + même sexe > même couleur + sexe
   // différent > le reste (couleur différente, le sexe n'a alors pas d'importance).
-  const candidatsPour = (autre) => {
+  const candidatsPour = useCallback((autre) => {
     if (!autre) {
       return [...candidatsSteriles].sort((x, y) =>
         (x.couleur || "").localeCompare(y.couleur || "", "fr") || (x.nom || "").localeCompare(y.nom || "", "fr")
@@ -1796,9 +1794,9 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
       .sort((x, y) => priorite(x) - priorite(y)
         || (x.couleur || "").localeCompare(y.couleur || "", "fr")
         || (x.nom || "").localeCompare(y.nom || "", "fr"));
-  };
-  const candidatsA = useMemo(() => candidatsPour(B), [candidatsSteriles, B]);
-  const candidatsB = useMemo(() => candidatsPour(A), [candidatsSteriles, A]);
+  }, [candidatsSteriles]);
+  const candidatsA = useMemo(() => candidatsPour(B), [candidatsPour, B]);
+  const candidatsB = useMemo(() => candidatsPour(A), [candidatsPour, A]);
 
   // Deux parents de même sexe donnent obligatoirement un bébé du même sexe.
   const sexeA = A ? sexeMuldo(A) : null;
@@ -1853,31 +1851,25 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
         ) : (
           <div style={{ marginTop: 8, fontSize: 14 }}>
             <div>
-              Une monture <b>Fertile</b> de génération <b>G{genA}</b>, au choix du jeu (≈ 50/50) :
+              Une monture <b>Fertile</b> de génération <b className="chiffre-hero" style={{ color: "var(--gold2)" }}>G{genA}</b>, au choix du jeu (≈ 50/50) :
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-              {[...new Set([A.couleur, B.couleur])].map((couleur) => (
-                <button
-                  key={couleur}
-                  type="button"
-                  className="pill"
-                  onClick={() => setChoix((prev) => ({ ...prev, couleur }))}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: 14,
-                    cursor: "pointer",
-                    border: choix.couleur === couleur ? "1px solid var(--gold)" : "1px solid transparent",
-                    color: choix.couleur === couleur ? "var(--gold)" : "inherit",
-                    background: "none",
-                  }}
-                >
-                  {couleur}
-                </button>
-              ))}
-              {A.couleur === B.couleur && (
-                <span style={{ color: "var(--muted)", fontSize: 12, alignSelf: "center" }}>
-                  (mêmes couleurs : résultat garanti)
+              {A.couleur === B.couleur ? (
+                <span className="pill" style={{ padding: "6px 12px", fontSize: 14, border: "1px solid var(--gold)", color: "var(--gold)" }}>
+                  {A.couleur} — imposé (mêmes couleurs des deux parents)
                 </span>
+              ) : (
+                [A.couleur, B.couleur].map((couleur) => (
+                  <button
+                    key={couleur}
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setChoix((prev) => ({ ...prev, couleur }))}
+                    style={choix.couleur === couleur ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+                  >
+                    {couleur}
+                  </button>
+                ))
               )}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
@@ -1980,16 +1972,17 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
             Aucune suggestion {genFiltre !== "toutes" ? `pour la génération ${genFiltre}` : "pour le moment"}.
           </div>
         )}
-        {suggestionsClonage.map((s) => (
-            <div key={`${s.a.id}|${s.b.id}`} style={{
+        {suggestionsClonage.map((s, i) => (
+            <div key={`${s.a.id}|${s.b.id}`} className="message-row" style={{
               display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
               borderTop: "1px solid rgba(255,255,255,.06)", padding: "9px 0",
+              animationDelay: `${i * 35}ms`,
             }}>
               <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom ? <NomCopiable nom={s.a.nom} /> : s.a.couleur}
+                <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom ? <NomCopiable nom={s.a.nom} onCopie={() => setFusionA(s.a.id)} /> : s.a.couleur}
                 <BoutonFiche id={s.a.id} onVoir={onVoirMuldo} label={s.a.nom || s.a.couleur} />
                 <span style={{ color: "var(--gold2)" }}>+</span>
-                <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom ? <NomCopiable nom={s.b.nom} /> : s.b.couleur}
+                <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom ? <NomCopiable nom={s.b.nom} onCopie={() => setFusionB(s.b.id)} /> : s.b.couleur}
                 <BoutonFiche id={s.b.id} onVoir={onVoirMuldo} label={s.b.nom || s.b.couleur} />
                 <span className="pill" style={{ padding: "2px 8px", fontSize: 11 }}>G{s.generation}</span>
               </span>
@@ -2015,128 +2008,8 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
   );
 }
 
-export function BarreEmpilee({ segments, hauteur = 14 }) {
-  const total = segments.reduce((n, s) => n + s.valeur, 0) || 1;
-  return (
-    <div style={{ display: "flex", height: hauteur, borderRadius: 7, overflow: "hidden", background: "rgba(255,255,255,.05)" }}>
-      {segments.map((s) => s.valeur > 0 && (
-        <div key={s.label} title={`${s.label} : ${s.valeur}`} style={{ width: `${s.valeur / total * 100}%`, background: s.couleur }} />
-      ))}
-    </div>
-  );
-}
-
-
-export function GraphiquesPanel({ cheptel, journal, instantanes }) {
-  // Répartition par génération (barres horizontales)
-  const parGeneration = new Map();
-  (cheptel || []).forEach((m) => {
-    const g = generationDeCouleur(m.couleur);
-    parGeneration.set(g, (parGeneration.get(g) || 0) + 1);
-  });
-  const generations = Array.from({ length: 10 }, (_, i) => ({ label: `G${i + 1}`, valeur: parGeneration.get(i + 1) || 0 }));
-  const maxGeneration = Math.max(1, ...generations.map((g) => g.valeur));
-
-  const males = (cheptel || []).filter((m) => sexeMuldo(m) === "M").length;
-  const femelles = (cheptel || []).filter((m) => sexeMuldo(m) === "F").length;
-  const fertiles = (cheptel || []).filter(muldoReproductible).length;
-  const nonFertiles = (cheptel || []).length - fertiles;
-
-  // Naissances des 14 derniers jours
-  const jours = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (13 - i));
-    return d.toISOString().slice(0, 10);
-  });
-  const naissancesParJour = jours.map((jour) => ({
-    jour,
-    valeur: (journal || []).filter((n) => String(n.date || "").slice(0, 10) === jour).length,
-  }));
-  const maxNaissances = Math.max(1, ...naissancesParJour.map((j) => j.valeur));
-
-  // Courbe d'évolution (instantanés quotidiens)
-  const points = (instantanes || []).slice(-60);
-  const courbe = (serie, couleur) => {
-    if (points.length < 2) return null;
-    const valeurs = points.map(serie);
-    const min = Math.min(...valeurs);
-    const max = Math.max(...valeurs, min + 1);
-    const coords = valeurs.map((v, i) => `${(i / (points.length - 1)) * 330 + 5},${95 - ((v - min) / (max - min)) * 85}`).join(" ");
-    return <polyline points={coords} fill="none" stroke={couleur} strokeWidth="2" />;
-  };
-
-  return (
-    <div className="panel-card" style={{ marginTop: 16 }}>
-      <h2 style={{ marginTop: 0 }}>Progression</h2>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
-
-        <div style={{ flex: "1 1 260px", minWidth: 240 }}>
-          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>Cheptel par génération</div>
-          {generations.map((g) => (
-            <div key={g.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
-              <span style={{ width: 30, fontSize: 11, color: "var(--muted)" }}>{g.label}</span>
-              <div style={{ flex: 1, height: 12, borderRadius: 6, background: "rgba(255,255,255,.05)" }}>
-                <div style={{ width: `${g.valeur / maxGeneration * 100}%`, height: "100%", borderRadius: 6, background: "var(--gold)", opacity: 0.35 + 0.65 * (g.valeur / maxGeneration), minWidth: g.valeur ? 4 : 0 }} />
-              </div>
-              <span style={{ width: 28, fontSize: 11, textAlign: "right" }}>{g.valeur || ""}</span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>Équilibres</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>♂ {males} / ♀ {femelles}</div>
-          <BarreEmpilee segments={[
-            { label: "Mâles", valeur: males, couleur: "#6fa8dc" },
-            { label: "Femelles", valeur: femelles, couleur: "#d98ec0" },
-          ]} />
-          <div style={{ fontSize: 12, color: "var(--muted)", margin: "10px 0 4px" }}>Fertiles {fertiles} / Stériles+séniles {nonFertiles}</div>
-          <BarreEmpilee segments={[
-            { label: "Fertiles", valeur: fertiles, couleur: "var(--gold)" },
-            { label: "Stériles/séniles", valeur: nonFertiles, couleur: "#8a7a63" },
-          ]} />
-
-          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, margin: "14px 0 6px" }}>Naissances (14 jours)</div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 46 }}>
-            {naissancesParJour.map((j) => (
-              <div key={j.jour} title={`${j.jour} : ${j.valeur} naissance(s)`} style={{ flex: 1, height: `${Math.max(j.valeur / maxNaissances * 100, j.valeur ? 12 : 3)}%`, background: j.valeur ? "var(--gold)" : "rgba(255,255,255,.08)", borderRadius: 3 }} />
-            ))}
-          </div>
-          <div style={{ fontSize: 10, color: "var(--muted)", display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-            <span>il y a 14 j</span><span>aujourd'hui</span>
-          </div>
-        </div>
-
-        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-          <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
-            Évolution (un point par jour d'ouverture)
-          </div>
-          {points.length < 2 ? (
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>
-              La courbe se construit toute seule : un instantané du cheptel est pris à chaque première
-              ouverture de la journée. Reviens demain pour voir les premiers tracés.
-            </div>
-          ) : (
-            <>
-              <svg viewBox="0 0 340 100" style={{ width: "100%", height: "auto" }}>
-                <line x1="5" y1="95" x2="335" y2="95" stroke="rgba(255,255,255,.15)" strokeWidth="1" />
-                {courbe((p) => p.total, "var(--gold)")}
-                {courbe((p) => p.couleurs, "#6fa8dc")}
-                {courbe((p) => p.naissances, "#d98ec0")}
-              </svg>
-              <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <span><span style={{ color: "var(--gold)" }}>—</span> muldos ({points[points.length - 1].total})</span>
-                <span><span style={{ color: "#6fa8dc" }}>—</span> couleurs ({points[points.length - 1].couleurs})</span>
-                <span><span style={{ color: "#d98ec0" }}>—</span> naissances cumulées ({points[points.length - 1].naissances})</span>
-              </div>
-            </>
-          )}
-        </div>
-
-      </div>
-    </div>
-  );
-}
+// BarreEmpilee/GraphiquesPanel ont été généralisées et déplacées dans
+// panneauxElevage.jsx (partagées avec Dragodinde/Volkorne).
 
 
 export function MemoElevagePanel() {

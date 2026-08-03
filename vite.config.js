@@ -14,6 +14,10 @@ export default defineConfig({
         // shell pour un usage hors-ligne complet, Supabase reste réseau (les
         // requêtes API ne sont jamais interceptées par le service worker).
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        // Paliers visuels 2 et 4 des ailes de soutien : jamais servis par
+        // l'UI (VISUEL_PAR_NIVEAU = [1,3,5] dans App.jsx), mais toujours
+        // présents dans public/ailes/ — inutile de les précacher hors ligne.
+        globIgnores: ["**/ailes/*-2*.png", "**/ailes/*-4*.png"],
       },
       registerType: "autoUpdate",
       includeAssets: ["icons/icon-192.png", "icons/icon-512.png"],

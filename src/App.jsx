@@ -4,7 +4,7 @@ import {
   hydraterStockage, reinitialiserStockage, obtenirCacheComplet, remplacerCacheComplet, etatSauvegarde,
 } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
-import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, copierPressePapiers, SERVEURS_DOFUS, STORAGE_SERVEUR } from "./panneauxElevage.jsx";
+import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, GraphiquesPanel, copierPressePapiers, SERVEURS_DOFUS, STORAGE_SERVEUR } from "./panneauxElevage.jsx";
 import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
 import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
 import { OnboardingOverlay, ETAPES_ONBOARDING_GPS, ETAPES_ONBOARDING_SITE } from "./OnboardingOverlay.jsx";
@@ -15,19 +15,19 @@ import {
   useDragodindeElevage, DragodindeCheptelOverviewPage, DragodindeCheptelCards, DragodindeDetail, DragodindeBadge, NewDragodindeModal,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
   CLES_SAUVEGARDE_DRAGODINDE, STORAGE_KEY_DRAGODINDE, generationDeCouleurDragodinde, sexeDragodinde, plierCouleurDragodinde,
-  filtrerCheptelParTexteDragodinde, GENERATIONS_DRAGODINDE,
+  filtrerCheptelParTexteDragodinde, GENERATIONS_DRAGODINDE, dragodindeReproductible,
 } from "./Dragodinde.jsx";
 import {
   useVolkorneElevage, VolkorneCheptelOverviewPage, VolkorneCheptelCards, VolkorneDetail, VolkorneBadge, NewVolkorneModal,
   VolkorneSynchronisationPage, VolkorneGpsPage, VolkorneClonagePage, VolkorneSuccesPage,
   CLES_SAUVEGARDE_VOLKORNE, STORAGE_KEY_VOLKORNE, generationDeCouleurVolkorne, sexeVolkorne, plierCouleurVolkorne,
-  filtrerCheptelParTexteVolkorne, GENERATIONS_VOLKORNE,
+  filtrerCheptelParTexteVolkorne, GENERATIONS_VOLKORNE, volkorneReproductible,
 } from "./Volkorne.jsx";
 import {
   useMuldoElevage, MuldoBadge, MuldoDetail, NewMuldoModal, FicheRapideModal,
-  DashboardDofusPanel, GraphiquesPanel, MemoElevagePanel, SuccesDofusPage,
+  DashboardDofusPanel, MemoElevagePanel, SuccesDofusPage,
   CheptelCards, CheptelOverviewPage, SynchronisationFiltresPage, ClonagePage,
-  STORAGE_KEY, STORAGE_HISTORY_KEY, STORAGE_SYNC_KEY, STORAGE_GPS_SESSION,
+  STORAGE_KEY, STORAGE_HISTORY_KEY, STORAGE_SYNC_KEY, STORAGE_GPS_SESSION, STORAGE_GPS_PARAMS,
   STORAGE_NAISSANCES, STORAGE_JOURNAL, STORAGE_INSTANTANES, STORAGE_CORBEILLE,
   CORBEILLE_DUREE_JOURS,
 } from "./Muldo.jsx";
@@ -37,6 +37,7 @@ import {
   couleurEstCanonique,
   generationDeCouleur,
   sexeMuldo,
+  muldoReproductible,
   cleCoupleCouleurs,
   RESULTATS_PAR_COUPLE,
   plusHauteGenerationValidee,
@@ -126,6 +127,10 @@ export default function App() {
       else setStockagePret(true);
     });
     return () => { annule = true; };
+    // Volontairement limité à l'id : `compte` change d'identité à chaque
+    // rendu (useCompte() n'est pas mémoïsé), le dépendre entièrement
+    // relancerait hydraterStockage() en boucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compte.session?.user?.id]);
 
   if (pseudoPublic) {
@@ -195,13 +200,16 @@ function PortailConnexion({ compte, parrainCapture }) {
 // migration automatique silencieuse, l'utilisateur choisit explicitement.
 function PropositionMigrationLegacy({ resume, donnees, onFini }) {
   const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState("");
   const importer = async () => {
     setEnCours(true);
+    setErreur("");
     try {
       await remplacerCacheComplet(donnees);
       onFini();
     } catch (e) {
       console.error(e);
+      setErreur("Import impossible (problème réseau ou compte) — réessaie dans un instant.");
       setEnCours(false);
     }
   };
@@ -222,6 +230,7 @@ function PropositionMigrationLegacy({ resume, donnees, onFini }) {
             </button>
             <button className="btn btn-ghost" onClick={onFini} disabled={enCours}>Ignorer</button>
           </div>
+          {erreur && <div style={{ color: "var(--red)", fontSize: 12, marginTop: 10 }}>{erreur}</div>}
         </div>
       </div>
     </div>
@@ -336,6 +345,24 @@ function TokensCss() {
         }
         .field:focus { outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(69,224,211,.18); }
         .field::placeholder { color: rgba(169,150,124,.55); }
+
+        /* Les <select> natifs dessinent leur propre bouton flèche avec un fond
+           clair imposé par l'OS/le navigateur (pavé blanc visible en thème
+           sombre) : on retire ce widget et on redessine une flèche via une
+           image de fond, coloree pour rester lisible sur les deux themes. */
+        select.field {
+          appearance: none; -webkit-appearance: none; -moz-appearance: none;
+          /* !important : plusieurs select.field passent un style inline
+             de padding qui écraserait sinon la marge réservée à la flèche
+             redessinée ci-dessous. */
+          padding-right: 32px !important;
+          background-repeat: no-repeat;
+          background-position: right 12px center;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238fadb2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        }
+        :root[data-theme="clair"] select.field {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23547174' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        }
 
         /* Champs de prix (kamas) : pas de flèches +/- (incrément de 1 inutile
            sur des montants qui se comptent en milliers). */
@@ -452,12 +479,24 @@ function TokensCss() {
         .recipe-line { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px; }
         .pill {
           display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border-radius:999px;
-          background:rgba(0,0,0,.18); border:1px solid var(--line); color:var(--text); font-weight:700; font-size:12px;
+          background:linear-gradient(160deg, rgba(255,255,255,.05), rgba(0,0,0,.22));
+          border:1px solid var(--line); color:var(--text); font-weight:700; font-size:12px;
         }
+        /* Titres/valeurs "hero" ponctuels (paliers de soutien, génération mise
+           en avant) : réutilise la police display plutôt que l'UI courante,
+           pour les faire ressortir comme des titres plutôt que du texte dense. */
+        .chiffre-hero { font-family: var(--font-display); font-weight: 800; }
         .progress-bar { height:10px; background:rgba(0,0,0,.24); border:1px solid var(--line); border-radius:999px; overflow:hidden; }
-        .progress-fill { height:100%; background:linear-gradient(90deg, var(--accent), var(--gold2)); border-radius:999px; }
+        .progress-fill {
+          height:100%; background:linear-gradient(90deg, var(--accent), var(--gold2)); border-radius:999px;
+          box-shadow: 0 0 10px 1px rgba(240,207,114,.45);
+          transition: width .5s cubic-bezier(.22,.9,.32,1);
+        }
 
-        .muldo-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+        @keyframes liste-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+        @keyframes toast-in { from { opacity:0; transform:translate(-50%,-10px); } to { opacity:1; transform:translate(-50%,0); } }
+        .muldo-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; animation: liste-in .25s ease; }
+        .message-row { animation: liste-in .22s ease both; }
         .muldo-card {
           cursor:pointer; border-radius:16px; padding:14px; border:1px solid var(--line);
           background:linear-gradient(145deg, var(--panel3), var(--panel2));
@@ -476,7 +515,9 @@ function TokensCss() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin-icon { animation: spin 0.8s linear infinite; }
 
+        * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
         ::-webkit-scrollbar { width:9px; height:9px; }
+        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background:var(--line); border-radius:6px; border:2px solid transparent; background-clip:padding-box; }
         ::-webkit-scrollbar-thumb:hover { background:var(--gold); background-clip:padding-box; }
 
@@ -673,6 +714,10 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
   // Pousse la génération muldo la plus haute validée vers le profil Supabase
   // (auto-déclaratif) dès qu'elle change — sert de condition de déblocage
   // des ailes "muldo", en plus du palier de don.
+  // Les 6 effets ci-dessous dépendent volontairement de compte.session/
+  // compte.profil plutôt que de `compte` en entier : useCompte() renvoie un
+  // nouvel objet à chaque rendu (non mémoïsé), dépendre de `compte` ferait
+  // partir un update Supabase à chaque rendu de App().
   useEffect(() => {
     if (!supabase || !compte.session?.user || !compte.profil) return;
     const gen = plusHauteGenerationValidee(eleveMuldo.cheptel, eleveMuldo.historiqueCouleurs);
@@ -681,6 +726,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         .eq("id", compte.session.user.id)
         .then(() => compte.rafraichirProfil());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eleveMuldo.cheptel, eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
   // Pousse le nombre de couleurs muldo découvertes vers le profil Supabase —
   // alimente le classement des éleveurs de la Taverne (auto-déclaratif, comme
@@ -693,6 +739,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         .eq("id", compte.session.user.id)
         .then(() => compte.rafraichirProfil());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eleveMuldo.historiqueCouleurs, compte.session, compte.profil]);
   // Mêmes poussées auto-déclaratives que ci-dessus, pour Dragodinde et Volkorne
   // — alimentent le classement des éleveurs étendu aux 3 créatures.
@@ -704,6 +751,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         .eq("id", compte.session.user.id)
         .then(() => compte.rafraichirProfil());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eleveDragodinde.cheptel, eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
   useEffect(() => {
     if (!supabase || !compte.session?.user || !compte.profil) return;
@@ -713,6 +761,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         .eq("id", compte.session.user.id)
         .then(() => compte.rafraichirProfil());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eleveDragodinde.historiqueCouleurs, compte.session, compte.profil]);
   useEffect(() => {
     if (!supabase || !compte.session?.user || !compte.profil) return;
@@ -722,6 +771,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         .eq("id", compte.session.user.id)
         .then(() => compte.rafraichirProfil());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eleveVolkorne.cheptel, eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
   useEffect(() => {
     if (!supabase || !compte.session?.user || !compte.profil) return;
@@ -731,6 +781,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         .eq("id", compte.session.user.id)
         .then(() => compte.rafraichirProfil());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eleveVolkorne.historiqueCouleurs, compte.session, compte.profil]);
 
   // Titre d'onglet dynamique : reflète la page (et, pour les créatures, le
@@ -888,7 +939,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
                   Ouvrir le simulateur
                 </button>
               </div>
-              <GraphiquesPanel cheptel={eleveMuldo.cheptel} journal={eleveMuldo.journal} instantanes={eleveMuldo.instantanes} />
+              <GraphiquesPanel cheptel={eleveMuldo.cheptel} journal={eleveMuldo.journal} instantanes={eleveMuldo.instantanes} generationDeCouleurFn={generationDeCouleur} sexeFn={sexeMuldo} reproductibleFn={muldoReproductible} />
               <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} userId={compte.session?.user?.id} serveur={serveur} />
               <PartagePublicPanel
                 session={compte.session}
@@ -1144,11 +1195,23 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
                   )}
                 </div>
                   <ArbreGenealogiquePanel cheptel={eleveDragodinde.cheptel} onSelect={eleveDragodinde.setSelectedId} sexeFn={sexeDragodinde} plierCouleurFn={plierCouleurDragodinde} />
+                  <GraphiquesPanel cheptel={eleveDragodinde.cheptel} journal={eleveDragodinde.journal} instantanes={eleveDragodinde.instantanes} generationDeCouleurFn={generationDeCouleurDragodinde} sexeFn={sexeDragodinde} reproductibleFn={dragodindeReproductible} nomEntitePluriel="Dragodindes" />
                   <StatsCroisementsPanel journal={eleveDragodinde.journal} />
                   <CorbeillePanel {...eleveDragodinde.corbeilleProps} />
                 </>
               )}
-              {sousPage === "synchro" && <DragodindeSynchronisationPage {...eleveDragodinde.syncProps} showToast={showToast} />}
+              {sousPage === "synchro" && (
+                <DragodindeSynchronisationPage
+                  {...eleveDragodinde.syncProps}
+                  showToast={showToast}
+                  onSupprimerMuldo={(m) => {
+                    if (window.confirm(`Supprimer définitivement ${m.nom || m.couleur} ? (généalogie : ce dragodinde a des parents ou descendants connus)`)) {
+                      eleveDragodinde.deleteMuldo(m.id);
+                      showToast(`${m.nom || m.couleur} supprimé.`);
+                    }
+                  }}
+                />
+              )}
               {sousPage === "gps" && <DragodindeGpsPage {...eleveDragodinde.gpsProps} {...eleveDragodinde.naissancesProps} onPartagerTaverne={partagerDansTaverne} onObjectifAtteint={(couleur, sexe) => showToast(`🎯 Objectif GPS atteint ! ${couleur} ${sexe === "F" ? "♀" : "♂"} obtenu(e).`, { type: "objectif", duration: 5000 })} />}
               {sousPage === "clonage" && <DragodindeClonagePage {...eleveDragodinde.clonageProps} />}
             </>
@@ -1202,11 +1265,23 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
                   )}
                 </div>
                   <ArbreGenealogiquePanel cheptel={eleveVolkorne.cheptel} onSelect={eleveVolkorne.setSelectedId} sexeFn={sexeVolkorne} plierCouleurFn={plierCouleurVolkorne} />
+                  <GraphiquesPanel cheptel={eleveVolkorne.cheptel} journal={eleveVolkorne.journal} instantanes={eleveVolkorne.instantanes} generationDeCouleurFn={generationDeCouleurVolkorne} sexeFn={sexeVolkorne} reproductibleFn={volkorneReproductible} nomEntitePluriel="Volkornes" />
                   <StatsCroisementsPanel journal={eleveVolkorne.journal} />
                   <CorbeillePanel {...eleveVolkorne.corbeilleProps} />
                 </>
               )}
-              {sousPage === "synchro" && <VolkorneSynchronisationPage {...eleveVolkorne.syncProps} showToast={showToast} />}
+              {sousPage === "synchro" && (
+                <VolkorneSynchronisationPage
+                  {...eleveVolkorne.syncProps}
+                  showToast={showToast}
+                  onSupprimerMuldo={(m) => {
+                    if (window.confirm(`Supprimer définitivement ${m.nom || m.couleur} ? (généalogie : ce volkorne a des parents ou descendants connus)`)) {
+                      eleveVolkorne.deleteMuldo(m.id);
+                      showToast(`${m.nom || m.couleur} supprimé.`);
+                    }
+                  }}
+                />
+              )}
               {sousPage === "gps" && <VolkorneGpsPage {...eleveVolkorne.gpsProps} {...eleveVolkorne.naissancesProps} onPartagerTaverne={partagerDansTaverne} onObjectifAtteint={(couleur, sexe) => showToast(`🎯 Objectif GPS atteint ! ${couleur} ${sexe === "F" ? "♀" : "♂"} obtenu(e).`, { type: "objectif", duration: 5000 })} />}
               {sousPage === "clonage" && <VolkorneClonagePage {...eleveVolkorne.clonageProps} />}
             </>
@@ -1215,8 +1290,8 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
       </div>
 
       {eleveMuldo.showNew && <NewMuldoModal cheptel={eleveMuldo.cheptel} onClose={() => eleveMuldo.setShowNew(false)} onCreate={eleveMuldo.addMuldo} />}
-      {eleveDragodinde.showNew && <NewDragodindeModal onClose={() => eleveDragodinde.setShowNew(false)} onCreate={eleveDragodinde.addMuldo} />}
-      {eleveVolkorne.showNew && <NewVolkorneModal onClose={() => eleveVolkorne.setShowNew(false)} onCreate={eleveVolkorne.addMuldo} />}
+      {eleveDragodinde.showNew && <NewDragodindeModal cheptel={eleveDragodinde.cheptel} onClose={() => eleveDragodinde.setShowNew(false)} onCreate={eleveDragodinde.addMuldo} />}
+      {eleveVolkorne.showNew && <NewVolkorneModal cheptel={eleveVolkorne.cheptel} onClose={() => eleveVolkorne.setShowNew(false)} onCreate={eleveVolkorne.addMuldo} />}
 
       <OnboardingOverlay open={onboardingGpsOuvert} onClose={fermerOnboardingGps} etapes={ETAPES_ONBOARDING_GPS} titre="Découverte du GPS" />
       <OnboardingOverlay open={onboardingSiteOuvert} onClose={fermerOnboardingSite} etapes={ETAPES_ONBOARDING_SITE} titre="Visite du Registre des Abysses" />
@@ -1261,11 +1336,24 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         <a href="#" onClick={(e) => { e.preventDefault(); relancerOnboardingSite(); }} style={{ color: "var(--gold)" }}>🧭 Revoir la visite guidée</a>
       </footer>
 
-      {toast && (
-        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "min(92vw, 640px)", pointerEvents: "none", background: "var(--panel)", border: `1px solid ${toast.type === "objectif" ? "var(--cyan)" : "var(--gold)"}`, color: "var(--text)", padding: "10px 16px", borderRadius: 12, fontSize: 13, boxShadow: toast.type === "objectif" ? "0 12px 30px rgba(0,0,0,.45), 0 0 24px var(--cyan)" : "0 12px 30px rgba(0,0,0,.45)", animation: "fondu .15s ease" }}>
-          {typeof toast === "string" ? toast : toast.msg}
-        </div>
-      )}
+      {toast && (() => {
+        const type = typeof toast === "string" ? null : toast.type;
+        // "error"/"success" n'avaient jusqu'ici aucune distinction visuelle avec
+        // un message neutre (même bordure or) : on les différencie par couleur
+        // + icône. "objectif" garde son style existant (les messages embarquent
+        // déjà leur propre emoji 🎯/🎉), un icone en plus ferait doublon.
+        const styleParType = {
+          error: { couleur: "var(--red)", icone: "⚠️", glow: "rgba(216,91,79,.4)" },
+          success: { couleur: "var(--green)", icone: "✅", glow: "rgba(104,193,111,.4)" },
+          objectif: { couleur: "var(--cyan)", icone: null, glow: "var(--cyan)" },
+        }[type] || { couleur: "var(--gold)", icone: null, glow: null };
+        return (
+          <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 90, maxWidth: "min(92vw, 640px)", pointerEvents: "none", display: "flex", alignItems: "center", gap: 8, background: "var(--panel)", border: `1px solid ${styleParType.couleur}`, color: "var(--text)", padding: "10px 16px", borderRadius: 12, fontSize: 13, boxShadow: styleParType.glow ? `0 12px 30px rgba(0,0,0,.45), 0 0 20px ${styleParType.glow}` : "0 12px 30px rgba(0,0,0,.45)", animation: "toast-in .2s ease" }}>
+            {styleParType.icone && <span>{styleParType.icone}</span>}
+            <span>{typeof toast === "string" ? toast : toast.msg}</span>
+          </div>
+        );
+      })()}
 
       {typeof parcoursGuideEtape === "number" && (
         <div style={{ position: "fixed", left: 16, bottom: 16, zIndex: 88, maxWidth: 320, background: "var(--panel)", border: "1px solid var(--gold)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 14px 36px rgba(0,0,0,.4)" }}>
@@ -1426,6 +1514,9 @@ function PartagePublicPanel({ session, pseudo, cheptelMuldo, cheptelDragodinde, 
         (data || []).forEach((l) => { carte[l.creature] = l.maj_le; });
         setStatuts(carte);
       });
+    // Volontairement limité à l'id (primitif stable) plutôt qu'à l'objet
+    // session, recréé à chaque rendu côté appelant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
 
   if (!supabase || !session?.user) return null;
@@ -1509,6 +1600,7 @@ function ParrainagePanel({ session, pseudo, showToast }) {
         setActifs(new Set((messages || []).map((m) => m.auteur)).size);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
 
   if (!supabase || !session?.user) return null;
@@ -2108,6 +2200,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
   useEffect(() => {
     if (!session?.user || !pushSupporte()) return;
     abonnementPushActuel().then((sub) => setPushActif(!!sub)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
 
   const basculerNotificationsPush = async () => {
@@ -2151,6 +2244,9 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
     setClassementOuvert(true);
     chargerClassement();
     onClassementInitialConsomme?.();
+    // Callback de "consommation" volontairement exclu : c'est une fonction
+    // inline côté App(), la dépendre relancerait l'effet à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ouvrirClassementInitial]);
 
   // Pré-remplit le Comptoir général avec un brouillon venant d'ailleurs (ex.
@@ -2161,6 +2257,8 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
     setVue({ type: "sujet", id: null, titre: "🍺 Comptoir général", auteur: null });
     setSaisie(brouillonInitial);
     onBrouillonInitialConsomme?.();
+    // Même raisonnement que ci-dessus pour le classement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brouillonInitial]);
   const finFil = React.useRef(null);
   const dmCibleRef = React.useRef(dmCible);
@@ -2294,6 +2392,10 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
       })
       .subscribe();
     return () => { supabase.removeChannel(canal); };
+    // Les charger*/dmCibleRef sont volontairement exclus : ce sont des
+    // fonctions/refs recréées à chaque rendu, les dépendre romprait et
+    // reconstruirait l'abonnement Supabase Realtime en boucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
 
   const vueRef = React.useRef(vue);
@@ -2302,6 +2404,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
   useEffect(() => {
     if (vue.type === "sujet") { chargerFil(vue.id); marquerSujetLu(vue.id); }
     setCiteCible(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vue.type, vue.id]);
 
   // Abonnement au sujet courant (notifications push) — uniquement pour un
@@ -2313,6 +2416,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
       .eq("utilisateur", session.user.id).eq("sujet_id", vue.id).maybeSingle()
       .then(({ data }) => { if (!annule) setAbonneSujet(!!data); });
     return () => { annule = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id, vue.type, vue.id]);
 
   const basculerAbonnementSujet = async () => {
@@ -2462,6 +2566,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
               <input className="field" placeholder="Titre du sujet (3-80 caractères)" maxLength={80} value={nouveauTitre} onChange={(e) => setNouveauTitre(e.target.value)} />
               <textarea className="field" placeholder="Premier message…" rows={3} maxLength={2000} value={nouveauContenu} onChange={(e) => setNouveauContenu(e.target.value)} style={{ resize: "vertical" }} />
               <div><button className="btn btn-coral" onClick={creerSujet}>Créer le sujet</button></div>
+              {erreur && <div style={{ color: "var(--red)", fontSize: 12 }}>{erreur}</div>}
             </div>
           )}
 
@@ -2534,7 +2639,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
             {messages.map((m) => {
               const citee = m.cite_message_id ? messages.find((x) => x.id === m.cite_message_id) : null;
               return (
-                <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px" }}>
+                <div key={m.id} className="message-row" style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
                     <AuteurAile id={m.auteur} taille={32} />
                     <span style={{ color: "var(--muted)", fontSize: 10 }}>
@@ -2588,6 +2693,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
             />
             <button className="btn btn-coral" disabled={!session || !saisie.trim()} onClick={envoyer}>Répondre</button>
           </div>
+          {erreur && <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{erreur}</div>}
         </div>
       )}
 
@@ -2754,7 +2860,7 @@ function MessagesPrivesModal({ session, messages, profilCible, saisie, setSaisie
           {messages.map((m) => {
             const moi = m.expediteur === session.user.id;
             return (
-              <div key={m.id} style={{ alignSelf: moi ? "flex-end" : "flex-start", maxWidth: "80%", background: moi ? "rgba(214,166,74,.16)" : "rgba(255,255,255,.05)", border: `1px solid ${moi ? "var(--gold)" : "var(--line)"}`, borderRadius: 12, padding: "8px 10px" }}>
+              <div key={m.id} className="message-row" style={{ alignSelf: moi ? "flex-end" : "flex-start", maxWidth: "80%", background: moi ? "rgba(214,166,74,.16)" : "rgba(255,255,255,.05)", border: `1px solid ${moi ? "var(--gold)" : "var(--line)"}`, borderRadius: 12, padding: "8px 10px" }}>
                 <div style={{ fontSize: 13, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.contenu}</div>
                 <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, textAlign: moi ? "right" : "left" }}>
                   {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -3054,16 +3160,16 @@ function SoutienPanel({ profil, setProfil }) {
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14, padding: "10px 12px", border: "1px dashed var(--line)", borderRadius: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
           <AileNiveau style="dragodinde" taille={90} niveau={niveau} />
-          <span style={{ color: "var(--gold2)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("dragodinde", niveau)}</span>
+          <span className="chiffre-hero" style={{ color: "var(--gold2)", fontSize: 13 }}>{nomNiveauAiles("dragodinde", niveau)}</span>
         </div>
         <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={40} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
           <AileNiveau style="muldo" taille={90} niveau={niveau} />
-          <span style={{ color: "var(--cyan)", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("muldo", niveau)}</span>
+          <span className="chiffre-hero" style={{ color: "var(--cyan)", fontSize: 13 }}>{nomNiveauAiles("muldo", niveau)}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
           <AileNiveau style="volkorne" taille={90} niveau={niveau} />
-          <span style={{ color: "#e87832", fontSize: 11, fontWeight: 700 }}>{nomNiveauAiles("volkorne", niveau)}</span>
+          <span className="chiffre-hero" style={{ color: "#e87832", fontSize: 13 }}>{nomNiveauAiles("volkorne", niveau)}</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11, alignSelf: "center" }}>
           Dépose tes visuels dans public/ailes/ (dragodinde-1.png … volkorne-5.png) pour remplacer les dessins.
@@ -3085,6 +3191,7 @@ const CLES_SAUVEGARDE = [
   STORAGE_HISTORY_KEY,
   STORAGE_SYNC_KEY,
   STORAGE_GPS_SESSION,
+  STORAGE_GPS_PARAMS,
   STORAGE_NAISSANCES,
   STORAGE_PRIX_KAMAS,
   STORAGE_JOURNAL,

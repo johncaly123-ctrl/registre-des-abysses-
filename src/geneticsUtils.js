@@ -30,6 +30,17 @@ export function couleursAncetres(muldo, cheptel, profondeur = 3) {
   return couleurs;
 }
 
+// Comparaison insensible à la casse/espaces pour repérer un nom déjà pris
+// dans le cheptel (les noms générés automatiquement sont destinés à être
+// renommés en jeu, donc seuls les vrais doublons de nom saisi comptent).
+// Générique : ne dépend d'aucune table de couleurs, juste des champs
+// nom/id déjà communs aux 3 créatures.
+export function nomEnDoublon(liste, nom, excludeId) {
+  const cible = (nom || "").trim().toLowerCase();
+  if (!cible) return false;
+  return (liste || []).some((m) => m.id !== excludeId && (m.nom || "").trim().toLowerCase() === cible);
+}
+
 // Affectation hongroise : meilleur score global, pas choix glouton couple par couple.
 export function affectationMaximale(matrice) {
   const rows = matrice.length;

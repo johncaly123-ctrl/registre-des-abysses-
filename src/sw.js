@@ -20,7 +20,7 @@ self.addEventListener("push", (event) => {
   let donnees = {};
   try {
     donnees = event.data ? event.data.json() : {};
-  } catch (e) {
+  } catch {
     donnees = { titre: "Registre des Abysses", corps: event.data ? event.data.text() : "" };
   }
 

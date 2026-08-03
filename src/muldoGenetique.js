@@ -5,8 +5,8 @@
 //
 // distanceLevenshtein/affectationMaximale viennent de geneticsUtils.js, déjà
 // partagé avec Dragodinde.jsx/Volkorne.jsx (pas de copie locale ici).
-import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique } from "./geneticsUtils.js";
-export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres };
+import { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, couleursCandidatesAccouplement, repartitionProbabilitesAccouplement, choisirObjectifGpsAutomatique as choisirObjectifGpsAutomatiqueGenerique, nomEnDoublon } from "./geneticsUtils.js";
+export { affectationMaximale, distanceLevenshtein, calculerGenerationCible, bonusProbabiliteGenerationCible, couleursAncetres, nomEnDoublon };
 
 // ---------- constantes de design ----------
 // Alias vers les variables CSS du thème (voir :root dans App.jsx) plutôt que
