@@ -22,6 +22,6 @@ Rejoins la communauté sur Discord pour échanger sur l'élevage, signaler un bu
 proposer une idée : lien à venir (voir `LIEN_DISCORD` dans `src/configSupabase.js`).
 
 ## Licence
-© 2026 johncaly123-ctrl. Tous droits réservés — voir [LICENSE](LICENSE). Ce n'est pas un
+© 2026 caly191. Tous droits réservés — voir [LICENSE](LICENSE). Ce n'est pas un
 projet open source : la réutilisation, la copie ou la redistribution du code ne sont
 pas autorisées sans permission écrite.
