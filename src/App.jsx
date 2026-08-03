@@ -1351,6 +1351,8 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
         <br />
         Projet non affilié à Ankama. DOFUS et tous les éléments associés sont la propriété d'Ankama Games.
         Aucun contenu ni visuel du jeu n'est utilisé par cet outil.
+        <br />
+        © {new Date().getFullYear()} Registre des Abysses — tous droits réservés. Reproduction ou réutilisation du code interdite sans autorisation.
         {LIEN_DISCORD && (
           <>
             <br />
