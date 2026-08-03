@@ -11,7 +11,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Trash2, Heart, Zap, Sparkles, Droplets, AlertTriangle, X, Skull, Baby } from "lucide-react";
 import { chargerJSON, sauvegarderJSON, creerEcritureDebattue } from "./stockage.js";
 import {
-  BebesARenommerPanel, BoutonFiche,
+  BebesARenommerPanel, BoutonFiche, NomCopiable,
   exporterFicheImage, copierPressePapiers, LabeledSelect, StatCard, RechercheCouleurDeroulante,
 } from "./panneauxElevage.jsx";
 import {
@@ -1937,10 +1937,10 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
               borderTop: "1px solid rgba(255,255,255,.06)", padding: "9px 0",
             }}>
               <span style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom || s.a.couleur}
+                <MuldoBadge couleur={s.a.couleur} taille={17} /> {s.a.nom ? <NomCopiable nom={s.a.nom} /> : s.a.couleur}
                 <BoutonFiche id={s.a.id} onVoir={onVoirMuldo} label={s.a.nom || s.a.couleur} />
                 <span style={{ color: "var(--gold2)" }}>+</span>
-                <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom || s.b.couleur}
+                <MuldoBadge couleur={s.b.couleur} taille={17} /> {s.b.nom ? <NomCopiable nom={s.b.nom} /> : s.b.couleur}
                 <BoutonFiche id={s.b.id} onVoir={onVoirMuldo} label={s.b.nom || s.b.couleur} />
                 <span className="pill" style={{ padding: "2px 8px", fontSize: 11 }}>G{s.generation}</span>
               </span>
@@ -3076,7 +3076,8 @@ export function RechercheMuldoDeroulante({ muldos, valeurId, onChoisir, placehol
   const [recherche, setRecherche] = useState("");
   const [ferme, setFerme] = useState(true);
 
-  const etiquette = (m) => `${m.nom || m.id?.slice(0, 6)} — ${m.couleur} ${sexeMuldo(m) === "F" ? "♀" : sexeMuldo(m) === "M" ? "♂" : "?"} · G${generationDeCouleur(m.couleur)} · ${muldoReproductible(m) ? "fertile" : "stérile"}`;
+  const etiquetteSuffixe = (m) => ` — ${m.couleur} ${sexeMuldo(m) === "F" ? "♀" : sexeMuldo(m) === "M" ? "♂" : "?"} · G${generationDeCouleur(m.couleur)} · ${muldoReproductible(m) ? "fertile" : "stérile"}`;
+  const etiquette = (m) => `${m.nom || m.id?.slice(0, 6)}${etiquetteSuffixe(m)}`;
   const choisi = (muldos || []).find((m) => m.id === valeurId) || null;
   const prefixe = plierCouleur(recherche.trim());
   // L'ordre est décidé par l'appelant (ex. priorité même couleur/même sexe
@@ -3099,7 +3100,7 @@ export function RechercheMuldoDeroulante({ muldos, valeurId, onChoisir, placehol
       />
       {choisi && (
         <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-          → {etiquette(choisi)}
+          → <NomCopiable nom={choisi.nom || choisi.id?.slice(0, 6)} gras={false} />{etiquetteSuffixe(choisi)}
           {onEffacer && <button type="button" className="btn btn-ghost" style={{ padding: "0 6px", fontSize: 11 }} onClick={onEffacer}>×</button>}
         </div>
       )}

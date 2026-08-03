@@ -495,7 +495,8 @@ function RechercheDragodindeDeroulante({ muldos, valeurId, onChoisir, placeholde
   const [ferme, setFerme] = useState(true);
   const choisi = (muldos || []).find((m) => m.id === valeurId) || null;
   const prefixe = plierCouleurDragodinde(recherche.trim());
-  const etiquette = (m) => `${m.nom || m.id?.slice(0, 6)} — ${m.couleur} ${sexeDragodinde(m) === "F" ? "♀" : sexeDragodinde(m) === "M" ? "♂" : "?"} · G${generationDeCouleurDragodinde(m.couleur)} · ${dragodindeReproductible(m) ? "fertile" : "stérile"}`;
+  const etiquetteSuffixe = (m) => ` — ${m.couleur} ${sexeDragodinde(m) === "F" ? "♀" : sexeDragodinde(m) === "M" ? "♂" : "?"} · G${generationDeCouleurDragodinde(m.couleur)} · ${dragodindeReproductible(m) ? "fertile" : "stérile"}`;
+  const etiquette = (m) => `${m.nom || m.id?.slice(0, 6)}${etiquetteSuffixe(m)}`;
   const suggestions = (!ferme && prefixe)
     ? (muldos || []).filter((m) => m.id !== exclureId && (plierCouleurDragodinde(m.nom || "").startsWith(prefixe) || plierCouleurDragodinde(m.couleur || "").startsWith(prefixe))).slice(0, 60)
     : [];
@@ -504,7 +505,7 @@ function RechercheDragodindeDeroulante({ muldos, valeurId, onChoisir, placeholde
       <input className="field" placeholder={placeholder} value={recherche} onChange={(e) => { setRecherche(e.target.value); setFerme(false); }} style={{ width: "100%", padding: "6px 10px", fontSize: 13 }} />
       {choisi && (
         <div style={{ color: "var(--gold)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-          → {etiquette(choisi)}
+          → <NomCopiable nom={choisi.nom || choisi.id?.slice(0, 6)} gras={false} />{etiquetteSuffixe(choisi)}
           {onEffacer && <button type="button" className="btn btn-ghost" style={{ padding: "0 6px", fontSize: 11 }} onClick={onEffacer}>×</button>}
         </div>
       )}
@@ -1115,7 +1116,7 @@ export function DragodindeClonagePage({ cheptel, fusionA, fusionB, setFusionA, s
           <h2 style={{ marginTop: 0 }}>Clonages suggérés</h2>
           {suggestions.map((s) => (
             <div key={`${s.a.id}|${s.b.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,.06)" }}>
-              <span><DragodindeBadge couleur={s.a.couleur} taille={16} /> {s.a.nom} + <DragodindeBadge couleur={s.b.couleur} taille={16} /> {s.b.nom}</span>
+              <span><DragodindeBadge couleur={s.a.couleur} taille={16} /> <NomCopiable nom={s.a.nom} /> + <DragodindeBadge couleur={s.b.couleur} taille={16} /> <NomCopiable nom={s.b.nom} /></span>
               <button className="btn btn-ghost" onClick={() => { setFusionA(s.a.id); setFusionB(s.b.id); }}>Choisir ce duo</button>
             </div>
           ))}
