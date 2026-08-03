@@ -731,7 +731,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
     });
     canal.subscribe((statut) => {
       if (statut === "SUBSCRIBED") {
-        canal.track({ pseudo: compte.profil.pseudo, styleAiles: compte.profil.style_ailes, niveauAiles: compte.profil.niveau_ailes, depuis: Date.now() });
+        canal.track({ id: compte.session.user.id, pseudo: compte.profil.pseudo, styleAiles: compte.profil.style_ailes, niveauAiles: compte.profil.niveau_ailes, depuis: Date.now() });
       }
     });
     return () => { supabase.removeChannel(canal); setEnLigne([]); };
@@ -2895,7 +2895,11 @@ function ModerationPage({ compte, enLigne }) {
         {enLigne.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>Personne pour l'instant.</div>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
           {enLigne.map((p, i) => (
-            <div key={i} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,.04)", border: "1px solid var(--line)" }}>
+            <div
+              key={i}
+              style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,.04)", border: "1px solid var(--line)", cursor: p.id ? "pointer" : "default" }}
+              onClick={() => p.id && setProfilCible({ id: p.id, pseudo: p.pseudo, style_ailes: p.styleAiles, niveau_ailes: p.niveauAiles, description: "", cree_le: null, serveur: null })}
+            >
               <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveauAiles > 0} styleAiles={p.styleAiles} niveau={p.niveauAiles} taille={16} />
             </div>
           ))}
