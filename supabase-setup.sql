@@ -543,3 +543,38 @@ $$ language plpgsql security definer;
 -- de preference directement dans l'editeur SQL du dashboard plutot que de
 -- faire transiter la valeur ailleurs) :
 --   select decrypted_secret from vault.decrypted_secrets where name = 'push_webhook_secret';
+
+-- v26 : petites failles trouvees en revue de securite (2026-08-03).
+--
+-- 1) La policy update de messages_prives (v8) n'autorisait que le destinataire
+--    a modifier la ligne, mais sans restreindre QUELLES colonnes -- un appel
+--    direct a l'API REST (JWT valide, hors UI) aurait pu reecrire "contenu"
+--    ou "expediteur" d'un message recu, pas seulement "lu". Meme principe que
+--    protege_niveau_ailes (v3) : revert silencieusement tout sauf "lu" pour
+--    les roles authenticated/anon, laisse passer service_role.
+create or replace function public.proteger_message_prive_lu() returns trigger as $$
+begin
+  if coalesce(auth.jwt() ->> 'role', '') in ('authenticated', 'anon') then
+    new.expediteur := old.expediteur;
+    new.destinataire := old.destinataire;
+    new.contenu := old.contenu;
+    new.cree_le := old.cree_le;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+drop trigger if exists trg_proteger_message_prive_lu on messages_prives;
+create trigger trg_proteger_message_prive_lu before update on messages_prives
+  for each row execute function public.proteger_message_prive_lu();
+
+-- 2) Le pseudo etait verifie insensible a la casse cote client (ilike) mais
+--    la contrainte unique en base est sensible a la casse -- un appel direct
+--    a l'API (hors formulaire d'inscription) pouvait creer "Muldo_Roi" et
+--    "muldo_roi" comme deux comptes distincts. Index unique sur la forme en
+--    minuscules pour l'imposer aussi cote base.
+create unique index if not exists profils_pseudo_lower_unique on profils (lower(pseudo));
+
+-- 3) profils.serveur (v16) n'avait aucune contrainte de longueur, contrairement
+--    a toutes les autres colonnes texte editables par l'utilisateur.
+alter table profils drop constraint if exists profils_serveur_check;
+alter table profils add constraint profils_serveur_check check (serveur is null or char_length(serveur) <= 40);

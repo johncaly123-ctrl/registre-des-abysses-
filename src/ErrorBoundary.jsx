@@ -54,9 +54,9 @@ export default class ErrorBoundary extends React.Component {
           >
             Recharger la page
           </button>
-          {this.state.erreur?.message && (
+          {import.meta.env.DEV && this.state.erreur?.message && (
             <details style={{ marginTop: 16, opacity: 0.5, fontSize: 12, maxWidth: 480 }}>
-              <summary style={{ cursor: "pointer" }}>Détails techniques</summary>
+              <summary style={{ cursor: "pointer" }}>Détails techniques (visible en dev uniquement)</summary>
               <pre style={{ whiteSpace: "pre-wrap", textAlign: "left" }}>
                 {String(this.state.erreur.stack || this.state.erreur.message)}
               </pre>

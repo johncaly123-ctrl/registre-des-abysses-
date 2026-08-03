@@ -29,6 +29,26 @@ const MONTANTS_NIVEAUX_EUROS = [5, 12, 20];
 // reliquat à payer est trop faible (ex. déjà à 1€ du palier).
 const MONTANT_MINIMUM_EUROS = 0.5;
 
+// Origines autorisées pour la redirection post-paiement (success_url/cancel_url) —
+// sans cette allowlist, un appelant direct de la fonction (JWT valide, hors UI)
+// pourrait faire renvoyer par Stripe n'importe quelle URL de son choix, y
+// compris un site de phishing, après un paiement réel et légitime.
+const ORIGINES_AUTORISEES = [
+  "https://registre-des-abysses.netlify.app",
+  "http://localhost:5173",
+];
+function retourUrlSure(brut) {
+  if (typeof brut === "string" && brut) {
+    try {
+      const url = new URL(brut);
+      if (ORIGINES_AUTORISEES.includes(url.origin)) return url.toString();
+    } catch {
+      // URL invalide -> retombe sur le défaut ci-dessous
+    }
+  }
+  return ORIGINES_AUTORISEES[0];
+}
+
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2024-11-20.acacia",
   httpClient: Stripe.createFetchHttpClient(),
@@ -67,7 +87,8 @@ Deno.serve(async (req) => {
     .select("montant_euros")
     .eq("profil_id", user.id);
   if (erreurDons) {
-    return new Response(JSON.stringify({ erreur: "lecture du cumul de dons : " + erreurDons.message }), { status: 500, headers: ENTETES_CORS });
+    console.error("lecture du cumul de dons :", erreurDons.message);
+    return new Response(JSON.stringify({ erreur: "Erreur interne, réessaie plus tard." }), { status: 500, headers: ENTETES_CORS });
   }
   const montantCumule = (dons || []).reduce((total, d) => total + Number(d.montant_euros), 0);
 
@@ -76,7 +97,7 @@ Deno.serve(async (req) => {
   }
 
   const delta = Math.max(Math.round((montantCible - montantCumule) * 100) / 100, MONTANT_MINIMUM_EUROS);
-  const retourUrl = typeof corps?.retourUrl === "string" && corps.retourUrl ? corps.retourUrl : req.headers.get("origin") || "https://registre-des-abysses.netlify.app";
+  const retourUrl = retourUrlSure(corps?.retourUrl);
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",

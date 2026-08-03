@@ -1794,6 +1794,15 @@ function contientMotInterdit(texte) {
   return MOTS_INTERDITS_PSEUDO.some((mot) => normalise.includes(mot));
 }
 
+// Politique de mot de passe alignée sur celle de Google (8 caractères minimum,
+// mélange lettres/chiffres) plutôt que le seul minimum de 6 imposé par défaut
+// par Supabase Auth.
+function erreurMotDePasse(mdp) {
+  if (mdp.length < 8) return "Mot de passe : 8 caractères minimum.";
+  if (!/[a-zA-Z]/.test(mdp) || !/[0-9]/.test(mdp)) return "Mot de passe : au moins une lettre et un chiffre.";
+  return null;
+}
+
 // ---------- Panneau d'authentification (connexion / inscription / oubli) ----------
 function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
   const [pseudo, setPseudo] = useState(profilLocal?.pseudo || "");
@@ -1819,7 +1828,8 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
         if (p.length < 2 || p.length > 10) throw new Error("Pseudo entre 2 et 10 caractères.");
         if (contientMotInterdit(p)) throw new Error("Ce pseudo n'est pas autorisé.");
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) throw new Error("Adresse email invalide.");
-        if (motDePasse.length < 6) throw new Error("Mot de passe : 6 caractères minimum.");
+        const erreurMdp = erreurMotDePasse(motDePasse);
+        if (erreurMdp) throw new Error(erreurMdp);
         const { data: existant } = await supabase.from("profils").select("id").ilike("pseudo", p).maybeSingle();
         if (existant) throw new Error("Ce pseudo est déjà pris.");
         const { error } = await supabase.auth.signUp({ email: mail, password: motDePasse, options: { data: { pseudo: p, parrain: parrainCapture || undefined } } });
@@ -1834,7 +1844,8 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
         setInfo("Si un compte existe pour cette adresse, un email de réinitialisation vient de partir.");
         setMode("connexion");
       } else if (mode === "nouveau-mdp") {
-        if (motDePasse.length < 6) throw new Error("Mot de passe : 6 caractères minimum.");
+        const erreurMdp = erreurMotDePasse(motDePasse);
+        if (erreurMdp) throw new Error(erreurMdp);
         const { error } = await supabase.auth.updateUser({ password: motDePasse });
         if (error) throw error;
         setInfo("Mot de passe changé, te voilà connecté !"); setMode("connexion"); setMotDePasse("");
@@ -1982,7 +1993,8 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   };
   const changerMdp = async () => {
     setErreur(""); setInfo("");
-    if (nouveauMdp.length < 6) { setErreur("Mot de passe : 6 caractères minimum."); return; }
+    const erreurMdp = erreurMotDePasse(nouveauMdp);
+    if (erreurMdp) { setErreur(erreurMdp); return; }
     const { error } = await supabase.auth.updateUser({ password: nouveauMdp });
     if (error) { setErreur(error.message); return; }
     setNouveauMdp(""); setInfo("Mot de passe changé.");
