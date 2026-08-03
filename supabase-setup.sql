@@ -491,3 +491,55 @@ drop function if exists email_pour_pseudo(text);
 -- regle stable et merite d'etre imposee cote base.
 alter table profils drop constraint if exists profils_pseudo_check;
 alter table profils add constraint profils_pseudo_check check (char_length(pseudo) between 2 and 10);
+
+-- v25 : secret partage entre les triggers push (v11/v21) et la fonction Edge
+-- envoyer-push (verify_jwt desactive dessus, voir son en-tete de fichier) --
+-- sans ca, n'importe qui connaissant l'URL publique de la fonction pouvait
+-- forger une notification push vers n'importe quel utilisateur. Le secret
+-- est genere une seule fois et vit chiffre dans Supabase Vault, jamais en
+-- clair dans ce fichier committe.
+create extension if not exists pgcrypto;
+create extension if not exists supabase_vault;
+
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'push_webhook_secret') then
+    perform vault.create_secret(encode(gen_random_bytes(32), 'hex'), 'push_webhook_secret');
+  end if;
+end $$;
+
+create or replace function public.notifier_nouveau_message_prive()
+returns trigger as $$
+declare
+  secret text;
+begin
+  select decrypted_secret into secret from vault.decrypted_secrets where name = 'push_webhook_secret';
+  perform net.http_post(
+    url := 'https://fcdculpkrcuhtexmqojz.supabase.co/functions/v1/rapid-function',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', secret),
+    body := jsonb_build_object('record', to_jsonb(new))
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.notifier_nouveau_message_sujet()
+returns trigger as $$
+declare
+  secret text;
+begin
+  select decrypted_secret into secret from vault.decrypted_secrets where name = 'push_webhook_secret';
+  perform net.http_post(
+    url := 'https://fcdculpkrcuhtexmqojz.supabase.co/functions/v1/rapid-function',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', secret),
+    body := jsonb_build_object('record', to_jsonb(new))
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- Recupere la valeur a coller dans Dashboard Supabase -> Edge Functions ->
+-- envoyer-push -> Secrets -> PUSH_WEBHOOK_SECRET (a executer une seule fois,
+-- de preference directement dans l'editeur SQL du dashboard plutot que de
+-- faire transiter la valeur ailleurs) :
+--   select decrypted_secret from vault.decrypted_secrets where name = 'push_webhook_secret';

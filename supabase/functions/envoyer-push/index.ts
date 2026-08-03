@@ -5,8 +5,16 @@
 // la mémoire du projet.
 //
 // Secrets requis (Dashboard Supabase -> Edge Functions -> Secrets) :
-//   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_CONTACT_EMAIL
+//   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_CONTACT_EMAIL, PUSH_WEBHOOK_SECRET
 // SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont injectés automatiquement.
+//
+// verify_jwt est désactivé sur cette fonction (le trigger Postgres qui
+// l'appelle via pg_net ne sait pas facilement joindre un JWT) : à la place,
+// on vérifie un secret partagé envoyé en en-tête par le trigger (voir
+// supabase-setup.sql, le secret vit dans Supabase Vault, jamais en clair
+// dans le SQL committé) — sans ça, n'importe qui connaissant l'URL publique
+// de la fonction pouvait forger une notification vers n'importe quel
+// utilisateur.
 import webpush from "npm:web-push@3.6.7";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -15,6 +23,7 @@ const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 const VAPID_CONTACT_EMAIL = Deno.env.get("VAPID_CONTACT_EMAIL") ?? "mailto:contact@example.com";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const PUSH_WEBHOOK_SECRET = Deno.env.get("PUSH_WEBHOOK_SECRET") ?? "";
 
 webpush.setVapidDetails(VAPID_CONTACT_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -35,6 +44,9 @@ async function envoyerEtNettoyer(supabase, abonnements, notification) {
 }
 
 Deno.serve(async (req) => {
+  if (!PUSH_WEBHOOK_SECRET || req.headers.get("x-webhook-secret") !== PUSH_WEBHOOK_SECRET) {
+    return new Response("non autorisé", { status: 401 });
+  }
   const payload = await req.json();
   const message = payload.record; // ligne insérée dans messages_prives OU messages
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
