@@ -2820,7 +2820,8 @@ function FicheAdminSection({ profilId }) {
   const [donnees, setDonnees] = useState(null);
   const [erreur, setErreur] = useState("");
   const [chargement, setChargement] = useState(true);
-  const [detailOuvert, setDetailOuvert] = useState(false);
+  const [vueComplete, setVueComplete] = useState(false);
+  const [messagesOuvert, setMessagesOuvert] = useState(false);
 
   useEffect(() => {
     let annule = false;
@@ -2849,16 +2850,122 @@ function FicheAdminSection({ profilId }) {
         <div>Dons cumulés : {donnees.dons_cumules_euros ?? 0} €</div>
         <div>Serveur : {donnees.profil?.serveur || "—"}</div>
         <div>Cheptel : {(cheptel.muldos || []).length} muldos · {(cheptel.dragodindes || []).length} dragodindes · {(cheptel.volkornes || []).length} volkornes</div>
-        <div>Messages Taverne (20 derniers) : {messages.length}</div>
       </div>
-      <button type="button" className="btn btn-ghost" style={{ marginTop: 10, fontSize: 11, padding: "4px 8px" }} onClick={() => setDetailOuvert((o) => !o)}>
-        {detailOuvert ? "▾" : "▸"} Détail complet (cheptel, généalogie, messages)
+      <button type="button" className="btn btn-coral" style={{ marginTop: 10, fontSize: 12, padding: "6px 12px" }} onClick={() => setVueComplete(true)}>
+        🖥️ Voir son compte en entier (cheptel + GPS)
       </button>
-      {detailOuvert && (
-        <pre style={{ marginTop: 8, fontSize: 10, maxHeight: 260, overflow: "auto", background: "rgba(0,0,0,.25)", padding: 8, borderRadius: 8, whiteSpace: "pre-wrap" }}>
-          {JSON.stringify({ cheptel, messages }, null, 2)}
-        </pre>
+      <button type="button" className="btn btn-ghost" style={{ marginTop: 8, marginLeft: 8, fontSize: 11, padding: "4px 8px" }} onClick={() => setMessagesOuvert((o) => !o)}>
+        {messagesOuvert ? "▾" : "▸"} Messages Taverne récents ({messages.length})
+      </button>
+      {messagesOuvert && (
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflow: "auto" }}>
+          {messages.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Aucun message.</div>}
+          {messages.map((m) => (
+            <div key={m.id} style={{ fontSize: 11, color: "var(--muted)", borderBottom: "1px solid rgba(255,255,255,.05)", paddingBottom: 4 }}>
+              <span style={{ color: "var(--text)" }}>{m.contenu}</span>
+              <div>{new Date(m.cree_le).toLocaleString("fr-FR")}</div>
+            </div>
+          ))}
+        </div>
       )}
+      {vueComplete && <VueCompteModeration donnees={donnees} onFermer={() => setVueComplete(false)} />}
+    </div>
+  );
+}
+
+// Mirroir en lecture seule du "dashboard" d'un éleveur, ouvert depuis
+// FicheAdminSection : réutilise volontairement les mêmes composants de carte
+// que le vrai Cheptel (CheptelCards/DragodindeCheptelCards/VolkorneCheptelCards
+// — purement présentationnels, pas de mutation possible via ces props) pour
+// que l'affichage soit visuellement identique à ce que l'éleveur voit
+// lui-même. Le panneau de détail ci-dessous est en revanche réécrit à part
+// (pas MuldoDetail/DragodindeDetail/VolkorneDetail) : ceux-là sont câblés à
+// onPatch/onDelete pour l'édition réelle, on ne veut ici aucun risque
+// d'écriture accidentelle sur le compte d'un tiers.
+function VueCompteModeration({ donnees, onFermer }) {
+  const cheptel = donnees.cheptel || {};
+  const gps = donnees.gps || {};
+  const CREATURES = [
+    { cle: "muldo", label: "Muldo", icone: "🐴", items: cheptel.muldos || [], gps: gps.muldo, Cartes: CheptelCards },
+    { cle: "dragodinde", label: "Dragodinde", icone: "🐲", items: cheptel.dragodindes || [], gps: gps.dragodinde, Cartes: DragodindeCheptelCards },
+    { cle: "volkorne", label: "Volkorne", icone: "🐎", items: cheptel.volkornes || [], gps: gps.volkorne, Cartes: VolkorneCheptelCards },
+  ];
+  const [creatureActive, setCreatureActive] = useState("muldo");
+  const [selectedId, setSelectedId] = useState(null);
+  const actif = CREATURES.find((c) => c.cle === creatureActive);
+  const selected = actif.items.find((m) => m.id === selectedId) || null;
+  const CartesCreature = actif.Cartes;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "var(--bg, #0c0a08)", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ padding: "20px 28px", maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>🛡️ Vue modération — {donnees.profil?.pseudo}</h2>
+          <button className="btn btn-ghost" onClick={onFermer}>✕ Fermer</button>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
+          Lecture seule — rien ici ne modifie le compte de {donnees.profil?.pseudo}.
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {CREATURES.map((c) => (
+            <button
+              key={c.cle}
+              type="button"
+              className="btn btn-ghost"
+              style={creatureActive === c.cle ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
+              onClick={() => { setCreatureActive(c.cle); setSelectedId(null); }}
+            >
+              {c.icone} {c.label} ({c.items.length})
+            </button>
+          ))}
+        </div>
+        {actif.gps && (
+          <div className="panel-card" style={{ marginBottom: 16 }}>
+            <b style={{ color: "var(--gold2)" }}>🧭 Réglages GPS</b>
+            <div style={{ fontSize: 13, marginTop: 8, display: "flex", gap: 18, flexWrap: "wrap", color: "var(--muted)" }}>
+              <span>Couleur cible : <b style={{ color: "var(--text)" }}>{actif.gps.objectifCouleur || "—"}</b></span>
+              {actif.gps.modeGps && <span>Mode : <b style={{ color: "var(--text)" }}>{actif.gps.modeGps}</b></span>}
+              {actif.gps.generationGps != null && <span>Génération cible : <b style={{ color: "var(--text)" }}>{actif.gps.generationGps}</b></span>}
+              {actif.gps.optimakina !== undefined && <span>Optimakina : <b style={{ color: "var(--text)" }}>{actif.gps.optimakina ? "oui" : "non"}</b></span>}
+              {actif.gps.niveauMinimumSession != null && <span>Niveau min. : <b style={{ color: "var(--text)" }}>{actif.gps.niveauMinimumSession}</b></span>}
+              {actif.gps.modePurification && <span>Purification : <b style={{ color: "var(--text)" }}>{actif.gps.modePurification}</b></span>}
+            </div>
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, alignItems: "start" }}>
+          <div className="panel-card" style={{ maxHeight: 560, overflow: "auto" }}>
+            <b style={{ color: "var(--gold2)" }}>Cheptel ({actif.items.length})</b>
+            <div style={{ marginTop: 10 }}>
+              <CartesCreature items={actif.items} selectedId={selectedId} onSelect={setSelectedId} />
+            </div>
+          </div>
+          <div className="panel-card">
+            <b style={{ color: "var(--gold2)" }}>Fiche</b>
+            {!selected && <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 10 }}>Clique un animal pour voir sa fiche.</div>}
+            {selected && (
+              <div style={{ fontSize: 13, marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div><b>{selected.nom || "(sans nom)"}</b></div>
+                <div>Couleur : {selected.couleur}</div>
+                <div>Génération : {selected.generation ?? "—"}</div>
+                <div>Sexe : {selected.sexe}</div>
+                <div>Statut : {selected.statut}{selected.sterile ? " (stérile)" : ""}</div>
+                <div>Capacités : {(selected.capacites || []).filter(Boolean).join(", ") || "aucune"}</div>
+                <div>Ajouté le : {selected.dateAjout ? new Date(selected.dateAjout).toLocaleDateString("fr-FR") : "—"}</div>
+                {selected.notes && <div>Notes : {selected.notes}</div>}
+                {(selected.parentIds || []).some(Boolean) && (
+                  <div>
+                    Parents : {(selected.parentIds || []).map((pid) => {
+                      if (!pid) return "inconnu";
+                      const parent = actif.items.find((x) => x.id === pid);
+                      return parent ? (parent.nom || parent.couleur) : "hors cheptel";
+                    }).join(" × ")}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

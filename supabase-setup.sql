@@ -610,13 +610,17 @@ create trigger trg_protege_est_modo before update on profils
 -- clique sur un pseudo : verifie elle-meme l'habilitation (auth.uid()
 -- courant), donc aucune policy RLS supplementaire n'est necessaire sur les
 -- tables qu'elle lit. N'expose ni messages_prives ni aucune donnee d'un
--- autre compte que celles listees ci-dessous.
+-- autre compte que celles listees ci-dessous. v28 : ajoute les reglages GPS
+-- (objectif/mode par creature) pour que la "vue compte complet" cote client
+-- (VueCompteModeration) puisse afficher, en plus du cheptel, sur quoi le GPS
+-- de l'eleveur est regle -- toujours en lecture seule, aucune ecriture ici.
 create or replace function public.admin_fiche_utilisateur(cible uuid)
 returns jsonb as $$
 declare
   derniere_connexion timestamptz;
   total_dons numeric;
   cheptel jsonb;
+  gps jsonb;
   messages_recents jsonb;
   resultat jsonb;
 begin
@@ -632,11 +636,18 @@ begin
 
   select coalesce(sum(montant_euros), 0) into total_dons from dons where profil_id = cible;
 
-  select jsonb_build_object(
-    'muldos', coalesce(donnees -> 'cheptel-muldos-v1', '[]'::jsonb),
-    'dragodindes', coalesce(donnees -> 'cheptel-dragodindes-v1', '[]'::jsonb),
-    'volkornes', coalesce(donnees -> 'cheptel-volkornes-v1', '[]'::jsonb)
-  ) into cheptel
+  select
+    jsonb_build_object(
+      'muldos', coalesce(donnees -> 'cheptel-muldos-v1', '[]'::jsonb),
+      'dragodindes', coalesce(donnees -> 'cheptel-dragodindes-v1', '[]'::jsonb),
+      'volkornes', coalesce(donnees -> 'cheptel-volkornes-v1', '[]'::jsonb)
+    ),
+    jsonb_build_object(
+      'muldo', donnees -> 'gps-parametres-v1',
+      'dragodinde', donnees -> 'dragodinde-gps-parametres-v1',
+      'volkorne', donnees -> 'volkorne-gps-parametres-v1'
+    )
+  into cheptel, gps
   from sauvegardes_elevage where utilisateur = cible;
 
   select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'sujet_id', m.sujet_id, 'contenu', m.contenu, 'cree_le', m.cree_le) order by m.cree_le desc), '[]'::jsonb)
@@ -651,6 +662,7 @@ begin
     'derniere_connexion', derniere_connexion,
     'dons_cumules_euros', total_dons,
     'cheptel', coalesce(cheptel, jsonb_build_object('muldos', '[]'::jsonb, 'dragodindes', '[]'::jsonb, 'volkornes', '[]'::jsonb)),
+    'gps', coalesce(gps, '{}'::jsonb),
     'messages_recents', messages_recents
   ) into resultat
   from profils p where p.id = cible;
