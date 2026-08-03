@@ -578,3 +578,84 @@ create unique index if not exists profils_pseudo_lower_unique on profils (lower(
 --    a toutes les autres colonnes texte editables par l'utilisateur.
 alter table profils drop constraint if exists profils_serveur_check;
 alter table profils add constraint profils_serveur_check check (serveur is null or char_length(serveur) <= 40);
+
+-- v27 : role moderateur -- console "qui est en ligne" (presence Realtime,
+-- cote client uniquement, rien a migrer ici) + fiche detaillee d'un eleveur
+-- cliquable depuis un pseudo. Perimetre volontairement limite a l'activite
+-- PUBLIQUE + au cheptel/genealogie : PAS d'acces aux messages_prives d'autrui
+-- (decision explicite, voir conversation d'implementation 2026-08-03).
+alter table profils add column if not exists est_modo boolean not null default false;
+
+create or replace function protege_est_modo() returns trigger as $$
+begin
+  -- Meme principe que protege_niveau_ailes (v3) : seul un acces admin
+  -- (SQL Editor / Table Editor / service_role) peut promouvoir un moderateur.
+  if new.est_modo is distinct from old.est_modo
+     and coalesce(auth.jwt() ->> 'role', '') in ('authenticated', 'anon') then
+    new.est_modo := old.est_modo;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+drop trigger if exists trg_protege_est_modo on profils;
+create trigger trg_protege_est_modo before update on profils
+  for each row execute function protege_est_modo();
+
+-- Pour promouvoir un compte moderateur (a executer une seule fois, dans
+-- l'editeur SQL du dashboard, avec l'email exact du compte) :
+--   update profils set est_modo = true
+--   where id = (select id from auth.users where email = 'ADRESSE_EMAIL_ICI');
+
+-- Fonction appelee par le client (ProfilPublicModal) quand un moderateur
+-- clique sur un pseudo : verifie elle-meme l'habilitation (auth.uid()
+-- courant), donc aucune policy RLS supplementaire n'est necessaire sur les
+-- tables qu'elle lit. N'expose ni messages_prives ni aucune donnee d'un
+-- autre compte que celles listees ci-dessous.
+create or replace function public.admin_fiche_utilisateur(cible uuid)
+returns jsonb as $$
+declare
+  derniere_connexion timestamptz;
+  total_dons numeric;
+  cheptel jsonb;
+  messages_recents jsonb;
+  resultat jsonb;
+begin
+  if not exists (select 1 from profils where id = auth.uid() and est_modo) then
+    raise exception 'reserve aux moderateurs';
+  end if;
+
+  begin
+    select last_sign_in_at into derniere_connexion from auth.users where id = cible;
+  exception when others then
+    derniere_connexion := null;
+  end;
+
+  select coalesce(sum(montant_euros), 0) into total_dons from dons where profil_id = cible;
+
+  select jsonb_build_object(
+    'muldos', coalesce(donnees -> 'cheptel-muldos-v1', '[]'::jsonb),
+    'dragodindes', coalesce(donnees -> 'cheptel-dragodindes-v1', '[]'::jsonb),
+    'volkornes', coalesce(donnees -> 'cheptel-volkornes-v1', '[]'::jsonb)
+  ) into cheptel
+  from sauvegardes_elevage where utilisateur = cible;
+
+  select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'sujet_id', m.sujet_id, 'contenu', m.contenu, 'cree_le', m.cree_le) order by m.cree_le desc), '[]'::jsonb)
+  into messages_recents
+  from (select * from messages where auteur = cible order by cree_le desc limit 20) m;
+
+  select jsonb_build_object(
+    'profil', jsonb_build_object(
+      'pseudo', p.pseudo, 'cree_le', p.cree_le, 'style_ailes', p.style_ailes,
+      'niveau_ailes', p.niveau_ailes, 'description', p.description, 'serveur', p.serveur
+    ),
+    'derniere_connexion', derniere_connexion,
+    'dons_cumules_euros', total_dons,
+    'cheptel', coalesce(cheptel, jsonb_build_object('muldos', '[]'::jsonb, 'dragodindes', '[]'::jsonb, 'volkornes', '[]'::jsonb)),
+    'messages_recents', messages_recents
+  ) into resultat
+  from profils p where p.id = cible;
+
+  return resultat;
+end;
+$$ language plpgsql security definer;
+grant execute on function public.admin_fiche_utilisateur(uuid) to authenticated;

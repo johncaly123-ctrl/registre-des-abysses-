@@ -609,7 +609,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
   // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
   const [page, setPage] = useState(() => {
     const demandee = new URLSearchParams(window.location.search).get("page");
-    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "mangeoire", "taverne", "succes", "guide", "nouveautes"];
+    const pagesValides = ["dashboard", "dragodinde", "muldo", "volkorne", "mangeoire", "taverne", "succes", "guide", "nouveautes", "moderation"];
     return pagesValides.includes(demandee) ? demandee : "dashboard";
   });
   // Onglet actif à l'intérieur d'une section créature (Muldo/Dragodinde/Volkorne) :
@@ -711,6 +711,21 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
   };
   const [profilOuvert, setProfilOuvert] = useState(false);
   useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
+  // Présence "qui est en ligne" (console Modération, réservée aux comptes
+  // est_modo) : chaque compte connecté s'annonce sur un canal Realtime
+  // partagé — pas de table dédiée, l'état est purement éphémère (pas de
+  // policy RLS applicable ici, Presence n'est pas gouverné par Postgres).
+  // Contenu volontairement limité (pseudo + ailes), rien de sensible.
+  useEffect(() => {
+    if (!supabase || !compte.session?.user || !compte.profil?.pseudo) return undefined;
+    const canal = supabase.channel("presence-eleveurs", { config: { presence: { key: compte.session.user.id } } });
+    canal.subscribe((statut) => {
+      if (statut === "SUBSCRIBED") {
+        canal.track({ pseudo: compte.profil.pseudo, styleAiles: compte.profil.style_ailes, niveauAiles: compte.profil.niveau_ailes, depuis: Date.now() });
+      }
+    });
+    return () => { supabase.removeChannel(canal); };
+  }, [compte.session, compte.profil?.pseudo, compte.profil?.style_ailes, compte.profil?.niveau_ailes]);
   // Pousse la génération muldo la plus haute validée vers le profil Supabase
   // (auto-déclaratif) dès qu'elle change — sert de condition de déblocage
   // des ailes "muldo", en plus du palier de don.
@@ -795,6 +810,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
     else if (page === "mangeoire") titre = "Carburant d'enclos";
     else if (page === "taverne") titre = "Taverne";
     else if (page === "succes") titre = "Succès";
+    else if (page === "moderation") titre = "Modération";
     else if (page === "guide") titre = "Guide";
     else if (page === "nouveautes") titre = "Quoi de neuf";
     else if (NOMS_CREATURE[page]) titre = `${NOMS_SOUS_PAGE[sousPage] || ""} ${NOMS_CREATURE[page]}`.trim();
@@ -868,6 +884,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
           discoveredTotal={eleveMuldo.discoveredTotal}
           cheptelDragodinde={eleveDragodinde.cheptel}
           cheptelVolkorne={eleveVolkorne.cheptel}
+          estModo={compte.estModo}
         />
 
         {page === "muldo" && sousPage === "cheptel" && (
@@ -967,6 +984,8 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
               onBrouillonInitialConsomme={() => setBrouillonTaverne("")}
             />
           )}
+
+          {page === "moderation" && compte.estModo && <ModerationPage compte={compte} />}
 
           {page === "succes" && (
             <>
@@ -1398,7 +1417,7 @@ function SousNavOutils({ sousPage, setSousPage }) {
   );
 }
 
-function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal, cheptelDragodinde, cheptelVolkorne }) {
+function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal, cheptelDragodinde, cheptelVolkorne, estModo }) {
   const nav = [
     ["dashboard", "🏠", "Dashboard"],
     ["dragodinde", "🐲", "Dragodinde"],
@@ -1408,6 +1427,7 @@ function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discover
     ["taverne", "🍻", "Taverne"],
     ["succes", "🏆", "Succès"],
     ["guide", "📖", "Guide"],
+    ...(estModo ? [["moderation", "🛡️", "Modération"]] : []),
   ];
 
   return (
@@ -1777,7 +1797,7 @@ function useCompte() {
 
   useEffect(() => { rafraichirProfil(); }, [rafraichirProfil]);
 
-  return { session, profil, pretMdp, setPretMdp, rafraichirProfil };
+  return { session, profil, pretMdp, setPretMdp, rafraichirProfil, estModo: !!profil?.est_modo };
 }
 
 // Filtre volontairement simple (sous-chaîne, insensible à la casse/aux
@@ -2726,6 +2746,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
           profil={profilsParId[profilPublicId]}
           estMoi={session?.user?.id === profilPublicId}
           peutEnvoyerMp={!!session?.user}
+          estModo={compte.estModo}
           onClose={() => setProfilPublicId(null)}
           onMessagePrive={() => ouvrirConversation(profilPublicId)}
         />
@@ -2756,7 +2777,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
   );
 }
 
-function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePrive }) {
+function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePrive, estModo }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(360px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
@@ -2774,8 +2795,139 @@ function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePr
         {!estMoi && !peutEnvoyerMp && (
           <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 14 }}>Connecte-toi pour envoyer un message privé.</div>
         )}
+        {estModo && <FicheAdminSection profilId={profil.id} />}
       </div>
     </div>
+  );
+}
+
+// Section visible uniquement des modérateurs (profils.est_modo, voir SQL v27)
+// dans la fiche d'un éleveur : dernière connexion, dons cumulés, cheptel
+// (compteurs + détail brut dépliable), derniers messages Taverne. Volontairement
+// PAS les messages privés échangés avec d'autres utilisateurs (décision
+// explicite, voir CLAUDE.md / conversation d'implémentation).
+function FicheAdminSection({ profilId }) {
+  const [donnees, setDonnees] = useState(null);
+  const [erreur, setErreur] = useState("");
+  const [chargement, setChargement] = useState(true);
+  const [detailOuvert, setDetailOuvert] = useState(false);
+
+  useEffect(() => {
+    let annule = false;
+    setChargement(true); setErreur(""); setDonnees(null);
+    supabase.rpc("admin_fiche_utilisateur", { cible: profilId }).then(({ data, error }) => {
+      if (annule) return;
+      if (error) setErreur(error.message);
+      else setDonnees(data);
+      setChargement(false);
+    });
+    return () => { annule = true; };
+  }, [profilId]);
+
+  if (chargement) return <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>Chargement (modération)…</div>;
+  if (erreur) return <div style={{ marginTop: 16, fontSize: 12, color: "var(--red)" }}>Modération : {erreur}</div>;
+  if (!donnees) return null;
+
+  const cheptel = donnees.cheptel || {};
+  const messages = donnees.messages_recents || [];
+
+  return (
+    <div style={{ marginTop: 16, borderTop: "1px dashed var(--line)", paddingTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold2)", marginBottom: 8, letterSpacing: 0.4 }}>🛡️ MODÉRATION</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 4 }}>
+        <div>Dernière connexion : {donnees.derniere_connexion ? new Date(donnees.derniere_connexion).toLocaleString("fr-FR") : "inconnue"}</div>
+        <div>Dons cumulés : {donnees.dons_cumules_euros ?? 0} €</div>
+        <div>Serveur : {donnees.profil?.serveur || "—"}</div>
+        <div>Cheptel : {(cheptel.muldos || []).length} muldos · {(cheptel.dragodindes || []).length} dragodindes · {(cheptel.volkornes || []).length} volkornes</div>
+        <div>Messages Taverne (20 derniers) : {messages.length}</div>
+      </div>
+      <button type="button" className="btn btn-ghost" style={{ marginTop: 10, fontSize: 11, padding: "4px 8px" }} onClick={() => setDetailOuvert((o) => !o)}>
+        {detailOuvert ? "▾" : "▸"} Détail complet (cheptel, généalogie, messages)
+      </button>
+      {detailOuvert && (
+        <pre style={{ marginTop: 8, fontSize: 10, maxHeight: 260, overflow: "auto", background: "rgba(0,0,0,.25)", padding: 8, borderRadius: 8, whiteSpace: "pre-wrap" }}>
+          {JSON.stringify({ cheptel, messages }, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// Page réservée aux comptes est_modo (menu latéral filtré côté AppSidebar,
+// bloqué une seconde fois ici — voir le point d'appel dans AppConnecte) :
+// qui est en ligne (Presence Realtime, canal "presence-eleveurs" alimenté par
+// tous les comptes connectés, voir l'effet dans AppConnecte) + recherche d'un
+// éleveur par pseudo, ouvrant sa fiche détaillée (FicheAdminSection via
+// ProfilPublicModal, cf. admin_fiche_utilisateur SQL v27).
+function ModerationPage({ compte }) {
+  const [enLigne, setEnLigne] = useState([]);
+  useEffect(() => {
+    if (!supabase) return undefined;
+    const canal = supabase.channel("presence-eleveurs");
+    canal.on("presence", { event: "sync" }, () => {
+      setEnLigne(Object.values(canal.presenceState()).flat());
+    });
+    canal.subscribe();
+    return () => { supabase.removeChannel(canal); };
+  }, []);
+
+  const [recherche, setRecherche] = useState("");
+  const [resultats, setResultats] = useState([]);
+  const [chargement, setChargement] = useState(false);
+  useEffect(() => {
+    const q = recherche.trim();
+    if (q.length < 2) { setResultats([]); setChargement(false); return undefined; }
+    let annule = false;
+    setChargement(true);
+    const t = setTimeout(() => {
+      supabase.from("profils").select("id, pseudo, style_ailes, niveau_ailes, description, cree_le, serveur")
+        .ilike("pseudo", `%${q}%`).limit(20)
+        .then(({ data }) => { if (!annule) { setResultats(data || []); setChargement(false); } });
+    }, 300);
+    return () => { annule = true; clearTimeout(t); };
+  }, [recherche]);
+
+  const [profilCible, setProfilCible] = useState(null);
+
+  return (
+    <>
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>🟢 En ligne maintenant ({enLigne.length})</h3>
+        {enLigne.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>Personne pour l'instant.</div>}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+          {enLigne.map((p, i) => (
+            <div key={i} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,.04)", border: "1px solid var(--line)" }}>
+              <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveauAiles > 0} styleAiles={p.styleAiles} niveau={p.niveauAiles} taille={16} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel-card">
+        <h3 style={{ marginTop: 0 }}>🔍 Rechercher un éleveur</h3>
+        <input className="field" placeholder="Pseudo (2 caractères min.)…" value={recherche} onChange={(e) => setRecherche(e.target.value)} style={{ width: "100%", marginBottom: 10 }} />
+        {chargement && <div style={{ color: "var(--muted)", fontSize: 12 }}>Recherche…</div>}
+        {resultats.map((p) => (
+          <div
+            key={p.id}
+            className="row-item"
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px", cursor: "pointer", borderRadius: 8, borderBottom: "1px solid rgba(255,255,255,.05)" }}
+            onClick={() => setProfilCible(p)}
+          >
+            <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={18} />
+            {p.serveur && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {p.serveur}</span>}
+          </div>
+        ))}
+      </div>
+      {profilCible && (
+        <ProfilPublicModal
+          profil={profilCible}
+          estMoi={profilCible.id === compte.session?.user?.id}
+          peutEnvoyerMp={false}
+          estModo
+          onClose={() => setProfilCible(null)}
+        />
+      )}
+    </>
   );
 }
 
