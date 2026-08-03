@@ -160,22 +160,47 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
 - Schema/RLS: **`supabase-setup.sql`** is the single source of truth for the DB — it's an idempotent
   script (safe to re-run) meant to be pasted into the Supabase SQL editor, not a migrations folder.
   It defines:
-  - `profils` (1:1 with `auth.users`): `pseudo` (unique, 2-20 chars), `style_ailes`, `niveau_ailes`
-    (0-10, only 1-5 used by the UI), `description` (≤300 chars). RLS: readable by everyone,
-    insertable/updatable only by the owning `auth.uid()`.
+  - `profils` (1:1 with `auth.users`): `pseudo` (unique — case-sensitively via a plain column
+    constraint AND case-insensitively via a `lower(pseudo)` unique index, v26 — 2-10 chars, v24),
+    `style_ailes`, `niveau_ailes` (0-10, only 1-5 used by the UI), `description` (≤300 chars),
+    `serveur` (≤40 chars, v27), `est_modo` (moderator flag, v27, see below). RLS: readable by
+    everyone, insertable/updatable only by the owning `auth.uid()`.
   - Trigger `protege_niveau_ailes`: silently reverts any client-side (`authenticated`/`anon` role)
     change to `niveau_ailes`, so wing tiers can only be granted via the Supabase SQL editor / Table
-    editor / service role — i.e. manually, after verifying a real donation.
+    editor / service role — i.e. manually, after verifying a real donation. `protege_est_modo` (v27)
+    does the same for the moderator flag. `proteger_message_prive_lu` (v26) is the same pattern
+    applied to a whole table instead of one column: the `messages_prives` `update` RLS policy only
+    scopes by row ownership, not by column, so this trigger reverts every column except `lu` for
+    client roles.
   - Trigger `creer_profil_inscription` (on `auth.users` insert): auto-creates the matching `profils`
     row, defaulting the pseudo from signup metadata or a generated `Eleveur-XXXXXX`.
-  - `email_pour_pseudo(text)` RPC: lets the login form accept a pseudo instead of an email.
+  - **Moderator role (`est_modo`, v27-v28)**: one account (`caly`) is flagged `est_modo = true`
+    (granted manually via SQL, same access tier as `niveau_ailes`/`protege_est_modo` above — never
+    settable by the client). `admin_fiche_utilisateur(cible uuid)` is a `security definer` RPC that
+    checks the *caller's own* `est_modo` via `auth.uid()` before returning anything — so there's no
+    additional RLS policy needed on the tables it reads. It returns, for any target profil: profil
+    fields, `last_sign_in_at` (read from `auth.users`), cumulative donations, the full cheptel arrays
+    for all 3 creatures and their GPS objective settings (from `sauvegardes_elevage`), and the last 20
+    Taverne messages — **deliberately not** `messages_prives` (private DMs with other users), a line
+    the user drew explicitly. Client side: `useCompte().estModo`, `ProfilPublicModal`'s
+    `FicheAdminSection` (shown wherever a pseudo is clickable — Taverne, classement — when the viewer
+    is a moderator), and a `est_modo`-gated "Modération" sidebar page (`ModerationPage`) with a
+    Realtime Presence-based "who's online" list (channel `presence-eleveurs`, tracked by *every*
+    logged-in client in `AppConnecte` regardless of role — low-sensitivity payload, no RLS/auth
+    applies to the channel itself) plus a pseudo search. `FicheAdminSection`'s "voir le compte en
+    entier" button opens `VueCompteModeration`, a full-screen read-only mirror of the target's
+    cheptel + GPS settings — it reuses the real `CheptelCards`/`DragodindeCheptelCards`/
+    `VolkorneCheptelCards` (pure/presentational, safe) but deliberately does **not** reuse
+    `MuldoDetail`/`DragodindeDetail`/`VolkorneDetail` for the detail panel, since those are wired to
+    `onPatch`/`onDelete` for real editing — it has its own hand-written read-only detail view instead,
+    to guarantee zero write path onto another account.
   - `sujets` (forum topics) and `messages` (forum posts, optionally scoped to a `sujet_id`, null =
     general chat) — both RLS: readable by everyone, insertable only as yourself. Both are added to
     the `supabase_realtime` publication; `TavernePage` subscribes to `postgres_changes` on them to
     live-update the forum.
   - When changing the schema, edit `supabase-setup.sql` in place (append a new idempotent block,
     e.g. following the existing `-- v4 : ...` comment convention) and re-run it in Supabase — there
-    is no CLI/migration tooling wired up in this repo.
+    is no CLI/migration tooling wired up in this repo. Current up to `-- v28`.
 
 ## Build & deploy
 
@@ -183,13 +208,25 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
 routes) — the app needs no server: all breeding/herd data stays in the visitor's browser, and the
 only external calls are to Supabase (if configured) and Google Fonts (preconnected in `index.html`).
 
-There is no `netlify.toml` in the repo yet. To deploy on Netlify:
+`netlify.toml` is committed at the repo root: build command/publish dir, a `netlify/edge-functions/
+og-partage.js` edge function (rewrites Open Graph meta tags per-pseudo for `?voir=` share links,
+HTML-escapes everything it interpolates), and a `[[headers]]` block applying baseline security
+headers site-wide (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Strict-Transport-Security`, and a deliberately minimal CSP — `frame-ancestors`/`object-src`/
+`base-uri` only, no `script-src`/`style-src` restriction since the app loads Google Fonts via a CSS
+`@import` and there's no HTML/script-injection sink to defend against). To deploy:
 - **Quick/manual**: `npm run build`, then drag-and-drop the resulting `dist/` folder onto
   https://app.netlify.com/drop (as documented in `README.md`).
-- **Continuous deployment from Git**: connect the repository in Netlify and set build command
-  `npm run build` and publish directory `dist`; no environment variables are required since Supabase
+- **Continuous deployment from Git**: connect the repository in Netlify; `netlify.toml` already
+  supplies the build command/publish dir. No environment variables are required since Supabase
   credentials are committed in `src/configSupabase.js` rather than injected at build time. Because
   routing is a single `App()` with in-memory `page` state (no client-side router/history changes),
   no SPA redirect rule (`/* -> /index.html`) is strictly required, but add one if that ever changes.
 - `public/` is copied as-is into `dist/` (see `public/ailes/` and `public/muldos/` for the
   drop-in-your-own-art asset folders, each documented by its `LISEZMOI.txt`).
+
+## Licence
+
+`LICENSE` (all rights reserved, signed `caly191`) + `package.json`'s `"license": "UNLICENSED"` — this
+is **not** an open-source project; don't add an OSI license header to new files, and don't assume
+third-party reuse of this code is permitted.
