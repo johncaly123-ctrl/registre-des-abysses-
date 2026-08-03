@@ -1833,8 +1833,12 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
         const { data: existant } = await supabase.from("profils").select("id").ilike("pseudo", p).maybeSingle();
         if (existant) throw new Error("Ce pseudo est déjà pris.");
         const { error } = await supabase.auth.signUp({ email: mail, password: motDePasse, options: { data: { pseudo: p, parrain: parrainCapture || undefined } } });
-        if (error) throw new Error(/already/i.test(error.message) ? "Un compte existe déjà avec cet email." : error.message);
-        setInfo(`Email de confirmation envoyé à ${mail} — clique le lien, puis connecte-toi.`);
+        // Message volontairement identique que l'email soit déjà pris ou non
+        // (comme le flux "mot de passe oublié" ci-dessous) -- sinon n'importe
+        // qui pourrait tester des adresses une par une pour savoir lesquelles
+        // ont un compte sur le site.
+        if (error && !/already/i.test(error.message)) throw new Error(error.message);
+        setInfo(`Si cette adresse n'a pas déjà de compte, un email de confirmation vient d'être envoyé à ${mail} — clique le lien, puis connecte-toi. Sinon, connecte-toi directement.`);
         setMode("connexion"); setEmail(mail); setMotDePasse("");
       } else if (mode === "oubli") {
         const mail = email.trim().toLowerCase();
