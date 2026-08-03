@@ -1123,7 +1123,7 @@ function suggererClonagesVolkorne(cheptel) {
 }
 
 export function VolkorneClonagePage({ cheptel, fusionA, fusionB, setFusionA, setFusionB, onFusion }) {
-  const [choix, setChoix] = useState({ couleur: null, sexe: null, genealogie: null });
+  const [choix, setChoix] = useState({ couleur: null, sexe: null });
   const A = cheptel.find((m) => m.id === fusionA) || null;
   const B = cheptel.find((m) => m.id === fusionB) || null;
   const genA = A ? generationDeCouleurVolkorne(A.couleur) : null;
@@ -1167,13 +1167,8 @@ export function VolkorneClonagePage({ cheptel, fusionA, fusionB, setFusionA, set
                 </>
               )}
             </div>
-            <div style={{ marginTop: 10 }}>
-              <span style={{ color: "var(--muted)", fontSize: 12 }}>Généalogie conservée (l'autre est perdue) :</span>{" "}
-              <button type="button" className="btn btn-ghost" style={choix.genealogie === "A" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((p) => ({ ...p, genealogie: "A" }))}>{A.nom || "Volkorne A"}</button>{" "}
-              <button type="button" className="btn btn-ghost" style={choix.genealogie === "B" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined} onClick={() => setChoix((p) => ({ ...p, genealogie: "B" }))}>{B.nom || "Volkorne B"}</button>
-            </div>
-            <button className="btn btn-coral" style={{ marginTop: 12 }} disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie)}
-              onClick={() => { onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi, choix.genealogie); setChoix({ couleur: null, sexe: null, genealogie: null }); }}>
+            <button className="btn btn-coral" style={{ marginTop: 12 }} disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi)}
+              onClick={() => { onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi); setChoix({ couleur: null, sexe: null }); }}>
               Cloner
             </button>
           </div>
@@ -1653,21 +1648,18 @@ export function useVolkorneElevage() {
     enregistrerHistorique((prev) => { const n = { ...prev }; (GENERATIONS_VOLKORNE[generation] || []).forEach((c) => { n[c] = true; }); return n; });
   }, [enregistrerHistorique]);
 
-  const onFusion = useCallback((couleurChoisie, sexeChoisi, genealogieChoisie) => {
+  const onFusion = useCallback((couleurChoisie, sexeChoisi) => {
     if (!fusionA || !fusionB || fusionA === fusionB) return;
     const parentA = byId[fusionA];
     const parentB = byId[fusionB];
     if (!parentA || !parentB || generationDeCouleurVolkorne(parentA.couleur) !== generationDeCouleurVolkorne(parentB.couleur)) return;
     const couleurResultat = [parentA.couleur, parentB.couleur].includes(couleurChoisie) ? couleurChoisie : parentA.couleur;
     const sexeResultat = sexeChoisi === "M" ? "Mâle" : sexeChoisi === "F" ? "Femelle" : "Mâle";
-    // Le clonage ne conserve la généalogie que d'UN des deux parents (règle du
-    // jeu) : l'autre lignée est perdue.
-    const parentGenealogie = genealogieChoisie === "B" ? parentB : parentA;
     updateCheptel((prev) => prev.filter((m) => m.id !== fusionA && m.id !== fusionB).concat({
       id: crypto.randomUUID(), nom: genererNomCourtVolkorne(couleurResultat), couleur: couleurResultat,
       generation: generationDeCouleurVolkorne(couleurResultat), sexe: sexeResultat, statut: "Fertile", sterile: false,
       reproRestantes: 1, reproductionsRestantes: 1, amour: 0, endurance: 0, maturite: 0, serenite: 50,
-      parentIds: [parentGenealogie.id],
+      parentIds: [parentA.id, parentB.id],
     }));
     setFusionA(""); setFusionB("");
   }, [fusionA, fusionB, byId, updateCheptel]);
