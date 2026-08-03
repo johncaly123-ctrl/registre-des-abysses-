@@ -121,7 +121,7 @@ export function useMuldoElevage(showToast, setToast) {
   const byId = useMemo(() => Object.fromEntries(cheptel.map((m) => [m.id, m])), [cheptel]);
 
 
-  const fusionnerSteriles = (couleurChoisie, sexeChoisi) => {
+  const fusionnerSteriles = (couleurChoisie, sexeChoisi, genealogieChoisie) => {
     if (!fusionA || !fusionB || fusionA === fusionB) {
       setToast({ type: "error", msg: "Choisis deux muldos stériles différents." });
       return;
@@ -153,6 +153,14 @@ export function useMuldoElevage(showToast, setToast) {
       : sexeChoisi === "F" ? "Femelle"
       : (Math.random() < 0.5 ? "Mâle" : "Femelle");
     const nomCourt = genererNomCourt(couleurResultat);
+    // Le bébé cloné reprend la génétique d'UN seul des deux parents — donc
+    // ses parents généalogiques enregistrés sont les PROPRES parents de ce
+    // parent-là (les grands-parents du couple cloné), pas le couple cloné
+    // lui-même. Ex. : Indigo (parents Indigo+Indigo) x Indigo (parents
+    // Indigo+Doré) — si le bébé reçoit la génétique du second, il a comme
+    // parents enregistrés Indigo+Doré, pas les deux Indigo clonés.
+    const parentGenealogie = genealogieChoisie === "B" ? parentB : parentA;
+    const parentsHerites = parentGenealogie.parentIds || [];
     const nouveau = {
       id: crypto.randomUUID(),
       nom: nomCourt,
@@ -171,9 +179,9 @@ export function useMuldoElevage(showToast, setToast) {
       reproMax: 1,
       reproRestantes: 1,
       reproductionsRestantes: 1,
-      parentIds: [parentA.id, parentB.id],
-      parents: [parentA.id, parentB.id],
-      note: `Clonage : ${parentA.nom || parentA.id} + ${parentB.nom || parentB.id}${couleurValide ? "" : " — résultat tiré au hasard, corrige couleur/sexe si besoin"}`,
+      parentIds: parentsHerites,
+      parents: parentsHerites,
+      note: `Clonage : ${parentA.nom || parentA.id} + ${parentB.nom || parentB.id}, génétique de ${parentGenealogie.nom || parentGenealogie.id}${couleurValide ? "" : " — résultat tiré au hasard, corrige couleur/sexe si besoin"}`,
     };
     copierPressePapiers(nomCourt);
 
@@ -1726,9 +1734,17 @@ export function suggererClonages(cheptel, objectif, generationFiltre) {
 
 export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo }) {
   const { muldos, fusionA, fusionB, setFusionA, setFusionB, onFusion } = fusion;
-  const [choix, setChoix] = useState({ couleur: null, sexe: null });
+  const [choix, setChoix] = useState({ couleur: null, sexe: null, genealogie: null });
   const A = (muldos || []).find((m) => m.id === fusionA) || null;
   const B = (muldos || []).find((m) => m.id === fusionB) || null;
+  // Le bébé reprend la génétique d'UN seul parent : ses parents généalogiques
+  // enregistrés deviennent les PROPRES parents de celui-là (les grands-parents
+  // du couple cloné), pas le couple lui-même — d'où l'aperçu ci-dessous pour
+  // que le choix soit éclairé.
+  const genealogieDe = (m) => {
+    const parents = (m?.parentIds || []).map((id) => (muldos || []).find((x) => x.id === id)?.couleur).filter(Boolean);
+    return parents.length ? parents.join(" + ") : "aucune généalogie connue";
+  };
   const genA = A ? generationDeCouleur(A.couleur) : null;
   const genB = B ? generationDeCouleur(B.couleur) : null;
   const memeGeneration = A && B && genA === genB;
@@ -1785,8 +1801,10 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
         <h2 style={{ marginTop: 0 }}>Clonage des stériles</h2>
         <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
           Deux montures stériles de <b>même génération</b> sont détruites pour créer une nouvelle
-          monture <b>Fertile</b>, d'une des deux couleurs (tirage du jeu). La généalogie des deux
-          parents est conservée, mais les capacités sont perdues et les jauges remises à zéro.{" "}
+          monture <b>Fertile</b>, d'une des deux couleurs (tirage du jeu). Le bébé reprend la
+          génétique d'un seul des deux parents (à choisir) : ses parents généalogiques deviennent
+          les propres parents de celui-là, pas le couple cloné. Les capacités sont perdues et les
+          jauges remises à zéro.{" "}
           {candidatsSteriles.length} stérile(s) disponible(s) pour le clonage — les fertiles
           n'apparaissent pas ici, ils arriveront au fil des reproductions consommées. Une fois le
           premier muldo choisi, le second se limite à sa génération, en priorité même couleur/même
@@ -1878,24 +1896,44 @@ export function ClonagePage({ fusion, cheptel, objectif, journal, onVoirMuldo })
                 </>
               )}
             </div>
+            <div style={{ marginTop: 10 }}>
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>Génétique reçue (l'autre lignée est perdue) :</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={choix.genealogie === "A" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+                  onClick={() => setChoix((prev) => ({ ...prev, genealogie: "A" }))}
+                >
+                  {A.nom || "Muldo A"} — parents : {genealogieDe(A)}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={choix.genealogie === "B" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}
+                  onClick={() => setChoix((prev) => ({ ...prev, genealogie: "B" }))}
+                >
+                  {B.nom || "Muldo B"} — parents : {genealogieDe(B)}
+                </button>
+              </div>
+            </div>
             <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
-              {sexeImpose ? "Sexe imposé par les parents" : "Sexe aléatoire"} · capacités perdues · jauges à
-              zéro · généalogie des deux parents conservée.
+              {sexeImpose ? "Sexe imposé par les parents" : "Sexe aléatoire"} · capacités perdues · jauges à zéro.
             </div>
             <button
               className="btn btn-coral"
-              style={{ marginTop: 12, opacity: (A.couleur === B.couleur || choix.couleur) && sexeChoisi ? 1 : 0.5 }}
-              disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi)}
+              style={{ marginTop: 12, opacity: (A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie ? 1 : 0.5 }}
+              disabled={!((A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie)}
               onClick={() => {
-                onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi);
-                setChoix({ couleur: null, sexe: null });
+                onFusion(A.couleur === B.couleur ? A.couleur : choix.couleur, sexeChoisi, choix.genealogie);
+                setChoix({ couleur: null, sexe: null, genealogie: null });
               }}
             >
               Cloner — enregistrer ce résultat
             </button>
-            {!((A.couleur === B.couleur || choix.couleur) && sexeChoisi) && (
+            {!((A.couleur === B.couleur || choix.couleur) && sexeChoisi && choix.genealogie) && (
               <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
-                Fais le clonage en jeu, puis sélectionne la couleur et le sexe réellement obtenus.
+                Fais le clonage en jeu, puis sélectionne la couleur, le sexe et la génétique réellement obtenus.
               </div>
             )}
           </div>
