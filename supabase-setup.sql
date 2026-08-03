@@ -483,3 +483,11 @@ create trigger trg_limiter_changement_pseudo before update on profils
 -- security definer, grantee a `anon`, servait exclusivement a ca et
 -- constituait une legere surface de sondage d'existence de pseudo.
 drop function if exists email_pour_pseudo(text);
+
+-- v24 : pseudo limite a 10 caracteres (au lieu de 20). Le filtre anti-injure
+-- reste volontairement cote client (AuthPanel/ProfilModal dans App.jsx) --
+-- une liste de mots interdits a besoin d'etre facile a completer sans
+-- migration SQL a chaque ajout, contrairement a la longueur qui est une
+-- regle stable et merite d'etre imposee cote base.
+alter table profils drop constraint if exists profils_pseudo_check;
+alter table profils add constraint profils_pseudo_check check (char_length(pseudo) between 2 and 10);

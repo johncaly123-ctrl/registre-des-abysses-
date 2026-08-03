@@ -1688,6 +1688,20 @@ function useCompte() {
   return { session, profil, pretMdp, setPretMdp, rafraichirProfil };
 }
 
+// Filtre volontairement simple (sous-chaîne, insensible à la casse/aux
+// accents) — sert à décourager les pseudos grossiers évidents, pas à être
+// infranchissable. Liste courte à dessein pour limiter les faux positifs sur
+// des mots-racines ambigus (ex. "con" apparaît dans trop de prénoms/mots
+// innocents pour être bloqué tel quel).
+const MOTS_INTERDITS_PSEUDO = [
+  "merde", "putain", "salope", "connard", "connasse", "encule", "batard",
+  "bite", "couille", "nique", "fdp", "ntm", "negro", "pede", "salaud", "branler",
+];
+function contientMotInterdit(texte) {
+  const normalise = texte.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  return MOTS_INTERDITS_PSEUDO.some((mot) => normalise.includes(mot));
+}
+
 // ---------- Panneau d'authentification (connexion / inscription / oubli) ----------
 function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
   const [pseudo, setPseudo] = useState(profilLocal?.pseudo || "");
@@ -1710,7 +1724,8 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
     try {
       if (mode === "inscription") {
         const p = pseudo.trim(); const mail = email.trim().toLowerCase();
-        if (p.length < 2 || p.length > 20) throw new Error("Pseudo entre 2 et 20 caractères.");
+        if (p.length < 2 || p.length > 10) throw new Error("Pseudo entre 2 et 10 caractères.");
+        if (contientMotInterdit(p)) throw new Error("Ce pseudo n'est pas autorisé.");
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) throw new Error("Adresse email invalide.");
         if (motDePasse.length < 6) throw new Error("Mot de passe : 6 caractères minimum.");
         const { data: existant } = await supabase.from("profils").select("id").ilike("pseudo", p).maybeSingle();
@@ -1764,7 +1779,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
         {mode === "inscription" && (
           <>
             <input className="field" type="email" placeholder="Ton adresse email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: 210 }} />
-            <input className="field" placeholder="Pseudo (public)" maxLength={20} value={pseudo} onChange={(e) => setPseudo(e.target.value)} style={{ width: 170 }} />
+            <input className="field" placeholder="Pseudo (public)" maxLength={10} value={pseudo} onChange={(e) => setPseudo(e.target.value)} style={{ width: 170 }} />
           </>
         )}
         {mode === "connexion" && (
@@ -1850,7 +1865,8 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   const changerPseudo = async () => {
     setErreur(""); setInfo("");
     const p = nouveauPseudo.trim();
-    if (p.length < 2 || p.length > 20) { setErreur("Pseudo entre 2 et 20 caractères."); return; }
+    if (p.length < 2 || p.length > 10) { setErreur("Pseudo entre 2 et 10 caractères."); return; }
+    if (contientMotInterdit(p)) { setErreur("Ce pseudo n'est pas autorisé."); return; }
     if (p.toLowerCase() === (profil.pseudo || "").toLowerCase()) return;
     setChangementPseudoEnCours(true);
     try {
@@ -1921,9 +1937,9 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
             </div>
 
             <div style={{ marginTop: 14 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Pseudo — modifiable une fois tous les 30 jours</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Pseudo (10 car. max) — modifiable une fois tous les 30 jours</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input className="field" maxLength={20} value={nouveauPseudo} onChange={(e) => setNouveauPseudo(e.target.value)} style={{ width: 200 }} />
+                <input className="field" maxLength={10} value={nouveauPseudo} onChange={(e) => setNouveauPseudo(e.target.value)} style={{ width: 200 }} />
                 <button className="btn btn-coral" disabled={changementPseudoEnCours} onClick={changerPseudo}>Changer</button>
               </div>
             </div>
@@ -2987,7 +3003,7 @@ function SoutienPanel({ profil, setProfil }) {
           <input
             className="field"
             placeholder="Ton pseudo…"
-            maxLength={20}
+            maxLength={10}
             value={profil.pseudo || ""}
             onChange={(e) => set({ pseudo: e.target.value })}
             style={{ width: 200 }}
