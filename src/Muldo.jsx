@@ -757,7 +757,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     if (selectedId === id) setSelectedId(null);
     if (muldo) {
       setCorbeille((prev) => {
-        const next = [{ muldo, supprimeLe: new Date().toISOString() }, ...prev].slice(0, 100);
+        const next = [{ muldo, supprimeLe: new Date().toISOString() }, ...prev].slice(0, 250);
         sauvegarderJSON(STORAGE_CORBEILLE, next);
         return next;
       });
@@ -774,7 +774,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
     if (selectedId && idsSet.has(selectedId)) setSelectedId(null);
     setCorbeille((prev) => {
       const supprimeLe = new Date().toISOString();
-      const next = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prev].slice(0, 100);
+      const next = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prev].slice(0, 250);
       sauvegarderJSON(STORAGE_CORBEILLE, next);
       return next;
     });
@@ -846,7 +846,7 @@ const ecrireCheptelDebattue = useMemo(() => creerEcritureDebattue(STORAGE_KEY), 
         const next = [
           ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
           ...prev,
-        ].slice(0, 100);
+        ].slice(0, 250);
         sauvegarderJSON(STORAGE_CORBEILLE, next);
         return next;
       });
@@ -2295,6 +2295,7 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreCouleur, setFiltreCouleur] = useState("");
   const [filtreDate, setFiltreDate] = useState("");
+  const [triNom, setTriNom] = useState("");
   const [modeSelection, setModeSelection] = useState(false);
   const [idsSelectionnes, setIdsSelectionnes] = useState(() => new Set());
 
@@ -2335,17 +2336,23 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
 
   // Combine les 5 critères (ET logique) au-dessus de la recherche texte déjà
   // appliquée en amont (eleveMuldo.filtered) — vide = pas de restriction.
-  const cheptelFiltre = useMemo(() => cheptel.filter((m) =>
-    (!filtreGeneration || generationDeCouleur(m.couleur) === Number(filtreGeneration)) &&
-    (!filtreSexe || sexeMuldo(m) === filtreSexe) &&
-    (!filtreStatut || m.statut === filtreStatut) &&
-    (!filtreCouleur || m.couleur === filtreCouleur) &&
-    (!filtreDate || (m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue") === filtreDate)
-  ), [cheptel, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur, filtreDate]);
+  const cheptelFiltre = useMemo(() => {
+    const filtres = cheptel.filter((m) =>
+      (!filtreGeneration || generationDeCouleur(m.couleur) === Number(filtreGeneration)) &&
+      (!filtreSexe || sexeMuldo(m) === filtreSexe) &&
+      (!filtreStatut || m.statut === filtreStatut) &&
+      (!filtreCouleur || m.couleur === filtreCouleur) &&
+      (!filtreDate || (m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue") === filtreDate)
+    );
+    if (!triNom) return filtres;
+    const tries = [...filtres].sort((a, b) => (a.nom || "").localeCompare(b.nom || "", "fr", { sensitivity: "base" }));
+    if (triNom === "desc") tries.reverse();
+    return tries;
+  }, [cheptel, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur, filtreDate, triNom]);
 
   const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur || filtreDate;
   const reinitialiserFiltres = () => {
-    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); setFiltreDate("");
+    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); setFiltreDate(""); setTriNom("");
   };
 
   const selectionnerTousLesFiltres = () => {
@@ -2434,6 +2441,12 @@ export function CheptelOverviewPage({ cheptel, selectedId, setSelectedId, filter
             onChange={setFiltreDate}
             options={[["", "Toutes"], ...optionsDate.map(([date, n]) => [date, `${date} (${n})`])]}
           />
+          <LabeledSelect
+            label="Trier par nom"
+            value={triNom}
+            onChange={setTriNom}
+            options={[["", "Par défaut"], ["asc", "Nom (A → Z)"], ["desc", "Nom (Z → A)"]]}
+          />
         </div>
         {filtresActifs && (
           <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>{cheptelFiltre.length} / {cheptel.length} muldo(s) affiché(s)</div>
@@ -2504,7 +2517,7 @@ export function creerMuldoSynchronise(couleur, sexe, index) {
 }
 
 
-export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, onVoirMuldo, onSupprimerMuldo }) {
+export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, onVoirMuldo, onSupprimerMuldo, onSupprimerMuldos }) {
   const TYPES_SCAN = [
     { key: "femelles", label: "Femelles", sexe: "F" },
     { key: "males", label: "Mâles", sexe: "M" },
@@ -2633,7 +2646,7 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
       return;
     }
     setSnapshotAvant(cheptel);
-    const idsARetirer = new Set(diffRapprochement.flatMap((d) => d.aRetirer.map((m) => m.id)));
+    const idsARetirer = diffRapprochement.flatMap((d) => d.aRetirer.map((m) => m.id));
     const ajouts = [];
     diffRapprochement.forEach((d) => {
       if (d.ecart > 0) {
@@ -2643,8 +2656,13 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
         }
       }
     });
-    updateCheptel((prev) => [...prev.filter((m) => !idsARetirer.has(m.id)), ...ajouts]);
-    showToast(`Rapprochement appliqué : +${ajouts.length} ajouté(s), −${idsARetirer.size} retiré(s), généalogies intactes.`);
+    // Les retraits passent par deleteMuldos (onSupprimerMuldos) plutôt qu'un
+    // filter() direct : ils atterrissent dans la corbeille et restent
+    // récupérables, au lieu de disparaître sans trace (voir l'incident du
+    // 2026-08-03 où un rapprochement a fait perdre 127 muldos sans corbeille).
+    if (idsARetirer.length && onSupprimerMuldos) onSupprimerMuldos(idsARetirer);
+    if (ajouts.length) updateCheptel((prev) => [...prev, ...ajouts]);
+    showToast(`Rapprochement appliqué : +${ajouts.length} ajouté(s), −${idsARetirer.length} retiré(s) (dans la corbeille), généalogies intactes.`);
   };
 
   const appliquerAuCheptel = () => {
@@ -2662,8 +2680,15 @@ export function SynchronisationFiltresPage({ cheptel, updateCheptel, showToast, 
       for (let i = 1; i <= nm; i += 1) nouveau.push(creerMuldoSynchronise(couleur, "M", i));
     });
 
+    // Tout l'ancien cheptel part en corbeille avant remplacement (au lieu
+    // d'être juste écrasé) : la corbeille garde les 100 suppressions les plus
+    // récentes, donc au-delà de 100 montures remplacées les plus anciennes du
+    // lot sortent quand même de la corbeille — mais ce n'est plus une perte
+    // silencieuse et totale comme avant.
+    const idsAncien = cheptel.map((m) => m.id);
+    if (idsAncien.length) onSupprimerMuldos(idsAncien);
     updateCheptel(nouveau);
-    showToast(`Cheptel reconstruit : ${nouveau.length} monture(s), dont ${totalFemelles} femelles et ${totalMales} mâles.`);
+    showToast(`Cheptel reconstruit : ${nouveau.length} monture(s), dont ${totalFemelles} femelles et ${totalMales} mâles. L'ancien cheptel est dans la corbeille.`);
   };
 
   const restaurer = () => {

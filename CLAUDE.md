@@ -200,7 +200,11 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     live-update the forum.
   - When changing the schema, edit `supabase-setup.sql` in place (append a new idempotent block,
     e.g. following the existing `-- v4 : ...` comment convention) and re-run it in Supabase — there
-    is no CLI/migration tooling wired up in this repo. Current up to `-- v28`.
+    is no CLI/migration tooling wired up in this repo. Current up to `-- v29`.
+  - `sauvegardes_manuelles` (v29): up-to-3 named full-account snapshots per user, distinct from the
+    live `sauvegardes_elevage` blob — taken on demand via the "Sauvegarder" header button
+    (`creerSauvegardeManuelle` in `src/stockage.js`), oldest dropped client-side once the cap is hit.
+    RLS: owner-only select/insert/delete, no update policy (snapshots are immutable once written).
 
 ## Build & deploy
 

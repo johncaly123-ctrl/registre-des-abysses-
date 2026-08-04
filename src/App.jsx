@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   flushToutesEcrituresDebattues, chargerJSON, sauvegarderJSON,
   hydraterStockage, reinitialiserStockage, obtenirCacheComplet, remplacerCacheComplet, etatSauvegarde,
+  listerSauvegardesManuelles, creerSauvegardeManuelle, chargerSauvegardeManuelle,
 } from "./stockage.js";
 import { pushSupporte, abonnementPushActuel, activerNotificationsPush, desactiverNotificationsPush } from "./pushNotifications.js";
 import { GpsDofusPage, ArbreGenealogiquePanel, CorbeillePanel, StatsCroisementsPanel, EstimationKamasTable, GraphiquesPanel, copierPressePapiers, SERVEURS_DOFUS, STORAGE_SERVEUR } from "./panneauxElevage.jsx";
@@ -605,6 +606,40 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
     const id = setInterval(() => setEtatSave(etatSauvegarde()), 1000);
     return () => clearInterval(id);
   }, []);
+  // Sauvegardes manuelles nommées (bouton "Sauvegarder"/"Charger" de
+  // l'en-tête, table sauvegardes_manuelles v29) — au plus 3, distinctes du
+  // blob live poussé en continu ci-dessus. sauvegardeEnCours évite le
+  // double-clic pendant l'écriture réseau.
+  const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false);
+  const [chargerSauvegardeOuvert, setChargerSauvegardeOuvert] = useState(false);
+  const [listeSauvegardesManuelles, setListeSauvegardesManuelles] = useState(null);
+  const sauvegarderManuellement = async () => {
+    setSauvegardeEnCours(true);
+    try {
+      await creerSauvegardeManuelle(compte.session.user.id);
+      showToast("Sauvegarde enregistrée.");
+    } catch (err) {
+      console.error(err);
+      showToast("Échec de la sauvegarde. Réessaie dans un instant.", { type: "error" });
+    } finally {
+      setSauvegardeEnCours(false);
+    }
+  };
+  const ouvrirChargerSauvegarde = async () => {
+    setChargerSauvegardeOuvert(true);
+    const liste = await listerSauvegardesManuelles(compte.session.user.id);
+    setListeSauvegardesManuelles(liste);
+  };
+  const chargerEtRecharger = async (id) => {
+    if (!window.confirm("Charger cette sauvegarde va remplacer TOUTES les données actuelles du compte (cheptels, généalogies, journal…). Continuer ?")) return;
+    try {
+      await chargerSauvegardeManuelle(id);
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      showToast("Échec du chargement de la sauvegarde.", { type: "error" });
+    }
+  };
   // Permet d'atterrir directement sur une page via ?page=guide (utile pour le
   // sitemap et les liens partagés) — retombe sur "dashboard" si absent/invalide.
   const [page, setPage] = useState(() => {
@@ -841,6 +876,26 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
               <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", WebkitTextFillColor: "#fff", background: "#1f8f88", borderRadius: 999, padding: "2px 8px", letterSpacing: 0.4 }}>{VERSION_APP}</span>
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>Élevage de Muldos · GPS génération · Succès</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8 }}>
+            <button
+              className="btn btn-ghost"
+              onClick={sauvegarderManuellement}
+              disabled={sauvegardeEnCours}
+              title="Enregistre un instantané complet du compte, en plus de la sauvegarde automatique en continu (3 max, la plus ancienne est remplacée)."
+              style={{ padding: "8px 12px" }}
+            >
+              <Save size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+              {sauvegardeEnCours ? "Sauvegarde…" : "Sauvegarder"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={ouvrirChargerSauvegarde}
+              title="Recharger une des 3 dernières sauvegardes manuelles."
+              style={{ padding: "8px 12px" }}
+            >
+              📂 Charger
+            </button>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1102,6 +1157,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
                       showToast(`${m.nom || m.couleur} supprimé.`);
                     }
                   }}
+                  onSupprimerMuldos={eleveMuldo.deleteMuldos}
                 />
               )}
 
@@ -1327,6 +1383,14 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
 
       {profilOuvert && (
         <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} parrainCapture={parrainCapture} />
+      )}
+
+      {chargerSauvegardeOuvert && (
+        <ChargerSauvegardeModal
+          liste={listeSauvegardesManuelles}
+          onCharger={chargerEtRecharger}
+          onClose={() => setChargerSauvegardeOuvert(false)}
+        />
       )}
 
       {eleveMuldo.ficheRapide && (
@@ -3040,6 +3104,43 @@ function ModerationPage({ compte, enLigne }) {
         />
       )}
     </>
+  );
+}
+
+// Liste jusqu'à 3 sauvegardes manuelles (bouton "Sauvegarder" de l'en-tête) —
+// liste=null pendant le chargement initial, [] si aucune sauvegarde encore.
+function ChargerSauvegardeModal({ liste, onCharger, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(460px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h3 style={{ margin: 0 }}>📂 Sauvegardes manuelles</h3>
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 10 }}>
+          3 dernières sauvegardes prises avec le bouton « Sauvegarder ». Charger une sauvegarde
+          remplace toutes les données actuelles du compte.
+        </div>
+        {liste === null && (
+          <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>Chargement…</div>
+        )}
+        {liste && liste.length === 0 && (
+          <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
+            Aucune sauvegarde manuelle pour l'instant — clique « Sauvegarder » dans l'en-tête pour en créer une.
+          </div>
+        )}
+        {liste && liste.map((s) => (
+          <div
+            key={s.id}
+            className="row-item"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 8px", borderBottom: "1px solid rgba(255,255,255,.05)", borderRadius: 8 }}
+          >
+            <span>{new Date(s.cree_le).toLocaleString("fr-FR")}</span>
+            <button className="btn btn-coral" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => onCharger(s.id)}>Charger</button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

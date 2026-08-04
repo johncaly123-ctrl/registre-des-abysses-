@@ -915,6 +915,7 @@ export function VolkorneCheptelOverviewPage({ cheptel, filter, setFilter, select
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreCouleur, setFiltreCouleur] = useState("");
   const [filtreDate, setFiltreDate] = useState("");
+  const [triNom, setTriNom] = useState("");
   const [modeSelection, setModeSelection] = useState(false);
   const [idsSelectionnes, setIdsSelectionnes] = useState(() => new Set());
 
@@ -951,17 +952,23 @@ export function VolkorneCheptelOverviewPage({ cheptel, filter, setFilter, select
     });
   }, [parTexte]);
 
-  const cheptelFiltre = useMemo(() => parTexte.filter((m) =>
-    (!filtreGeneration || generationDeCouleurVolkorne(m.couleur) === Number(filtreGeneration)) &&
-    (!filtreSexe || sexeVolkorne(m) === filtreSexe) &&
-    (!filtreStatut || m.statut === filtreStatut) &&
-    (!filtreCouleur || m.couleur === filtreCouleur) &&
-    (!filtreDate || (m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue") === filtreDate)
-  ), [parTexte, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur, filtreDate]);
+  const cheptelFiltre = useMemo(() => {
+    const filtres = parTexte.filter((m) =>
+      (!filtreGeneration || generationDeCouleurVolkorne(m.couleur) === Number(filtreGeneration)) &&
+      (!filtreSexe || sexeVolkorne(m) === filtreSexe) &&
+      (!filtreStatut || m.statut === filtreStatut) &&
+      (!filtreCouleur || m.couleur === filtreCouleur) &&
+      (!filtreDate || (m.dateAjout ? new Date(m.dateAjout).toLocaleDateString("fr-FR") : "Date inconnue") === filtreDate)
+    );
+    if (!triNom) return filtres;
+    const tries = [...filtres].sort((a, b) => (a.nom || "").localeCompare(b.nom || "", "fr", { sensitivity: "base" }));
+    if (triNom === "desc") tries.reverse();
+    return tries;
+  }, [parTexte, filtreGeneration, filtreSexe, filtreStatut, filtreCouleur, filtreDate, triNom]);
 
   const filtresActifs = filtreGeneration || filtreSexe || filtreStatut || filtreCouleur || filtreDate;
   const reinitialiserFiltres = () => {
-    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); setFiltreDate("");
+    setFiltreGeneration(""); setFiltreSexe(""); setFiltreStatut(""); setFiltreCouleur(""); setFiltreDate(""); setTriNom("");
   };
   const selectionnerTousLesFiltres = () => {
     setIdsSelectionnes(new Set(cheptelFiltre.map((m) => m.id)));
@@ -1048,6 +1055,12 @@ export function VolkorneCheptelOverviewPage({ cheptel, filter, setFilter, select
             value={filtreDate}
             onChange={setFiltreDate}
             options={[["", "Toutes"], ...optionsDate.map(([date, n]) => [date, `${date} (${n})`])]}
+          />
+          <LabeledSelect
+            label="Trier par nom"
+            value={triNom}
+            onChange={setTriNom}
+            options={[["", "Par défaut"], ["asc", "Nom (A → Z)"], ["desc", "Nom (Z → A)"]]}
           />
         </div>
         {filtresActifs && (
@@ -2255,7 +2268,7 @@ export function useVolkorneElevage() {
         const next = [
           ...steriles.map((muldo) => ({ muldo, supprimeLe: new Date().toISOString() })),
           ...prev,
-        ].slice(0, 100);
+        ].slice(0, 250);
         sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, next);
         return next;
       });
@@ -2285,7 +2298,7 @@ export function useVolkorneElevage() {
       sauvegarderJSON(STORAGE_KEY_VOLKORNE, next);
       if (muldo) {
         setCorbeille((prevCorbeille) => {
-          const nextCorbeille = [{ muldo, supprimeLe: new Date().toISOString() }, ...prevCorbeille].slice(0, 100);
+          const nextCorbeille = [{ muldo, supprimeLe: new Date().toISOString() }, ...prevCorbeille].slice(0, 250);
           sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, nextCorbeille);
           return nextCorbeille;
         });
@@ -2305,7 +2318,7 @@ export function useVolkorneElevage() {
         sauvegarderJSON(STORAGE_KEY_VOLKORNE, next);
         setCorbeille((prevCorbeille) => {
           const supprimeLe = new Date().toISOString();
-          const nextCorbeille = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prevCorbeille].slice(0, 100);
+          const nextCorbeille = [...muldos.map((muldo) => ({ muldo, supprimeLe })), ...prevCorbeille].slice(0, 250);
           sauvegarderJSON(STORAGE_CORBEILLE_VOLKORNE, nextCorbeille);
           return nextCorbeille;
         });

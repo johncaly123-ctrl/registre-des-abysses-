@@ -147,6 +147,53 @@ export function etatSauvegarde() {
   return { enAttente: clesSales.size > 0 || !!pushEnCours, dernierEchec };
 }
 
+// Sauvegardes manuelles nommées (table sauvegardes_manuelles, v29) : des
+// instantanés complets pris à la demande (bouton "Sauvegarder" de l'en-tête),
+// distincts du blob live ci-dessus. Plafonnées à MAX_SAUVEGARDES_MANUELLES
+// côté client : la plus ancienne est supprimée avant d'insérer la nouvelle.
+const MAX_SAUVEGARDES_MANUELLES = 3;
+
+export async function listerSauvegardesManuelles(utilisateurId) {
+  if (!supabase || !utilisateurId) return [];
+  const { data, error } = await supabase
+    .from("sauvegardes_manuelles")
+    .select("id, cree_le")
+    .eq("utilisateur_id", utilisateurId)
+    .order("cree_le", { ascending: false });
+  if (error) {
+    console.error("Impossible de lister les sauvegardes manuelles", error);
+    return [];
+  }
+  return data || [];
+}
+
+export async function creerSauvegardeManuelle(utilisateurId) {
+  if (!supabase || !utilisateurId) throw new Error("Compte non connecté.");
+  await flushToutesEcrituresDebattues();
+  const donnees = obtenirCacheComplet();
+  const { error } = await supabase
+    .from("sauvegardes_manuelles")
+    .insert({ utilisateur_id: utilisateurId, donnees });
+  if (error) throw error;
+  const existantes = await listerSauvegardesManuelles(utilisateurId);
+  const excedent = existantes.slice(MAX_SAUVEGARDES_MANUELLES);
+  if (excedent.length) {
+    await supabase.from("sauvegardes_manuelles").delete().in("id", excedent.map((e) => e.id));
+  }
+  return existantes.length - excedent.length;
+}
+
+export async function chargerSauvegardeManuelle(id) {
+  if (!supabase) throw new Error("Supabase non configuré.");
+  const { data, error } = await supabase
+    .from("sauvegardes_manuelles")
+    .select("donnees")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  await remplacerCacheComplet(data.donnees);
+}
+
 export function chargerJSON(cle, valeurParDefaut, { migrerDepuis = [] } = {}) {
   if (cle in cache) return cache[cle];
   for (const ancienneCle of migrerDepuis) {

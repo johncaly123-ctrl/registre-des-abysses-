@@ -671,3 +671,33 @@ begin
 end;
 $$ language plpgsql security definer;
 grant execute on function public.admin_fiche_utilisateur(uuid) to authenticated;
+
+-- v29 : sauvegardes manuelles nommees (bouton "Sauvegarder" / "Charger" dans
+-- l'en-tete du site) -- des instantanes complets pris a la demande, distincts
+-- du blob live sauvegardes_elevage (v19) qui suit en continu. Cote client, on
+-- garde au plus 3 lignes par utilisateur (la plus ancienne est supprimee
+-- avant d'inserer une nouvelle sauvegarde une fois le plafond atteint) --
+-- aucune contrainte cote base pour ca, juste la logique applicative.
+create table if not exists public.sauvegardes_manuelles (
+  id uuid primary key default gen_random_uuid(),
+  utilisateur_id uuid not null references auth.users(id) on delete cascade,
+  cree_le timestamptz not null default now(),
+  donnees jsonb not null
+);
+
+alter table public.sauvegardes_manuelles enable row level security;
+
+drop policy if exists "sauvegardes_manuelles_select_own" on public.sauvegardes_manuelles;
+create policy "sauvegardes_manuelles_select_own" on public.sauvegardes_manuelles
+  for select using (auth.uid() = utilisateur_id);
+
+drop policy if exists "sauvegardes_manuelles_insert_own" on public.sauvegardes_manuelles;
+create policy "sauvegardes_manuelles_insert_own" on public.sauvegardes_manuelles
+  for insert with check (auth.uid() = utilisateur_id);
+
+drop policy if exists "sauvegardes_manuelles_delete_own" on public.sauvegardes_manuelles;
+create policy "sauvegardes_manuelles_delete_own" on public.sauvegardes_manuelles
+  for delete using (auth.uid() = utilisateur_id);
+
+create index if not exists idx_sauvegardes_manuelles_utilisateur
+  on public.sauvegardes_manuelles(utilisateur_id, cree_le desc);
