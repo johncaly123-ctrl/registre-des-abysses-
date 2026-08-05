@@ -1778,7 +1778,16 @@ export function EstimationKamasTable({ cheptel, storageKey, generationDeCouleurF
           <span>Source des prix :</span>
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" className={`btn ${sourcePrix === "perso" ? "btn-coral" : "btn-ghost"}`} style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSourcePrix("perso")}>Personnel</button>
-            <button type="button" className={`btn ${sourcePrix === "communaute" ? "btn-coral" : "btn-ghost"}`} style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setSourcePrix("communaute")}>Communauté (médiane serveur)</button>
+            <button
+              type="button"
+              className={`btn ${sourcePrix === "communaute" ? "btn-coral" : "btn-ghost"}`}
+              style={{ padding: "5px 10px", fontSize: 12, opacity: userId ? 1 : 0.5 }}
+              disabled={!userId}
+              title={userId ? undefined : "Connecte-toi pour voir et proposer les prix communautaires"}
+              onClick={() => setSourcePrix("communaute")}
+            >
+              {!userId && "🔒 "}Communauté (médiane serveur)
+            </button>
           </div>
           {sourcePrix === "communaute" && (
             <>

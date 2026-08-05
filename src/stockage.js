@@ -35,7 +35,11 @@ function brancherFiletsSecurite() {
   filetsBranches = true;
   window.addEventListener("beforeunload", (e) => {
     ecrituresEnAttente.forEach((flush) => flush());
-    if (clesSales.size > 0 || pushEnCours) {
+    // Pas de compte (mode invité) : rien n'est jamais poussé vers Supabase
+    // (voir pousserMaintenant), donc clesSales ne se vide jamais tout en ne
+    // représentant aucune perte réelle — fermer l'onglet est le comportement
+    // attendu, pas une action à confirmer.
+    if (utilisateurActuel && (clesSales.size > 0 || pushEnCours)) {
       e.preventDefault();
       e.returnValue = "";
     }

@@ -111,6 +111,18 @@ export default function App() {
   const compte = useCompte();
   const [stockagePret, setStockagePret] = useState(false);
   const [propositionMigration, setPropositionMigration] = useState(null);
+  // Mode invité : essai libre sans compte, proposé depuis PortailConnexion
+  // pour accrocher un visiteur avant qu'il crée un compte. Rien n'est
+  // persisté (stockage.js ne pousse vers Supabase que si utilisateurActuel
+  // est renseigné, ce qui n'arrive qu'après hydraterStockage — jamais
+  // appelé ici), donc tout se perd naturellement à la fermeture/au
+  // rechargement de la page. Réinitialisé dès qu'une vraie session
+  // apparaît (voir l'effet ci-dessous) pour ne pas rester bloqué en
+  // "invité" après une connexion réussie.
+  const [modeInvite, setModeInvite] = useState(false);
+  useEffect(() => {
+    if (compte.session) setModeInvite(false);
+  }, [compte.session]);
 
   useEffect(() => {
     if (!compte.session?.user) {
@@ -138,8 +150,15 @@ export default function App() {
     return <CheptelPublicPage pseudo={pseudoPublic} cheptelViewer={{}} />;
   }
 
-  if (!compte.session) {
-    return <PortailConnexion compte={compte} parrainCapture={parrainCapture} />;
+  if (!compte.session && !modeInvite) {
+    return <PortailConnexion compte={compte} parrainCapture={parrainCapture} onEssayerSansCompte={() => setModeInvite(true)} />;
+  }
+
+  // Invité : aucune sauvegarde à remonter (utilisateurActuel reste null côté
+  // stockage.js), on entre directement — stockagePret/propositionMigration
+  // ne concernent que le flux avec compte.
+  if (!compte.session && modeInvite) {
+    return <AppConnecte compte={compte} parrainCapture={parrainCapture} theme={theme} setTheme={setTheme} onQuitterInvite={() => setModeInvite(false)} />;
   }
 
   if (propositionMigration) {
@@ -167,7 +186,7 @@ export default function App() {
 // Écran affiché tant qu'aucun compte n'est connecté : le tuto reste
 // consultable librement, la connexion/inscription est nécessaire pour tout
 // le reste (cheptel, GPS, naissances...).
-function PortailConnexion({ compte, parrainCapture }) {
+function PortailConnexion({ compte, parrainCapture, onEssayerSansCompte }) {
   return (
     <div className="app-shell">
       <TokensCss />
@@ -182,10 +201,23 @@ function PortailConnexion({ compte, parrainCapture }) {
       </div>
       <div className="main-view" style={{ maxWidth: 720 }}>
         <div className="panel-card">
-          <h2>Connexion requise</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Essaie sans compte</h2>
+              <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6, maxWidth: 480 }}>
+                Cheptel, GPS, naissances, clonage… tout est utilisable tout de suite, sans rien
+                créer. Rien n'est enregistré : ferme l'onglet et tout repart à zéro. Crée un compte
+                quand tu veux garder ton élevage (et débloquer la Taverne et les prix communautaires).
+              </div>
+            </div>
+            <button className="btn btn-coral" style={{ whiteSpace: "nowrap" }} onClick={onEssayerSansCompte}>
+              Essayer sans compte →
+            </button>
+          </div>
+          <h2>Connexion / inscription</h2>
           <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 14 }}>
-            Ton cheptel, tes naissances et ton GPS sont désormais liés à ton compte — connecte-toi
-            ou crée un compte pour y accéder. En attendant, découvre le fonctionnement de l'outil :
+            Ton cheptel, tes naissances et ton GPS restent liés à ton compte d'une session à
+            l'autre, et donnent accès à la Taverne et aux prix communautaires.
           </div>
           <AuthPanel profilLocal={null} pretMdp={compte.pretMdp} onFini={() => {}} parrainCapture={parrainCapture} />
         </div>
@@ -593,7 +625,12 @@ function TokensCss() {
 // hydratée (voir le gate App() tout en bas de fichier) : tous les hooks
 // cheptel (useMuldoElevage & cie) peuvent donc lire chargerJSON() de façon
 // synchrone dès leur premier rendu, sans course avec l'hydratation réseau.
-function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
+function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite }) {
+  // Invité = AppConnecte monté sans session (voir App(), mode essai libre) :
+  // toutes les fonctionnalités liées au compte (sauvegarde manuelle cloud,
+  // Taverne, prix communautaires, profil) doivent se désactiver proprement
+  // au lieu de planter sur compte.session.user.id.
+  const estInvite = !compte.session;
   const [toast, setToast] = useState(null);
   const showToast = (msg, opts = {}) => {
     setToast({ msg, type: opts.type });
@@ -614,6 +651,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
   const [chargerSauvegardeOuvert, setChargerSauvegardeOuvert] = useState(false);
   const [listeSauvegardesManuelles, setListeSauvegardesManuelles] = useState(null);
   const sauvegarderManuellement = async () => {
+    if (estInvite) return;
     setSauvegardeEnCours(true);
     try {
       await creerSauvegardeManuelle(compte.session.user.id);
@@ -626,6 +664,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
     }
   };
   const ouvrirChargerSauvegarde = async () => {
+    if (estInvite) return;
     setChargerSauvegardeOuvert(true);
     const liste = await listerSauvegardesManuelles(compte.session.user.id);
     setListeSauvegardesManuelles(liste);
@@ -881,9 +920,9 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
             <button
               className="btn btn-ghost"
               onClick={sauvegarderManuellement}
-              disabled={sauvegardeEnCours}
-              title="Enregistre un instantané complet du compte, en plus de la sauvegarde automatique en continu (3 max, la plus ancienne est remplacée)."
-              style={{ padding: "8px 12px" }}
+              disabled={sauvegardeEnCours || estInvite}
+              title={estInvite ? "Connecte-toi pour sauvegarder dans le cloud." : "Enregistre un instantané complet du compte, en plus de la sauvegarde automatique en continu (3 max, la plus ancienne est remplacée)."}
+              style={{ padding: "8px 12px", opacity: estInvite ? 0.5 : 1 }}
             >
               <Save size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
               {sauvegardeEnCours ? "Sauvegarde…" : "Sauvegarder"}
@@ -891,8 +930,9 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
             <button
               className="btn btn-ghost"
               onClick={ouvrirChargerSauvegarde}
-              title="Recharger une des 3 dernières sauvegardes manuelles."
-              style={{ padding: "8px 12px" }}
+              disabled={estInvite}
+              title={estInvite ? "Connecte-toi pour charger une sauvegarde cloud." : "Recharger une des 3 dernières sauvegardes manuelles."}
+              style={{ padding: "8px 12px", opacity: estInvite ? 0.5 : 1 }}
             >
               📂 Charger
             </button>
@@ -923,14 +963,16 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
               {theme === "clair" ? "🌙" : "☀️"}
             </button>
             <button
-              className="btn btn-ghost"
-              onClick={() => setProfilOuvert(true)}
-              title="Mon profil / connexion à la Taverne"
+              className={estInvite ? "btn btn-coral" : "btn btn-ghost"}
+              onClick={estInvite ? onQuitterInvite : () => setProfilOuvert(true)}
+              title={estInvite ? "Quitter le mode essai et se connecter / créer un compte" : "Mon profil / connexion à la Taverne"}
               style={{ padding: "8px 12px" }}
             >
-              {compte.profil
-                ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={24} />
-                : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>}
+              {estInvite
+                ? <>🔒 <span style={{ marginLeft: 6 }}>Se connecter</span></>
+                : (compte.profil
+                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={24} />
+                  : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>)}
             </button>
             <button className="btn btn-coral" onClick={() => eleveMuldo.setShowNew(true)}><Plus size={15} /> Nouveau muldo</button>
             <button className="btn btn-coral" onClick={() => eleveDragodinde.setShowNew(true)}><Plus size={15} /> Nouveau dragodinde</button>
@@ -938,6 +980,13 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
           </div>
         </div>
       </div>
+
+      {estInvite && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "8px 16px", background: "rgba(240, 207, 114, 0.12)", borderBottom: "1px solid var(--line)", fontSize: 13, flexWrap: "wrap" }}>
+          <span>🧪 Mode essai — rien n'est enregistré, tout repart à zéro si tu fermes ou recharges la page.</span>
+          <button className="btn btn-coral" style={{ padding: "4px 12px", fontSize: 12 }} onClick={onQuitterInvite}>Se connecter / Créer un compte</button>
+        </div>
+      )}
 
       <div className="layout">
         <AppSidebar
@@ -950,6 +999,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
           cheptelDragodinde={eleveDragodinde.cheptel}
           cheptelVolkorne={eleveVolkorne.cheptel}
           estModo={compte.estModo}
+          estInvite={estInvite}
         />
 
         {page === "muldo" && sousPage === "cheptel" && (
@@ -1040,14 +1090,25 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme }) {
           )}
 
           {page === "taverne" && (
-            <TavernePage
-              compte={compte}
-              onOuvrirProfil={() => setProfilOuvert(true)}
-              ouvrirClassementInitial={demandeClassementTaverne}
-              onClassementInitialConsomme={() => setDemandeClassementTaverne(false)}
-              brouillonInitial={brouillonTaverne}
-              onBrouillonInitialConsomme={() => setBrouillonTaverne("")}
-            />
+            estInvite ? (
+              <div className="panel-card" style={{ maxWidth: 480, margin: "40px auto", textAlign: "center" }}>
+                <h2 style={{ marginTop: 0 }}>🍻🔒 Taverne réservée aux éleveurs connectés</h2>
+                <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>
+                  Forum, classement et prix communautaires demandent un compte (pseudo public,
+                  anti-spam). Le reste de l'outil reste utilisable sans compte.
+                </div>
+                <button className="btn btn-coral" onClick={onQuitterInvite}>Se connecter / Créer un compte</button>
+              </div>
+            ) : (
+              <TavernePage
+                compte={compte}
+                onOuvrirProfil={() => setProfilOuvert(true)}
+                ouvrirClassementInitial={demandeClassementTaverne}
+                onClassementInitialConsomme={() => setDemandeClassementTaverne(false)}
+                brouillonInitial={brouillonTaverne}
+                onBrouillonInitialConsomme={() => setBrouillonTaverne("")}
+              />
+            )
           )}
 
           {page === "moderation" && compte.estModo && <ModerationPage compte={compte} enLigne={enLigne} />}
@@ -1493,7 +1554,7 @@ function SousNavOutils({ sousPage, setSousPage }) {
   );
 }
 
-function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal, cheptelDragodinde, cheptelVolkorne, estModo }) {
+function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discoveredTotal, cheptelDragodinde, cheptelVolkorne, estModo, estInvite }) {
   const nav = [
     ["dashboard", "🏠", "Dashboard"],
     ["dragodinde", "🐲", "Dragodinde"],
@@ -1505,20 +1566,30 @@ function AppSidebar({ page, setPage, cheptel, readyCount, fertileCount, discover
     ["guide", "📖", "Guide"],
     ...(estModo ? [["moderation", "🛡️", "Modération"]] : []),
   ];
+  // Seule la Taverne (forum + classement) dépend d'un compte — le reste
+  // (cheptels, GPS, mangeoire, succès...) reste pleinement utilisable en
+  // mode invité, voir estInvite dans AppConnecte.
+  const pagesReserveesCompte = new Set(["taverne"]);
 
   return (
     <aside className="sidebar">
       <div className="sidebar-title">Navigation</div>
-      {nav.map(([key, icon, label]) => (
-        <button
-          key={key}
-          className={`btn btn-ghost nav-btn ${page === key ? "nav-active" : ""}`}
-          onClick={() => setPage(key)}
-        >
-          <span style={{ fontSize: 17 }}>{icon}</span>
-          <span>{label}</span>
-        </button>
-      ))}
+      {nav.map(([key, icon, label]) => {
+        const verrouillee = estInvite && pagesReserveesCompte.has(key);
+        return (
+          <button
+            key={key}
+            className={`btn btn-ghost nav-btn ${page === key ? "nav-active" : ""}`}
+            onClick={() => setPage(key)}
+            title={verrouillee ? "Réservé aux éleveurs connectés" : undefined}
+            style={verrouillee ? { opacity: 0.5 } : undefined}
+          >
+            <span style={{ fontSize: 17 }}>{icon}</span>
+            <span>{label}</span>
+            {verrouillee && <span style={{ marginLeft: "auto", fontSize: 12 }}>🔒</span>}
+          </button>
+        );
+      })}
 
       <div className="side-metric">
         <div style={{ fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>Muldos</div>
