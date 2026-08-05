@@ -209,25 +209,36 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
 ## Build & deploy
 
 `npm run build` produces a fully static `dist/` (Vite + `@vitejs/plugin-react`, no SSR, no API
-routes) — the app needs no server: all breeding/herd data stays in the visitor's browser, and the
-only external calls are to Supabase (if configured) and Google Fonts (preconnected in `index.html`).
+routes) — the app itself needs no server to run (the built assets are pure static files), but a
+Supabase account is mandatory at runtime (see top of this file); the only external calls are to
+Supabase and Google Fonts (preconnected in `index.html`).
 
-`netlify.toml` is committed at the repo root: build command/publish dir, a `netlify/edge-functions/
-og-partage.js` edge function (rewrites Open Graph meta tags per-pseudo for `?voir=` share links,
-HTML-escapes everything it interpolates), and a `[[headers]]` block applying baseline security
-headers site-wide (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
-`Strict-Transport-Security`, and a deliberately minimal CSP — `frame-ancestors`/`object-src`/
-`base-uri` only, no `script-src`/`style-src` restriction since the app loads Google Fonts via a CSS
-`@import` and there's no HTML/script-injection sink to defend against). To deploy:
-- **Quick/manual**: `npm run build`, then drag-and-drop the resulting `dist/` folder onto
-  https://app.netlify.com/drop (as documented in `README.md`).
-- **Continuous deployment from Git**: connect the repository in Netlify; `netlify.toml` already
-  supplies the build command/publish dir. No environment variables are required since Supabase
-  credentials are committed in `src/configSupabase.js` rather than injected at build time. Because
-  routing is a single `App()` with in-memory `page` state (no client-side router/history changes),
-  no SPA redirect rule (`/* -> /index.html`) is strictly required, but add one if that ever changes.
+**Cloudflare Pages is the official host** (https://registre-des-abysses.pages.dev, project
+`registre-des-abysses` under Cloudflare account `801e66495c924dc14113e512d8ec3545`). Deployment is
+automatic on every push to `main` via `.github/workflows/deploy-cloudflare.yml` (builds, then
+`wrangler pages deploy dist`) — the workflow needs two repo secrets, `CLOUDFLARE_API_TOKEN`
+(custom token, `Account > Cloudflare Pages > Edit` permission) and `CLOUDFLARE_ACCOUNT_ID`, set
+under the GitHub repo's Settings → Secrets and variables → Actions. To deploy by hand instead:
+`npm run build && npx wrangler pages deploy dist --project-name=registre-des-abysses` (needs the
+same two values as env vars `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`).
+- `functions/index.js` is a Cloudflare Pages Function (root-level, handles `/`): rewrites Open
+  Graph/Twitter meta tags per-pseudo for `?voir=` cheptel-share links by fetching the profil's
+  description from Supabase, HTML-escaping everything it interpolates. Falls through via
+  `context.next()` for every other request.
+- `public/_headers` applies baseline security headers site-wide (`X-Frame-Options`,
+  `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`, and a deliberately
+  minimal CSP — `frame-ancestors`/`object-src`/`base-uri` only, no `script-src`/`style-src`
+  restriction since the app loads Google Fonts via a CSS `@import` and there's no HTML/script-
+  injection sink to defend against) — Cloudflare Pages picks this file up automatically from
+  `public/` (copied as-is into `dist/`, see below).
+- Because routing is a single `App()` with in-memory `page` state (no client-side router/history
+  changes), no SPA redirect rule is required, but add a `public/_redirects` if that ever changes.
 - `public/` is copied as-is into `dist/` (see `public/ailes/` and `public/muldos/` for the
   drop-in-your-own-art asset folders, each documented by its `LISEZMOI.txt`).
+- Netlify was the original host (`netlify.toml` + `netlify/edge-functions/og-partage.js`, the same
+  OG-rewrite logic as `functions/index.js` above but in Netlify's edge function API) — dropped in
+  favour of Cloudflare Pages; the config files were removed from the repo. `README.md` still lists
+  Vercel as an alternative free option if ever needed (no config committed for it).
 
 ## Licence
 

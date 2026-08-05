@@ -12,10 +12,10 @@ Outil communautaire non affilié à Ankama.
     npm run build     # produit le dossier dist/
 
 ## Déploiement (gratuit)
-- **Netlify** : https://app.netlify.com/drop → glisser-déposer le dossier `dist/`.
+- **Cloudflare Pages** (hébergeur officiel) : https://registre-des-abysses.pages.dev — déploiement
+  automatique à chaque push sur `main` via `.github/workflows/deploy-cloudflare.yml`. Pour déployer
+  à la main : `npx wrangler pages deploy dist --project-name=registre-des-abysses`.
 - **Vercel** : importer le dépôt GitHub, framework "Vite", aucun réglage nécessaire.
-- Toutes les données restent dans le navigateur du visiteur (localStorage) :
-  aucun serveur, aucune base de données à gérer.
 
 ## Communauté
 Rejoins la communauté sur Discord pour échanger sur l'élevage, signaler un bug ou
