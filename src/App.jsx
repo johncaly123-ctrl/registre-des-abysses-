@@ -3532,20 +3532,29 @@ function PseudoAvecAiles({ pseudo, soutien, styleAiles = "muldo", taille = 20, n
   const degrade = DEGRADE_AILES[styleAiles] || DEGRADE_AILES.muldo;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }} title={`Soutien du Registre — ${nomNiveauAiles(styleAiles, n)} (niveau ${n})`}>
-      <DemiAile style={styleAiles} cote="gauche" taille={taille} niveau={n} />
-      <span style={{
-        fontFamily: "var(--font-display)",
-        fontWeight: 800,
-        fontSize: 15,
-        letterSpacing: .4,
-        background: degrade,
-        WebkitBackgroundClip: "text",
-        backgroundClip: "text",
-        WebkitTextFillColor: "transparent",
-      }}>
+      {/* key forcé sur les 3 éléments : DemiAile a son propre état interne de
+          repli image (dédiée → moitié → SVG) qui ne se réinitialise jamais
+          tout seul si `style` change, et le dégradé (background-clip: text)
+          d'un span réutilisé par React ne se repeint pas toujours dans
+          Chromium — le rendu reste figé sur l'ancien style tant que les
+          nœuds ne sont pas recréés (d'où le "reste bloqué jusqu'au F5"). */}
+      <DemiAile key={`gauche-${styleAiles}`} style={styleAiles} cote="gauche" taille={taille} niveau={n} />
+      <span
+        key={`${styleAiles}-${n}`}
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 15,
+          letterSpacing: .4,
+          background: degrade,
+          WebkitBackgroundClip: "text",
+          backgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+        }}
+      >
         {ornement} {pseudo} {ornement}
       </span>
-      <DemiAile style={styleAiles} cote="droite" taille={taille} niveau={n} />
+      <DemiAile key={`droite-${styleAiles}`} style={styleAiles} cote="droite" taille={taille} niveau={n} />
     </span>
   );
 }
