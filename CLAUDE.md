@@ -142,15 +142,14 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
   it is **not** raw browser `localStorage`) purely for trying out the look before donating, versus
   the authoritative Supabase columns `profils.style_ailes` / `profils.niveau_ailes` shown once
   logged in (`ProfilModal`, `TavernePage`). `style_ailes` is user-editable via the app; `niveau_ailes`
-  is **not** — see Supabase section below. There is no payment integration yet: donations (via the
-  PayPal link in `LIEN_DON`, `src/configSupabase.js`) are reconciled and tiers assigned manually by
-  an admin directly in Supabase.
+  is **not** — see Supabase section below. Donations go through Stripe Checkout (live since
+  2026-08-06 — see `supabase/functions/creer-session-don/` and `stripe-webhook/` below); tier
+  assignment on payment is automatic via the webhook, not manual.
 
 ### Supabase (mandatory backend)
 
 - `src/configSupabase.js` hardcodes the project URL and the **publishable** (browser-safe) key —
   this is intentional per the file's own comment; the secret/service key must never be added here.
-  It also holds `LIEN_DON`, the donation link shown on the profile page (empty string hides it).
 - `src/supabaseClient.js` exports `supabase`, a client created only if `supabaseEstConfigure()`
   passes (URL starts with `https://`); code elsewhere must handle `supabase === null` for the
   fully-offline/no-backend case (all Supabase-backed features render a "needs configuration"

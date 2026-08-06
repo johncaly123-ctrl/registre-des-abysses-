@@ -10,7 +10,7 @@ import { GuidePage, NouveautesPage } from "./GuidePage.jsx";
 import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
 import { OnboardingOverlay, ETAPES_ONBOARDING_GPS, ETAPES_ONBOARDING_SITE } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
-import { supabaseEstConfigure, LIEN_DON, LIEN_DISCORD } from "./configSupabase.js";
+import { supabaseEstConfigure, LIEN_DISCORD } from "./configSupabase.js";
 import { Waves, Save, Plus, Trash2, X, Bug } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelOverviewPage, DragodindeCheptelCards, DragodindeDetail, DragodindeBadge, NewDragodindeModal,
@@ -2240,7 +2240,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={40} />
+              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={20} />
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.user.email} <span style={{ opacity: .6 }}>(privé)</span></span>
             </div>
 
@@ -2280,7 +2280,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                       title={verrouille ? "Débloqué à partir du palier de don 1" : undefined}
                       onClick={() => !verrouille && patcher({ style_ailes: style }, `Ailes ${label} équipées.`)}
                     >
-                      <AileNiveau style={style} taille={72} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
+                      <AileNiveau style={style} taille={36} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
                     </button>
                   );
                 })}
@@ -2306,9 +2306,9 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                 {[1,2,3].map((n) => (
                   <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === tierDon ? "var(--gold)" : "var(--line)"}`, background: n === tierDon ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 3 }}>
-                      <AileNiveau style="dragodinde" miroir taille={64} niveau={n} />
-                      <AileNiveau style="muldo" taille={64} niveau={n} />
-                      <AileNiveau style="volkorne" taille={64} niveau={n} />
+                      <AileNiveau style="dragodinde" miroir taille={32} niveau={n} />
+                      <AileNiveau style="muldo" taille={32} niveau={n} />
+                      <AileNiveau style="volkorne" taille={32} niveau={n} />
                     </div>
                     <div style={{ fontWeight: 800, color: "var(--gold2)", marginTop: 4, fontSize: 13 }}>{montantPourNiveau(n)} €</div>
                   </div>
@@ -2339,11 +2339,8 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                   })}
                 </div>
               </div>
-              {LIEN_DON && (
-                <a className="btn btn-ghost" href={LIEN_DON} target="_blank" rel="noreferrer" style={{ marginTop: 12, textDecoration: "none", display: "inline-flex" }}>💛 Don manuel (PayPal)</a>
-              )}
               <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 8 }}>
-                Les boutons ci-dessus attribuent le palier automatiquement. Le don PayPal reste manuel : indique ton pseudo dans le message, attribution sous quelques jours.
+                Les boutons ci-dessus attribuent le palier automatiquement.
               </div>
             </div>
           </div>
@@ -3709,7 +3706,7 @@ function SoutienPanel({ profil, setProfil }) {
     <div className="panel-card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Soutien du projet</h2>
-        {profil.soutien && <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={64} />}
+        {profil.soutien && <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={32} />}
       </div>
       <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
         Le Registre restera utilisable gratuitement. Les soutiens gagnent leurs ailes selon leur don, en
@@ -3742,7 +3739,7 @@ function SoutienPanel({ profil, setProfil }) {
                 style={profil.styleAiles === style ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
                 onClick={() => set({ styleAiles: style })}
               >
-                <AileSvg style={style} taille={64} /> {label}
+                <AileSvg style={style} taille={32} /> {label}
               </button>
             ))}
           </div>
@@ -3771,16 +3768,16 @@ function SoutienPanel({ profil, setProfil }) {
       </div>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14, padding: "10px 12px", border: "1px dashed var(--line)", borderRadius: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="dragodinde" taille={180} niveau={niveau} />
+          <AileNiveau style="dragodinde" taille={90} niveau={niveau} />
           <span className="chiffre-hero" style={{ color: "var(--gold2)", fontSize: 13 }}>{nomNiveauAiles("dragodinde", niveau)}</span>
         </div>
-        <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={80} />
+        <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={40} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="muldo" taille={180} niveau={niveau} />
+          <AileNiveau style="muldo" taille={90} niveau={niveau} />
           <span className="chiffre-hero" style={{ color: "var(--cyan)", fontSize: 13 }}>{nomNiveauAiles("muldo", niveau)}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="volkorne" taille={180} niveau={niveau} />
+          <AileNiveau style="volkorne" taille={90} niveau={niveau} />
           <span className="chiffre-hero" style={{ color: "#e87832", fontSize: 13 }}>{nomNiveauAiles("volkorne", niveau)}</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11, alignSelf: "center" }}>

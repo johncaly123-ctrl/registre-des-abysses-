@@ -7,9 +7,6 @@ export const SUPABASE_KEY = "sb_publishable_r_kwZOx1WMPJ0W4LDFrIcg_pjE--12O";
 
 export const supabaseEstConfigure = () => SUPABASE_URL.startsWith("https://");
 
-// Lien de don (Ko-fi, PayPal…) affiché sur la page Profil. Laisse vide pour masquer.
-export const LIEN_DON = "https://paypal.me/caly191";
-
 // Lien d'invitation Discord de la communauté, affiché dans le pied de page.
 // Laisse vide tant que le serveur Discord n'existe pas (le lien est masqué).
 export const LIEN_DISCORD = "https://discord.gg/wfHrGAzErb";
