@@ -2841,7 +2841,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
               return (
                 <div key={m.id} className="message-row" style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
-                    <AuteurAile id={m.auteur} taille={88} />
+                    <AuteurAile id={m.auteur} taille={44} />
                     <span style={{ color: "var(--muted)", fontSize: 10 }}>
                       {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </span>
