@@ -966,12 +966,12 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
               className={estInvite ? "btn btn-coral" : "btn btn-ghost"}
               onClick={estInvite ? onQuitterInvite : () => setProfilOuvert(true)}
               title={estInvite ? "Quitter le mode essai et se connecter / créer un compte" : "Mon profil / connexion à la Taverne"}
-              style={{ padding: "8px 12px" }}
+              style={{ padding: "8px 12px", flexShrink: 0, whiteSpace: "nowrap" }}
             >
               {estInvite
                 ? <>🔒 <span style={{ marginLeft: 6 }}>Se connecter</span></>
                 : (compte.profil
-                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={48} />
+                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={32} />
                   : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>)}
             </button>
             <button className="btn btn-coral" onClick={() => eleveMuldo.setShowNew(true)}><Plus size={15} /> Nouveau muldo</button>
@@ -3436,13 +3436,13 @@ function DemiAile({ style = "muldo", cote = "gauche", taille = 20, niveau = 1 })
         src={`${base}-${cote}.png`}
         alt=""
         onError={() => setEtat("moitie")}
-        style={{ height: h, width: "auto", verticalAlign: "middle", filter: ombre }}
+        style={{ height: h, width: "auto", verticalAlign: "middle", filter: ombre, flexShrink: 0 }}
       />
     );
   }
   if (etat === "moitie") {
     return (
-      <span style={{ display: "inline-block", width: h * 0.6, height: h, overflow: "hidden", verticalAlign: "middle" }}>
+      <span style={{ display: "inline-block", width: h * 0.6, height: h, overflow: "hidden", verticalAlign: "middle", flexShrink: 0 }}>
         <img
           src={`${base}.png`}
           alt=""
@@ -3536,13 +3536,16 @@ function PseudoAvecAiles({ pseudo, soutien, styleAiles = "muldo", taille = 20, n
   const ornement = visuel >= 5 ? `✧${base}✧` : visuel >= 3 ? `${base}${base}` : base;
   const degrade = DEGRADE_AILES[styleAiles] || DEGRADE_AILES.muldo;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }} title={`Soutien du Registre — ${nomNiveauAiles(styleAiles, n)} (niveau ${n})`}>
+    <span style={{ display: "inline-flex", flexWrap: "nowrap", alignItems: "center", gap: 4, maxWidth: "100%" }} title={`Soutien du Registre — ${nomNiveauAiles(styleAiles, n)} (niveau ${n})`}>
       {/* key forcé sur les 3 éléments : DemiAile a son propre état interne de
           repli image (dédiée → moitié → SVG) qui ne se réinitialise jamais
           tout seul si `style` change, et le dégradé (background-clip: text)
           d'un span réutilisé par React ne se repeint pas toujours dans
           Chromium — le rendu reste figé sur l'ancien style tant que les
-          nœuds ne sont pas recréés (d'où le "reste bloqué jusqu'au F5"). */}
+          nœuds ne sont pas recréés (d'où le "reste bloqué jusqu'au F5").
+          flexShrink:0 sur les ailes + whiteSpace:nowrap sur le texte : dans
+          un conteneur étroit (bouton de l'en-tête), sans ça le flex row peut
+          se faire écraser/reflow verticalement une fois les ailes agrandies. */}
       <DemiAile key={`gauche-${styleAiles}`} style={styleAiles} cote="gauche" taille={taille} niveau={n} />
       <span
         key={`${styleAiles}-${n}`}
@@ -3551,6 +3554,7 @@ function PseudoAvecAiles({ pseudo, soutien, styleAiles = "muldo", taille = 20, n
           fontWeight: 800,
           fontSize: 15,
           letterSpacing: .4,
+          whiteSpace: "nowrap",
           background: degrade,
           WebkitBackgroundClip: "text",
           backgroundClip: "text",
