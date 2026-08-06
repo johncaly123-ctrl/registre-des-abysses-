@@ -261,3 +261,11 @@ export async function flushToutesEcrituresDebattues() {
     }
   }
 }
+
+// Hook réservé aux tests e2e (Playwright, mode invité) : le cache est un
+// module-scope JS, invisible depuis page.evaluate() et jamais hydraté sans
+// compte, donc les specs n'ont aucun autre moyen de pré-remplir un cheptel
+// avant le montage de use<Créature>Elevage(). Absent du build de prod.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  window.__seedStockageCache = sauvegarderJSON;
+}

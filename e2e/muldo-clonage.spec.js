@@ -33,6 +33,10 @@ test("cloner deux stériles de même génération crée une nouvelle monture fer
   await main.getByPlaceholder("Muldo B : nom ou couleur…").fill("Doré");
   await main.getByText("Doré #B — Doré", { exact: false }).click();
 
+  // Couleur et sexe sont imposés (parents identiques), mais la lignée
+  // génétique à conserver reste un choix explicite même dans ce cas.
+  await main.getByRole("button", { name: /Doré #A — parents/ }).click();
+
   const clonerBtn = main.getByRole("button", { name: /Cloner/ });
   await expect(clonerBtn).toBeEnabled();
   await clonerBtn.click();
