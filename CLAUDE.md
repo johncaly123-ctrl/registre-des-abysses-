@@ -174,7 +174,7 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     client roles.
   - Trigger `creer_profil_inscription` (on `auth.users` insert): auto-creates the matching `profils`
     row, defaulting the pseudo from signup metadata or a generated `Eleveur-XXXXXX`.
-  - **Moderator role (`est_modo`, v27-v28)**: one account (`caly`) is flagged `est_modo = true`
+  - **Moderator role (`est_modo`, v27-v28, v30)**: one account (`caly`) is flagged `est_modo = true`
     (granted manually via SQL, same access tier as `niveau_ailes`/`protege_est_modo` above — never
     settable by the client). `admin_fiche_utilisateur(cible uuid)` is a `security definer` RPC that
     checks the *caller's own* `est_modo` via `auth.uid()` before returning anything — so there's no
@@ -193,14 +193,19 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     `VolkorneCheptelCards` (pure/presentational, safe) but deliberately does **not** reuse
     `MuldoDetail`/`DragodindeDetail`/`VolkorneDetail` for the detail panel, since those are wired to
     `onPatch`/`onDelete` for real editing — it has its own hand-written read-only detail view instead,
-    to guarantee zero write path onto another account.
+    to guarantee zero write path onto another account. `v30` adds one real write path though: an
+    extra RLS policy lets `est_modo` delete *any* Taverne message (`messages` table, RLS policies
+    OR together — the original "supprimer son message"/`auth.uid() = auteur` policy from Muldo's
+    first version still covers normal members). Client side, the existing per-message delete button
+    (`TavernePage`, `Trash2` icon) is just gated on `session.user.id === m.auteur || compte.estModo`
+    instead of author-only — no separate moderation-only UI needed.
   - `sujets` (forum topics) and `messages` (forum posts, optionally scoped to a `sujet_id`, null =
     general chat) — both RLS: readable by everyone, insertable only as yourself. Both are added to
     the `supabase_realtime` publication; `TavernePage` subscribes to `postgres_changes` on them to
     live-update the forum.
   - When changing the schema, edit `supabase-setup.sql` in place (append a new idempotent block,
     e.g. following the existing `-- v4 : ...` comment convention) and re-run it in Supabase — there
-    is no CLI/migration tooling wired up in this repo. Current up to `-- v29`.
+    is no CLI/migration tooling wired up in this repo. Current up to `-- v30`.
   - `sauvegardes_manuelles` (v29): up-to-3 named full-account snapshots per user, distinct from the
     live `sauvegardes_elevage` blob — taken on demand via the "Sauvegarder" header button
     (`creerSauvegardeManuelle` in `src/stockage.js`), oldest dropped client-side once the cap is hit.

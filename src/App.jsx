@@ -971,7 +971,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
               {estInvite
                 ? <>🔒 <span style={{ marginLeft: 6 }}>Se connecter</span></>
                 : (compte.profil
-                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={24} />
+                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={48} />
                   : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>)}
             </button>
             <button className="btn btn-coral" onClick={() => eleveMuldo.setShowNew(true)}><Plus size={15} /> Nouveau muldo</button>
@@ -2218,7 +2218,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={40} />
+              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={80} />
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.user.email} <span style={{ opacity: .6 }}>(privé)</span></span>
             </div>
 
@@ -2258,7 +2258,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                       title={verrouille ? "Débloqué à partir du palier de don 1" : undefined}
                       onClick={() => !verrouille && patcher({ style_ailes: style }, `Ailes ${label} équipées.`)}
                     >
-                      <AileNiveau style={style} taille={36} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
+                      <AileNiveau style={style} taille={72} niveau={Math.max(1, tier)} /> {label}{verrouille ? " 🔒" : ""}
                     </button>
                   );
                 })}
@@ -2284,9 +2284,9 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                 {[1,2,3].map((n) => (
                   <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === tierDon ? "var(--gold)" : "var(--line)"}`, background: n === tierDon ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 3 }}>
-                      <AileNiveau style="dragodinde" miroir taille={32} niveau={n} />
-                      <AileNiveau style="muldo" taille={32} niveau={n} />
-                      <AileNiveau style="volkorne" taille={32} niveau={n} />
+                      <AileNiveau style="dragodinde" miroir taille={64} niveau={n} />
+                      <AileNiveau style="muldo" taille={64} niveau={n} />
+                      <AileNiveau style="volkorne" taille={64} niveau={n} />
                     </div>
                     <div style={{ fontWeight: 800, color: "var(--gold2)", marginTop: 4, fontSize: 13 }}>{montantPourNiveau(n)} €</div>
                   </div>
@@ -2665,7 +2665,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
     chargerListe();
   };
 
-  const AuteurAile = ({ id, taille = 16 }) => {
+  const AuteurAile = ({ id, taille = 32 }) => {
     const p = profilsParId[id];
     if (!p) return <span style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)" }}>Éleveur</span>;
     return (
@@ -2785,7 +2785,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
                   </div>
                   {s.auteur && (
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                      ouvert par <AuteurAile id={s.auteur} taille={13} />
+                      ouvert par <AuteurAile id={s.auteur} taille={26} />
                     </div>
                   )}
                 </div>
@@ -2841,7 +2841,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
               return (
                 <div key={m.id} className="message-row" style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
-                    <AuteurAile id={m.auteur} taille={32} />
+                    <AuteurAile id={m.auteur} taille={64} />
                     <span style={{ color: "var(--muted)", fontSize: 10 }}>
                       {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </span>
@@ -2863,8 +2863,13 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
                         Citer
                       </button>
                     )}
-                    {session?.user?.id === m.auteur && (
-                      <button className="btn btn-ghost" title="Supprimer ce message" style={{ padding: "3px 6px", fontSize: 11, color: "var(--red)" }} onClick={() => supprimerMessage(m.id)}>
+                    {(session?.user?.id === m.auteur || compte.estModo) && (
+                      <button
+                        className="btn btn-ghost"
+                        title={session?.user?.id === m.auteur ? "Supprimer ce message" : "Supprimer ce message (modération)"}
+                        style={{ padding: "3px 6px", fontSize: 11, color: "var(--red)" }}
+                        onClick={() => supprimerMessage(m.id)}
+                      >
                         <Trash2 size={12} />
                       </button>
                     )}
@@ -2946,7 +2951,7 @@ function ProfilPublicModal({ profil, estMoi, peutEnvoyerMp, onClose, onMessagePr
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(360px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={profil.niveau_ailes} taille={32} />
+          <PseudoAvecAiles pseudo={profil.pseudo} soutien={profil.niveau_ailes > 0} styleAiles={profil.style_ailes} niveau={profil.niveau_ailes} taille={64} />
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕</button>
         </div>
         {profil.description && <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 14 }}>{profil.description}</div>}
@@ -3161,7 +3166,7 @@ function ModerationPage({ compte, enLigne }) {
               style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,.04)", border: "1px solid var(--line)", cursor: p.id ? "pointer" : "default" }}
               onClick={() => p.id && setProfilCible({ id: p.id, pseudo: p.pseudo, style_ailes: p.styleAiles, niveau_ailes: p.niveauAiles, description: "", cree_le: null, serveur: null })}
             >
-              <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveauAiles > 0} styleAiles={p.styleAiles} niveau={p.niveauAiles} taille={16} />
+              <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveauAiles > 0} styleAiles={p.styleAiles} niveau={p.niveauAiles} taille={32} />
             </div>
           ))}
         </div>
@@ -3177,7 +3182,7 @@ function ModerationPage({ compte, enLigne }) {
             style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px", cursor: "pointer", borderRadius: 8, borderBottom: "1px solid rgba(255,255,255,.05)" }}
             onClick={() => setProfilCible(p)}
           >
-            <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={18} />
+            <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={36} />
             {p.serveur && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {p.serveur}</span>}
           </div>
         ))}
@@ -3258,7 +3263,7 @@ function ClassementModal({ classement, onOuvrirProfil, onClose }) {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 <span style={{ width: 26, textAlign: "center", fontWeight: 800, color: "var(--gold2)" }}>{MEDAILLES[i] || i + 1}</span>
-                <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={20} />
+                <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={40} />
               </div>
               <div style={{ display: "flex", gap: 14, color: "var(--muted)", fontSize: 12, flex: "0 0 auto" }}>
                 <span title="Muldo">🐴 G<b style={{ color: "var(--text)" }}>{p.succes_generation_muldo || 0}</b> · <b style={{ color: "var(--text)" }}>{p.couleurs_decouvertes_muldo || 0}</b></span>
@@ -3297,7 +3302,7 @@ function BoiteReceptionModal({ conversations, profilsParId, onOuvrir, onClose })
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", borderRadius: 8 }}
             >
               <div style={{ minWidth: 0 }}>
-                {p ? <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={20} /> : "Éleveur"}
+                {p ? <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={niveauEffectif} taille={40} /> : "Éleveur"}
                 <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.dernier.contenu}</div>
               </div>
               {c.nonLu > 0 && <span style={{ background: "var(--red)", color: "#fff", borderRadius: 10, fontSize: 11, padding: "2px 7px", fontWeight: 700, flex: "0 0 auto" }}>{c.nonLu}</span>}
@@ -3318,7 +3323,7 @@ function MessagesPrivesModal({ session, messages, profilCible, saisie, setSaisie
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", maxHeight: "80vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12, cursor: profilCible ? "pointer" : "default" }} onClick={() => profilCible && onOuvrirProfil()}>
-            {profilCible ? <PseudoAvecAiles pseudo={profilCible.pseudo} soutien={profilCible.niveau_ailes > 0} styleAiles={profilCible.style_ailes} niveau={niveauEffectif} taille={24} /> : "Éleveur"}
+            {profilCible ? <PseudoAvecAiles pseudo={profilCible.pseudo} soutien={profilCible.niveau_ailes > 0} styleAiles={profilCible.style_ailes} niveau={niveauEffectif} taille={48} /> : "Éleveur"}
           </button>
           <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕ Fermer</button>
         </div>
@@ -3575,7 +3580,7 @@ function SoutienPanel({ profil, setProfil }) {
     <div className="panel-card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Soutien du projet</h2>
-        {profil.soutien && <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={32} />}
+        {profil.soutien && <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={64} />}
       </div>
       <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
         Le Registre restera utilisable gratuitement. Les soutiens gagnent leurs ailes selon leur don, en
@@ -3608,7 +3613,7 @@ function SoutienPanel({ profil, setProfil }) {
                 style={profil.styleAiles === style ? { borderColor: "var(--gold)", color: "var(--gold2)" } : undefined}
                 onClick={() => set({ styleAiles: style })}
               >
-                <AileSvg style={style} taille={32} /> {label}
+                <AileSvg style={style} taille={64} /> {label}
               </button>
             ))}
           </div>
@@ -3637,16 +3642,16 @@ function SoutienPanel({ profil, setProfil }) {
       </div>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14, padding: "10px 12px", border: "1px dashed var(--line)", borderRadius: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="dragodinde" taille={90} niveau={niveau} />
+          <AileNiveau style="dragodinde" taille={180} niveau={niveau} />
           <span className="chiffre-hero" style={{ color: "var(--gold2)", fontSize: 13 }}>{nomNiveauAiles("dragodinde", niveau)}</span>
         </div>
-        <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={40} />
+        <PseudoAvecAiles pseudo={profil.pseudo || "Éleveur"} soutien styleAiles={profil.styleAiles} niveau={niveau} taille={80} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="muldo" taille={90} niveau={niveau} />
+          <AileNiveau style="muldo" taille={180} niveau={niveau} />
           <span className="chiffre-hero" style={{ color: "var(--cyan)", fontSize: 13 }}>{nomNiveauAiles("muldo", niveau)}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <AileNiveau style="volkorne" taille={90} niveau={niveau} />
+          <AileNiveau style="volkorne" taille={180} niveau={niveau} />
           <span className="chiffre-hero" style={{ color: "#e87832", fontSize: 13 }}>{nomNiveauAiles("volkorne", niveau)}</span>
         </div>
         <span style={{ color: "var(--muted)", fontSize: 11, alignSelf: "center" }}>

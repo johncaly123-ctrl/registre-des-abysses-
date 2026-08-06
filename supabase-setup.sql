@@ -701,3 +701,14 @@ create policy "sauvegardes_manuelles_delete_own" on public.sauvegardes_manuelles
 
 create index if not exists idx_sauvegardes_manuelles_utilisateur
   on public.sauvegardes_manuelles(utilisateur_id, cree_le desc);
+
+-- v30 : un moderateur (est_modo) peut supprimer le message de n'importe quel
+-- membre dans la Taverne, pas seulement le sien -- la policy "supprimer son
+-- message" (v1, auth.uid() = auteur) reste en place pour les membres normaux ;
+-- les policies RLS s'additionnent (OR), celle-ci ne fait qu'elargir le droit
+-- de suppression, jamais le restreindre. Cote client : bouton Trash2 visible
+-- si (auteur du message OU compte.estModo), voir TavernePage dans App.jsx.
+drop policy if exists "moderateur supprime tout message" on messages;
+create policy "moderateur supprime tout message" on messages for delete using (
+  exists (select 1 from profils where id = auth.uid() and est_modo)
+);
