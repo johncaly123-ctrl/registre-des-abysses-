@@ -971,7 +971,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
               {estInvite
                 ? <>🔒 <span style={{ marginLeft: 6 }}>Se connecter</span></>
                 : (compte.profil
-                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={32} />
+                  ? <PseudoAvecAiles pseudo={compte.profil.pseudo} soutien={compte.profil.niveau_ailes > 0} styleAiles={compte.profil.style_ailes} niveau={compte.profil.niveau_ailes} taille={44} />
                   : <>👤 <span style={{ marginLeft: 6 }}>Profil / Connexion</span></>)}
             </button>
             <button className="btn btn-coral" onClick={() => eleveMuldo.setShowNew(true)}><Plus size={15} /> Nouveau muldo</button>
@@ -2218,7 +2218,7 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={80} />
+              <PseudoAvecAiles pseudo={profil.pseudo} soutien={niveauEffectif > 0} styleAiles={profil.style_ailes} niveau={niveauEffectif} taille={40} />
               <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.user.email} <span style={{ opacity: .6 }}>(privé)</span></span>
             </div>
 
@@ -2841,7 +2841,7 @@ function TavernePage({ compte, onOuvrirProfil, ouvrirClassementInitial, onClasse
               return (
                 <div key={m.id} className="message-row" style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, flex: "0 0 auto", minWidth: 150 }}>
-                    <AuteurAile id={m.auteur} taille={64} />
+                    <AuteurAile id={m.auteur} taille={88} />
                     <span style={{ color: "var(--muted)", fontSize: 10 }}>
                       {new Date(m.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </span>
