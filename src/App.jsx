@@ -1923,6 +1923,7 @@ function CheptelPublicPage({ pseudo, cheptelViewer }) {
 function useCompte() {
   const [session, setSession] = useState(null);
   const [profil, setProfil] = useState(null);
+  const [profilErreur, setProfilErreur] = useState(null);
   const [pretMdp, setPretMdp] = useState(false); // lien de réinitialisation détecté
 
   useEffect(() => {
@@ -1937,14 +1938,23 @@ function useCompte() {
   }, []);
 
   const rafraichirProfil = React.useCallback(() => {
-    if (!supabase || !session?.user) { setProfil(null); return; }
+    if (!supabase || !session?.user) { setProfil(null); setProfilErreur(null); return; }
+    setProfilErreur(null);
+    // supabase-js ne rejette jamais cette promesse (erreur réseau/RLS incluse) :
+    // elle résout toujours avec { data: null, error }. Sans vérifier `error` ici,
+    // setProfil(null) masque silencieusement l'échec derrière le même état que
+    // "pas encore chargé", et l'UI reste bloquée sur "Chargement du profil…"
+    // indéfiniment (voir ProfilModal, qui affiche ce message tant que !profil).
     supabase.from("profils").select("*").eq("id", session.user.id).single()
-      .then(({ data }) => setProfil(data || null));
+      .then(({ data, error }) => {
+        if (error) { console.error("Chargement du profil impossible :", error); setProfilErreur(error.message); return; }
+        setProfil(data || null);
+      });
   }, [session]);
 
   useEffect(() => { rafraichirProfil(); }, [rafraichirProfil]);
 
-  return { session, profil, pretMdp, setPretMdp, rafraichirProfil, estModo: !!profil?.est_modo };
+  return { session, profil, profilErreur, pretMdp, setPretMdp, rafraichirProfil, estModo: !!profil?.est_modo };
 }
 
 // Filtre volontairement simple (sous-chaîne, insensible à la casse/aux
@@ -2089,7 +2099,7 @@ function AuthPanel({ profilLocal, pretMdp, onFini, parrainCapture }) {
 
 // ---------- Modale Profil (ouverte depuis le bouton d'en-tête) ----------
 function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapture }) {
-  const { session, profil, pretMdp, rafraichirProfil } = compte;
+  const { session, profil, profilErreur, pretMdp, rafraichirProfil } = compte;
   const [description, setDescription] = useState("");
   const [nouveauPseudo, setNouveauPseudo] = useState("");
   const [changementPseudoEnCours, setChangementPseudoEnCours] = useState(false);
@@ -2197,7 +2207,14 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
             <AuthPanel profilLocal={profilLocal} pretMdp={pretMdp} onFini={rafraichirProfil} parrainCapture={parrainCapture} />
           </div>
         ) : !profil ? (
-          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 12 }}>Chargement du profil…</div>
+          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 12 }}>
+            {profilErreur ? (
+              <>
+                Impossible de charger ton profil ({profilErreur}).{" "}
+                <button className="btn btn-ghost" style={{ padding: "3px 10px", fontSize: 12 }} onClick={rafraichirProfil}>Réessayer</button>
+              </>
+            ) : "Chargement du profil…"}
+          </div>
         ) : (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
