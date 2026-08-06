@@ -11,7 +11,7 @@ import { MangeoirePage, CLES_SAUVEGARDE_MANGEOIRE } from "./Mangeoire.jsx";
 import { OnboardingOverlay, ETAPES_ONBOARDING_GPS, ETAPES_ONBOARDING_SITE } from "./OnboardingOverlay.jsx";
 import { supabase } from "./supabaseClient.js";
 import { supabaseEstConfigure, LIEN_DON, LIEN_DISCORD } from "./configSupabase.js";
-import { Waves, Save, Plus, Trash2, X } from "lucide-react";
+import { Waves, Save, Plus, Trash2, X, Bug } from "lucide-react";
 import {
   useDragodindeElevage, DragodindeCheptelOverviewPage, DragodindeCheptelCards, DragodindeDetail, DragodindeBadge, NewDragodindeModal,
   DragodindeSynchronisationPage, DragodindeGpsPage, DragodindeClonagePage, DragodindeSuccesPage,
@@ -785,6 +785,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
   };
   const [profilOuvert, setProfilOuvert] = useState(false);
   useEffect(() => { if (compte.pretMdp) setProfilOuvert(true); }, [compte.pretMdp]);
+  const [signalerBugOuvert, setSignalerBugOuvert] = useState(false);
   // Présence "qui est en ligne" (console Modération, réservée aux comptes
   // est_modo) : chaque compte connecté s'annonce sur un canal Realtime
   // partagé — pas de table dédiée, l'état est purement éphémère (pas de
@@ -937,6 +938,17 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
               📂 Charger
             </button>
           </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setSignalerBugOuvert(true)}
+            title="Signaler un bug"
+            style={{ padding: "8px 12px" }}
+          >
+            <Bug size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+            Signaler un bug
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 12, color: etatSave.dernierEchec ? "var(--red)" : "var(--muted)", opacity: (etatSave.enAttente || etatSave.dernierEchec) ? 1 : 0 }}>
@@ -1444,6 +1456,16 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
 
       {profilOuvert && (
         <ProfilModal compte={compte} profilLocal={profil} setProfilLocal={setProfil} onClose={() => setProfilOuvert(false)} parrainCapture={parrainCapture} />
+      )}
+
+      {signalerBugOuvert && (
+        <SignalerBugModal
+          session={compte.session}
+          page={page}
+          sousPage={sousPage}
+          onClose={() => setSignalerBugOuvert(false)}
+          onEnvoye={() => showToast("Bug signalé, merci !")}
+        />
       )}
 
       {chargerSauvegardeOuvert && (
@@ -2333,6 +2355,66 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   );
 }
 
+// ---------- Modale "Signaler un bug" (bouton en-tête) ----------
+function SignalerBugModal({ session, page, sousPage, onClose, onEnvoye }) {
+  const [contenu, setContenu] = useState("");
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
+  const [erreur, setErreur] = useState("");
+  const configManquante = !supabaseEstConfigure() || !supabase;
+
+  const envoyer = async () => {
+    const texte = contenu.trim();
+    if (texte.length < 5) { setErreur("Décris le bug en au moins 5 caractères."); return; }
+    setErreur("");
+    setEnvoiEnCours(true);
+    const { error } = await supabase.from("signalements_bugs").insert({
+      auteur: session.user.id,
+      contenu: texte,
+      page: `${page}${sousPage ? ` / ${sousPage}` : ""}`,
+    });
+    setEnvoiEnCours(false);
+    if (error) { setErreur(error.message); return; }
+    onEnvoye();
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(10,8,6,.65)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(480px, 100%)", background: "linear-gradient(180deg, var(--panel3), var(--panel2))", border: "1px solid var(--gold)", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.5)", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}><Bug size={18} /> Signaler un bug</h2>
+          <button className="btn btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={onClose}>✕</button>
+        </div>
+
+        {configManquante ? (
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>Le signalement de bug nécessite la configuration Supabase.</div>
+        ) : !session ? (
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>Connecte-toi (ou crée un compte gratuit) pour signaler un bug — ça permet de te recontacter si on a besoin de précisions.</div>
+        ) : (
+          <>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 8 }}>
+              Décris ce qui ne va pas (ce que tu as fait, ce à quoi tu t'attendais, ce qui s'est passé). La page actuelle (<b>{page}{sousPage ? ` / ${sousPage}` : ""}</b>) est jointe automatiquement.
+            </div>
+            <textarea
+              className="field"
+              rows={5}
+              maxLength={1000}
+              value={contenu}
+              onChange={(e) => setContenu(e.target.value)}
+              placeholder="Ex : le bouton Cloner reste grisé même après avoir choisi les deux muldos…"
+              style={{ width: "100%", resize: "vertical" }}
+            />
+            {erreur && <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{erreur}</div>}
+            <button className="btn btn-coral" style={{ marginTop: 12 }} disabled={envoiEnCours} onClick={envoyer}>
+              {envoiEnCours ? "Envoi…" : "Envoyer le signalement"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const STORAGE_LU_SUJETS = "taverne-lu-sujets-v1";
 
 // Découpe un texte de message sur les URLs qu'il contient et rend chaque
@@ -3154,8 +3236,51 @@ function ModerationPage({ compte, enLigne }) {
 
   const [profilCible, setProfilCible] = useState(null);
 
+  // Signalements de bugs (table signalements_bugs, v31) : lecture reservee
+  // aux moderateurs par RLS, donc aucun risque a tout charger d'un coup (pas
+  // de pagination pour un volume qui reste faible en pratique).
+  const [bugs, setBugs] = useState(null);
+  const [bugsAuteurs, setBugsAuteurs] = useState({});
+  const chargerBugs = React.useCallback(() => {
+    supabase.from("signalements_bugs").select("id, auteur, contenu, page, cree_le, traite").order("cree_le", { ascending: false }).limit(100)
+      .then(({ data }) => {
+        setBugs(data || []);
+        const ids = [...new Set((data || []).map((b) => b.auteur).filter(Boolean))];
+        if (ids.length) {
+          supabase.from("profils").select("id, pseudo").in("id", ids)
+            .then(({ data: profs }) => setBugsAuteurs(Object.fromEntries((profs || []).map((p) => [p.id, p.pseudo]))));
+        }
+      });
+  }, []);
+  useEffect(() => { chargerBugs(); }, [chargerBugs]);
+  const marquerBugTraite = async (id, traite) => {
+    setBugs((prev) => prev.map((b) => (b.id === id ? { ...b, traite } : b)));
+    await supabase.from("signalements_bugs").update({ traite }).eq("id", id);
+  };
+  const bugsNonTraites = (bugs || []).filter((b) => !b.traite);
+
   return (
     <>
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>🐛 Signalements de bugs ({bugsNonTraites.length} non traités)</h3>
+        {bugs === null && <div style={{ color: "var(--muted)", fontSize: 13 }}>Chargement…</div>}
+        {bugs !== null && bugs.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>Aucun signalement pour l'instant.</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          {bugs?.map((b) => (
+            <div key={b.id} style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,.03)", border: "1px solid var(--line)", opacity: b.traite ? 0.55 : 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  <b style={{ color: "var(--text)" }}>{bugsAuteurs[b.auteur] || "Éleveur"}</b> · {b.page || "?"} · {new Date(b.cree_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <button className="btn btn-ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => marquerBugTraite(b.id, !b.traite)}>
+                  {b.traite ? "Rouvrir" : "✓ Marquer traité"}
+                </button>
+              </div>
+              <div style={{ fontSize: 13, marginTop: 6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{b.contenu}</div>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="panel-card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>🟢 En ligne maintenant ({enLigne.length})</h3>
         {enLigne.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>Personne pour l'instant.</div>}

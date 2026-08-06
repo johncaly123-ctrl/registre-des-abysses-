@@ -199,13 +199,19 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     first version still covers normal members). Client side, the existing per-message delete button
     (`TavernePage`, `Trash2` icon) is just gated on `session.user.id === m.auteur || compte.estModo`
     instead of author-only — no separate moderation-only UI needed.
+  - `signalements_bugs` (v31): free-text bug reports, submitted via the "Signaler un bug" header
+    button (`SignalerBugModal` in `App.jsx`) — requires a session (not available in guest mode,
+    since there'd be no way to follow up with the reporter). RLS: insert only as yourself, select/
+    update (the `traite` flag) restricted to `est_modo`. Read in `ModerationPage`'s new
+    "🐛 Signalements de bugs" panel, which also resolves each `auteur` id to a pseudo via a
+    `profils` lookup (moderators can already read all profils, no extra RLS needed there).
   - `sujets` (forum topics) and `messages` (forum posts, optionally scoped to a `sujet_id`, null =
     general chat) — both RLS: readable by everyone, insertable only as yourself. Both are added to
     the `supabase_realtime` publication; `TavernePage` subscribes to `postgres_changes` on them to
     live-update the forum.
   - When changing the schema, edit `supabase-setup.sql` in place (append a new idempotent block,
     e.g. following the existing `-- v4 : ...` comment convention) and re-run it in Supabase — there
-    is no CLI/migration tooling wired up in this repo. Current up to `-- v30`.
+    is no CLI/migration tooling wired up in this repo. Current up to `-- v31`.
   - `sauvegardes_manuelles` (v29): up-to-3 named full-account snapshots per user, distinct from the
     live `sauvegardes_elevage` blob — taken on demand via the "Sauvegarder" header button
     (`creerSauvegardeManuelle` in `src/stockage.js`), oldest dropped client-side once the cap is hit.

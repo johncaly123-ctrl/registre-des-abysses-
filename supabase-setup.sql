@@ -712,3 +712,36 @@ drop policy if exists "moderateur supprime tout message" on messages;
 create policy "moderateur supprime tout message" on messages for delete using (
   exists (select 1 from profils where id = auth.uid() and est_modo)
 );
+
+-- v31 : bouton "Signaler un bug" (en-tete, tous comptes connectes -- pas en
+-- mode invite, il faut pouvoir recontacter l'auteur). Ecriture par n'importe
+-- quel utilisateur connecte pour son propre signalement, lecture/traitement
+-- reserves aux moderateurs -- meme pattern que messages_prives (v26) : la
+-- policy update ne s'applique qu'aux moderateurs, donc seul le champ
+-- `traite` peut changer, et seulement par eux (ModerationPage/App.jsx).
+create table if not exists public.signalements_bugs (
+  id bigint generated always as identity primary key,
+  auteur uuid references auth.users(id) on delete set null,
+  contenu text not null check (char_length(contenu) between 5 and 1000),
+  page text,
+  traite boolean not null default false,
+  cree_le timestamptz not null default now()
+);
+
+alter table public.signalements_bugs enable row level security;
+
+drop policy if exists "signaler un bug" on public.signalements_bugs;
+create policy "signaler un bug" on public.signalements_bugs
+  for insert with check (auth.uid() = auteur);
+
+drop policy if exists "moderateur lit les signalements" on public.signalements_bugs;
+create policy "moderateur lit les signalements" on public.signalements_bugs
+  for select using (exists (select 1 from profils where id = auth.uid() and est_modo));
+
+drop policy if exists "moderateur traite les signalements" on public.signalements_bugs;
+create policy "moderateur traite les signalements" on public.signalements_bugs
+  for update using (exists (select 1 from profils where id = auth.uid() and est_modo))
+  with check (exists (select 1 from profils where id = auth.uid() and est_modo));
+
+create index if not exists idx_signalements_bugs_cree_le
+  on public.signalements_bugs(cree_le desc);
