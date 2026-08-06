@@ -38,7 +38,7 @@ const MONTANT_LIBRE_MAXIMUM_EUROS = 500;
 // pourrait faire renvoyer par Stripe n'importe quelle URL de son choix, y
 // compris un site de phishing, après un paiement réel et légitime.
 const ORIGINES_AUTORISEES = [
-  "https://registre-des-abysses.pages.dev",
+  "https://registre-des-abysses.com",
   "http://localhost:5173",
 ];
 function retourUrlSure(brut) {
