@@ -29,12 +29,16 @@ const MONTANTS_NIVEAUX_EUROS = [5, 12, 20];
 // reliquat à payer est trop faible (ex. déjà à 1€ du palier).
 const MONTANT_MINIMUM_EUROS = 0.5;
 
+// Garde-fou pour le don libre (palier max déjà atteint) : évite qu'une
+// erreur de frappe (un zéro de trop) ne facture un montant absurde.
+const MONTANT_LIBRE_MAXIMUM_EUROS = 500;
+
 // Origines autorisées pour la redirection post-paiement (success_url/cancel_url) —
 // sans cette allowlist, un appelant direct de la fonction (JWT valide, hors UI)
 // pourrait faire renvoyer par Stripe n'importe quelle URL de son choix, y
 // compris un site de phishing, après un paiement réel et légitime.
 const ORIGINES_AUTORISEES = [
-  "https://registre-des-abysses.netlify.app",
+  "https://registre-des-abysses.pages.dev",
   "http://localhost:5173",
 ];
 function retourUrlSure(brut) {
@@ -76,6 +80,36 @@ Deno.serve(async (req) => {
   } catch {
     corps = {};
   }
+  const retourUrl = retourUrlSure(corps?.retourUrl);
+
+  // Don libre : une fois le palier max atteint, l'UI (ProfilModal) propose un
+  // montant au choix au lieu d'un palier — pas de logique de delta ici, le
+  // montant saisi est facturé tel quel et vient simplement s'ajouter au
+  // cumul (table `dons`) lu par stripe-webhook.
+  if (corps?.montantLibre != null) {
+    const montantLibre = Math.round(Number(corps.montantLibre) * 100) / 100;
+    if (!Number.isFinite(montantLibre) || montantLibre < MONTANT_MINIMUM_EUROS || montantLibre > MONTANT_LIBRE_MAXIMUM_EUROS) {
+      return new Response(JSON.stringify({ erreur: "montant invalide" }), { status: 400, headers: ENTETES_CORS });
+    }
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      client_reference_id: user.id,
+      line_items: [
+        {
+          price_data: {
+            currency: "eur",
+            unit_amount: Math.round(montantLibre * 100),
+            product_data: { name: "Soutien Registre des Abysses — don libre (" + montantLibre + " €)" },
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: retourUrl,
+      cancel_url: retourUrl,
+    });
+    return new Response(JSON.stringify({ url: session.url }), { status: 200, headers: ENTETES_CORS });
+  }
+
   const palier = Number(corps?.palier);
   if (!Number.isInteger(palier) || palier < 1 || palier > MONTANTS_NIVEAUX_EUROS.length) {
     return new Response(JSON.stringify({ erreur: "palier invalide" }), { status: 400, headers: ENTETES_CORS });
@@ -97,7 +131,6 @@ Deno.serve(async (req) => {
   }
 
   const delta = Math.max(Math.round((montantCible - montantCumule) * 100) / 100, MONTANT_MINIMUM_EUROS);
-  const retourUrl = retourUrlSure(corps?.retourUrl);
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",

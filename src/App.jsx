@@ -2130,6 +2130,8 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   const [erreur, setErreur] = useState("");
   const [donsCumules, setDonsCumules] = useState(0);
   const [chargementDon, setChargementDon] = useState(0); // palier en cours de paiement, 0 = aucun
+  const [montantLibre, setMontantLibre] = useState("");
+  const [chargementDonLibre, setChargementDonLibre] = useState(false);
 
   useEffect(() => { setDescription(profil?.description || ""); }, [profil]);
   useEffect(() => { setNouveauPseudo(profil?.pseudo || ""); }, [profil]);
@@ -2142,8 +2144,11 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
   }, [session]);
 
   // Facture uniquement la différence jusqu'au palier visé (voir
-  // supabase/functions/creer-session-don) : ouvre la session Stripe dans un
-  // nouvel onglet, le webhook attribue le palier dès le paiement confirmé.
+  // supabase/functions/creer-session-don) : redirige vers Stripe Checkout
+  // dans le même onglet (window.open() après un await se fait bloquer
+  // silencieusement par la plupart des navigateurs, sans erreur visible —
+  // symptôme observé : le bouton "ne déclenche rien"), le webhook attribue
+  // le palier dès le paiement confirmé.
   const donnerPourPalier = async (n) => {
     setErreur(""); setInfo(""); setChargementDon(n);
     try {
@@ -2151,10 +2156,29 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
         body: { palier: n, retourUrl: window.location.href },
       });
       if (error) { setErreur("Paiement indisponible pour le moment : " + error.message); return; }
-      if (data?.url) window.open(data.url, "_blank", "noopener");
+      if (data?.url) window.location.href = data.url;
       else if (data?.message) setInfo(data.message);
     } finally {
       setChargementDon(0);
+    }
+  };
+
+  // Don libre : débloqué une fois le palier max atteint, pour continuer à
+  // soutenir sans montant plafonné par un palier.
+  const donnerMontantLibre = async () => {
+    setErreur(""); setInfo("");
+    const montant = Number(montantLibre.replace(",", "."));
+    if (!Number.isFinite(montant) || montant < 0.5) { setErreur("Indique un montant valide (0,50 € minimum)."); return; }
+    setChargementDonLibre(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("creer-session-don", {
+        body: { montantLibre: montant, retourUrl: window.location.href },
+      });
+      if (error) { setErreur("Paiement indisponible pour le moment : " + error.message); return; }
+      if (data?.url) window.location.href = data.url;
+      else if (data?.message) setInfo(data.message);
+    } finally {
+      setChargementDonLibre(false);
     }
   };
 
@@ -2339,6 +2363,30 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
                   })}
                 </div>
               </div>
+              {donsCumules >= montantPourNiveau(NIVEAU_MAX_AILES) && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 6 }}>
+                    Palier max atteint — merci ! Tu peux continuer à soutenir le projet avec un don libre :
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      className="field"
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      placeholder="Montant en €"
+                      value={montantLibre}
+                      onChange={(e) => setMontantLibre(e.target.value)}
+                      style={{ width: 120 }}
+                    />
+                    <button type="button" className="btn btn-coral" disabled={chargementDonLibre} onClick={donnerMontantLibre}>
+                      {chargementDonLibre ? "…" : "💳 Faire un don libre"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {erreur && <div style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>{erreur}</div>}
+              {info && <div style={{ color: "var(--green)", fontSize: 12, marginTop: 8 }}>{info}</div>}
               <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 8 }}>
                 Les boutons ci-dessus attribuent le palier automatiquement.
               </div>
