@@ -1955,16 +1955,40 @@ export function GraphiquesPanel({ cheptel, journal, instantanes, generationDeCou
   }));
   const maxNaissances = Math.max(1, ...naissancesParJour.map((j) => j.valeur));
 
-  // Courbe d'évolution (instantanés quotidiens)
+  // Courbe d'évolution (instantanés quotidiens) — chaque série est mise à
+  // l'échelle indépendamment (son propre min/max) car les 3 mesures ont des
+  // ordres de grandeur très différents (ex. naissances cumulées >> couleurs) ;
+  // les courbes ne partagent donc pas un axe commun, seule la forme de
+  // chacune est comparable à elle-même dans le temps.
   const points = (instantanes || []).slice(-60);
-  const courbe = (serie, couleur) => {
-    if (points.length < 2) return null;
-    const valeurs = points.map(serie);
+  const MARGE_X = 5, LARGEUR_TRACE = 330, BASE_Y = 95, HAUT_TRACE = 85;
+  const xDuPoint = (i) => (points.length > 1 ? (i / (points.length - 1)) * LARGEUR_TRACE + MARGE_X : MARGE_X);
+  const construireSerie = (accesseur) => {
+    const valeurs = points.map(accesseur);
     const min = Math.min(...valeurs);
     const max = Math.max(...valeurs, min + 1);
-    const coords = valeurs.map((v, i) => `${(i / (points.length - 1)) * 330 + 5},${95 - ((v - min) / (max - min)) * 85}`).join(" ");
-    return <polyline points={coords} fill="none" stroke={couleur} strokeWidth="2" />;
+    return valeurs.map((v, i) => ({ x: xDuPoint(i), y: BASE_Y - ((v - min) / (max - min)) * HAUT_TRACE, valeur: v }));
   };
+  const seriesEvolution = [
+    { cle: "total", label: nomEntitePluriel.toLowerCase(), couleur: "var(--gold)" },
+    { cle: "couleurs", label: "couleurs", couleur: "#6fa8dc" },
+    { cle: "naissances", label: "naissances cumulées", couleur: "#d98ec0" },
+  ].map((s) => ({ ...s, pts: points.length >= 2 ? construireSerie((p) => p[s.cle]) : [] }));
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const gererSurvolCourbe = (e) => {
+    if (points.length < 2) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xViewBox = ((e.clientX - rect.left) / rect.width) * 340;
+    const step = LARGEUR_TRACE / (points.length - 1);
+    const idx = Math.round((xViewBox - MARGE_X) / step);
+    setHoverIdx(Math.max(0, Math.min(points.length - 1, idx)));
+  };
+  const formatDateCourte = (iso) => {
+    const [, m, j] = String(iso).split("-");
+    return m && j ? `${j}/${m}` : iso;
+  };
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const pointAffiche = hoverIdx !== null ? points[hoverIdx] : points[points.length - 1];
 
   return (
     <div className="panel-card" style={{ marginTop: 16 }}>
@@ -2019,16 +2043,39 @@ export function GraphiquesPanel({ cheptel, journal, instantanes, generationDeCou
             </div>
           ) : (
             <>
-              <svg viewBox="0 0 340 100" style={{ width: "100%", height: "auto" }}>
+              <div style={{ fontSize: 11, color: "var(--text)", marginBottom: 4, minHeight: 14 }}>
+                {formatDateCourte(pointAffiche.date)}{pointAffiche.date === aujourdhui ? " (aujourd'hui)" : ""} —{" "}
+                <span style={{ color: "var(--gold)" }}>{nomEntitePluriel.toLowerCase()} {pointAffiche.total}</span>
+                {" · "}
+                <span style={{ color: "#6fa8dc" }}>couleurs {pointAffiche.couleurs}</span>
+                {" · "}
+                <span style={{ color: "#d98ec0" }}>naissances cumulées {pointAffiche.naissances}</span>
+              </div>
+              <svg
+                viewBox="0 0 340 100"
+                style={{ width: "100%", height: "auto", cursor: "crosshair" }}
+                onMouseMove={gererSurvolCourbe}
+                onMouseLeave={() => setHoverIdx(null)}
+              >
                 <line x1="5" y1="95" x2="335" y2="95" stroke="rgba(255,255,255,.15)" strokeWidth="1" />
-                {courbe((p) => p.total, "var(--gold)")}
-                {courbe((p) => p.couleurs, "#6fa8dc")}
-                {courbe((p) => p.naissances, "#d98ec0")}
+                {hoverIdx !== null && (
+                  <line x1={xDuPoint(hoverIdx)} y1="4" x2={xDuPoint(hoverIdx)} y2="95" stroke="rgba(255,255,255,.3)" strokeWidth="1" strokeDasharray="2,2" />
+                )}
+                {seriesEvolution.map((s) => (
+                  <polyline key={s.cle} points={s.pts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={s.couleur} strokeWidth="2" />
+                ))}
+                {hoverIdx !== null && seriesEvolution.map((s) => (
+                  <circle key={s.cle} cx={s.pts[hoverIdx].x} cy={s.pts[hoverIdx].y} r="3" fill={s.couleur} stroke="var(--panel2)" strokeWidth="1.5" />
+                ))}
               </svg>
-              <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <span><span style={{ color: "var(--gold)" }}>—</span> {nomEntitePluriel.toLowerCase()} ({points[points.length - 1].total})</span>
-                <span><span style={{ color: "#6fa8dc" }}>—</span> couleurs ({points[points.length - 1].couleurs})</span>
-                <span><span style={{ color: "#d98ec0" }}>—</span> naissances cumulées ({points[points.length - 1].naissances})</span>
+              <div style={{ fontSize: 10, color: "var(--muted)", display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                <span>{formatDateCourte(points[0].date)}</span>
+                <span>{formatDateCourte(points[points.length - 1].date)}</span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
+                {seriesEvolution.map((s) => (
+                  <span key={s.cle}><span style={{ color: s.couleur }}>—</span> {s.label}</span>
+                ))}
               </div>
             </>
           )}
