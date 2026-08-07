@@ -2329,10 +2329,10 @@ function ProfilModal({ compte, profilLocal, setProfilLocal, onClose, parrainCapt
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 10 }}>
                 {[1,2,3].map((n) => (
                   <div key={n} style={{ padding: "8px", borderRadius: 10, textAlign: "center", border: `1px solid ${n === tierDon ? "var(--gold)" : "var(--line)"}`, background: n === tierDon ? "rgba(214,166,74,.08)" : "rgba(0,0,0,.12)" }}>
-                    <div style={{ display: "flex", justifyContent: "center", gap: 3 }}>
-                      <AileNiveau style="dragodinde" miroir taille={32} niveau={n} />
-                      <AileNiveau style="muldo" taille={32} niveau={n} />
-                      <AileNiveau style="volkorne" taille={32} niveau={n} />
+                    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 3 }}>
+                      <AileNiveau style="dragodinde" miroir taille={18} niveau={n} />
+                      <AileNiveau style="muldo" taille={18} niveau={n} />
+                      <AileNiveau style="volkorne" taille={18} niveau={n} />
                     </div>
                     <div style={{ fontWeight: 800, color: "var(--gold2)", marginTop: 4, fontSize: 13 }}>{montantPourNiveau(n)} €</div>
                   </div>
