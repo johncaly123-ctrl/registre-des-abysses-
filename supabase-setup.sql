@@ -769,3 +769,14 @@ create policy "essai invite anonyme" on public.essais_invite
 drop policy if exists "moderateur lit les essais invite" on public.essais_invite;
 create policy "moderateur lit les essais invite" on public.essais_invite
   for select using (exists (select 1 from profils where id = auth.uid() and est_modo));
+
+-- v33 : corrige l'alerte Supabase Advisor "Security Definer View" (critique)
+-- sur les 2 vues de mediane de prix communautaires (v13, v17). Par defaut
+-- une vue Postgres s'execute avec les droits de son proprietaire (postgres),
+-- ce qui contourne le RLS de l'utilisateur qui interroge -- inoffensif ici
+-- puisque les 2 tables sources ont deja une policy select "using (true)"
+-- (visibles par tous), mais c'est un piege si cette policy est un jour
+-- restreinte sans qu'on pense a la vue. security_invoker fait executer la
+-- vue avec les droits de l'appelant, comme une vue normale devrait.
+alter view public.prix_communautaires_medianes set (security_invoker = true);
+alter view public.prix_communautaires_ingredients_medianes set (security_invoker = true);
