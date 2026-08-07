@@ -3337,6 +3337,20 @@ function ModerationPage({ compte, enLigne }) {
     supabase.rpc("essais_invite_repetitions")
       .then(({ data, error }) => setRepetitionsInvite(error ? [] : (data || [])));
   }, []);
+  // v35 : adresses uniques (distinct de "essais" -- une même personne peut
+  // relancer le mode invité plusieurs fois) + série temporelle jour/semaine/mois.
+  const [statsInvite, setStatsInvite] = useState(null);
+  useEffect(() => {
+    supabase.rpc("essais_invite_stats")
+      .then(({ data, error }) => setStatsInvite(error ? null : (data?.[0] || null)));
+  }, []);
+  const [granulariteInvite, setGranulariteInvite] = useState("day");
+  const [serieInvite, setSerieInvite] = useState(null);
+  useEffect(() => {
+    setSerieInvite(null);
+    supabase.rpc("essais_invite_serie", { granularite: granulariteInvite })
+      .then(({ data, error }) => setSerieInvite(error ? [] : (data || [])));
+  }, [granulariteInvite]);
 
   // Signalements de bugs (table signalements_bugs, v31) : lecture reservee
   // aux moderateurs par RLS, donc aucun risque a tout charger d'un coup (pas
@@ -3420,7 +3434,9 @@ function ModerationPage({ compte, enLigne }) {
           <div style={{ color: "var(--muted)", fontSize: 13 }}>Chargement…</div>
         ) : (
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            <b style={{ color: "var(--text)" }}>{essaisInvite}</b> essai(s) sans compte ·{" "}
+            <b style={{ color: "var(--text)" }}>{essaisInvite}</b> essai(s) sans compte
+            {statsInvite && <> (<b style={{ color: "var(--text)" }}>{statsInvite.adresses_uniques}</b> adresse(s) unique(s))</>}
+            {" · "}
             <b style={{ color: "var(--text)" }}>{totalMembres}</b> compte(s) créé(s) au total
             {essaisInvite > 0 && (
               <> ·{" "}
@@ -3432,6 +3448,43 @@ function ModerationPage({ compte, enLigne }) {
             </div>
           </div>
         )}
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5 }}>
+              Essais dans le temps
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[["day", "Jour"], ["week", "Semaine"], ["month", "Mois"]].map(([val, label]) => (
+                <button
+                  key={val}
+                  className="btn btn-ghost"
+                  style={{ padding: "3px 9px", fontSize: 11, ...(granulariteInvite === val ? { borderColor: "var(--gold)", color: "var(--gold2)" } : {}) }}
+                  onClick={() => setGranulariteInvite(val)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {serieInvite === null && <div style={{ color: "var(--muted)", fontSize: 13 }}>Chargement…</div>}
+          {serieInvite && serieInvite.length === 0 && (
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>Pas encore assez de données.</div>
+          )}
+          {serieInvite && serieInvite.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 220, overflowY: "auto" }}>
+              {serieInvite.map((p, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", padding: "2px 0", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                  <span>
+                    {new Date(p.periode).toLocaleDateString("fr-FR", granulariteInvite === "month" ? { month: "long", year: "numeric" } : { day: "2-digit", month: "2-digit", year: granulariteInvite === "week" ? "numeric" : undefined })}
+                  </span>
+                  <span>
+                    <b style={{ color: "var(--text)" }}>{p.nb_essais}</b> essai(s) · {p.adresses_uniques} unique(s)
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
           <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 6 }}>
             Adresses ayant relancé le mode essai plusieurs fois

@@ -856,3 +856,51 @@ $$;
 
 revoke all on function public.essais_invite_repetitions() from public;
 grant execute on function public.essais_invite_repetitions() to authenticated;
+
+-- v35 : complète v34 -- nombre d'adresses uniques (un essai peut être
+-- répété par la même personne, ce chiffre distingue "essais" de "visiteurs
+-- distincts") + une série temporelle jour/semaine/mois pour ModerationPage.
+-- Même garde-fou : security definer + check est_modo, comptages agrégés
+-- seulement, l'IP ne sort jamais de ces deux fonctions.
+create or replace function public.essais_invite_stats() returns table (
+  total_essais bigint,
+  adresses_uniques bigint
+) language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profils where id = auth.uid() and est_modo) then
+    raise exception 'reserve aux moderateurs';
+  end if;
+  return query
+    select count(*)::bigint, count(distinct ip)::bigint
+    from public.essais_invite;
+end;
+$$;
+
+revoke all on function public.essais_invite_stats() from public;
+grant execute on function public.essais_invite_stats() to authenticated;
+
+create or replace function public.essais_invite_serie(granularite text default 'day') returns table (
+  periode timestamptz,
+  nb_essais bigint,
+  adresses_uniques bigint
+) language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profils where id = auth.uid() and est_modo) then
+    raise exception 'reserve aux moderateurs';
+  end if;
+  if granularite not in ('day', 'week', 'month') then
+    raise exception 'granularite invalide';
+  end if;
+  return query
+    select date_trunc(granularite, cree_le) as periode,
+           count(*)::bigint as nb_essais,
+           count(distinct ip)::bigint as adresses_uniques
+    from public.essais_invite
+    group by date_trunc(granularite, cree_le)
+    order by periode desc
+    limit 60;
+end;
+$$;
+
+revoke all on function public.essais_invite_serie(text) from public;
+grant execute on function public.essais_invite_serie(text) to authenticated;

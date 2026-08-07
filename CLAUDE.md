@@ -210,12 +210,12 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     live-update the forum.
   - When changing the schema, edit `supabase-setup.sql` in place (append a new idempotent block,
     e.g. following the existing `-- v4 : ...` comment convention) and re-run it in Supabase — there
-    is no CLI/migration tooling wired up in this repo. Current up to `-- v34`.
+    is no CLI/migration tooling wired up in this repo. Current up to `-- v35`.
   - `sauvegardes_manuelles` (v29): up-to-3 named full-account snapshots per user, distinct from the
     live `sauvegardes_elevage` blob — taken on demand via the "Sauvegarder" header button
     (`creerSauvegardeManuelle` in `src/stockage.js`), oldest dropped client-side once the cap is hit.
     RLS: owner-only select/insert/delete, no update policy (snapshots are immutable once written).
-  - `essais_invite` (v32, v34): one row per click on "Essayer sans compte" (`App()`'s
+  - `essais_invite` (v32, v34, v35): one row per click on "Essayer sans compte" (`App()`'s
     `onEssayerSansCompte`) — a timestamp, used to show a guest-trial → real account conversion
     estimate in `ModerationPage`. The only table in the schema insertable by the `anon` role (every
     other insert policy requires `auth.uid()` ownership) since guest mode never authenticates the
@@ -229,7 +229,10 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     the IP is `essais_invite_repetitions()`, a `security definer` RPC (owner `postgres`, so
     unaffected by the revoke above) that internally checks `est_modo` and returns only aggregated
     counts (`nb_essais`, `premiere_fois`, `derniere_fois`) grouped by IP — the address itself is
-    never returned to any client, moderators included.
+    never returned to any client, moderators included. v35 adds two more of the same shape:
+    `essais_invite_stats()` (total essais vs distinct IPs, i.e. attempts vs actual unique visitors)
+    and `essais_invite_serie(granularite)` (day/week/month time-bucketed counts via `date_trunc`,
+    validated against an allow-list before use) — `ModerationPage`'s Jour/Semaine/Mois toggle.
 
 ## Build & deploy
 
