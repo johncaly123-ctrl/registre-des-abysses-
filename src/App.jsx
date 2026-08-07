@@ -3329,6 +3329,14 @@ function ModerationPage({ compte, enLigne }) {
     supabase.from("essais_invite").select("id", { count: "exact", head: true })
       .then(({ count }) => setEssaisInvite(count ?? 0));
   }, []);
+  // Détection d'abus (v34) : adresses ayant relancé le mode essai plusieurs
+  // fois. L'IP elle-même n'est jamais exposée par cette RPC (security
+  // definer, voir supabase-setup.sql) -- seulement des compteurs agrégés.
+  const [repetitionsInvite, setRepetitionsInvite] = useState(null);
+  useEffect(() => {
+    supabase.rpc("essais_invite_repetitions")
+      .then(({ data, error }) => setRepetitionsInvite(error ? [] : (data || [])));
+  }, []);
 
   // Signalements de bugs (table signalements_bugs, v31) : lecture reservee
   // aux moderateurs par RLS, donc aucun risque a tout charger d'un coup (pas
@@ -3424,6 +3432,28 @@ function ModerationPage({ compte, enLigne }) {
             </div>
           </div>
         )}
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 6 }}>
+            Adresses ayant relancé le mode essai plusieurs fois
+          </div>
+          {repetitionsInvite === null && <div style={{ color: "var(--muted)", fontSize: 13 }}>Chargement…</div>}
+          {repetitionsInvite && repetitionsInvite.length === 0 && (
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>Aucune répétition détectée pour l'instant.</div>
+          )}
+          {repetitionsInvite && repetitionsInvite.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {repetitionsInvite.map((r, i) => (
+                <div key={i} style={{ fontSize: 12, color: "var(--muted)" }}>
+                  🔁 <b style={{ color: "var(--text)" }}>{r.nb_essais} essais</b> depuis une même adresse, entre le{" "}
+                  {new Date(r.premiere_fois).toLocaleDateString("fr-FR")} et le {new Date(r.derniere_fois).toLocaleDateString("fr-FR")}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 11, marginTop: 6, opacity: .75 }}>
+            Compteurs uniquement — les adresses IP elles-mêmes ne sont jamais accessibles depuis l'application.
+          </div>
+        </div>
       </div>
       <div className="panel-card">
         <h3 style={{ marginTop: 0 }}>👥 Tous les membres{totalMembres !== null ? ` (${totalMembres})` : ""}</h3>

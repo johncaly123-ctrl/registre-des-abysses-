@@ -780,3 +780,79 @@ create policy "moderateur lit les essais invite" on public.essais_invite
 -- vue avec les droits de l'appelant, comme une vue normale devrait.
 alter view public.prix_communautaires_medianes set (security_invoker = true);
 alter view public.prix_communautaires_ingredients_medianes set (security_invoker = true);
+
+-- v34 : détection d'abus du mode invité (repo public -- voir la note sur la
+-- séparation stockage/lecture ci-dessous, importante justement parce que ce
+-- fichier est lisible par n'importe qui). Capture l'IP d'origine de chaque
+-- clic "Essayer sans compte" (via l'en-tête x-forwarded-for que PostgREST
+-- expose dans request.headers) pour repérer une même adresse qui relance le
+-- mode essai en boucle -- mais l'IP elle-même n'est JAMAIS exposée, y
+-- compris aux modérateurs : revoke au niveau colonne pour anon/authenticated
+-- (indépendant des policies RLS -- une ligne peut être lisible sans que la
+-- colonne `ip` le soit), et la seule façon de l'exploiter est la fonction
+-- essais_invite_repetitions() ci-dessous qui ne renvoie que des compteurs
+-- agrégés (nombre d'essais + période), jamais l'adresse. La fonction est
+-- security definer (propriétaire postgres, donc pas soumise au revoke) et
+-- vérifie elle-même est_modo, même pattern que admin_fiche_utilisateur (v27).
+alter table public.essais_invite add column if not exists ip inet;
+
+create or replace function public.essais_invite_capturer_ip() returns trigger
+language plpgsql security definer as $$
+declare
+  entete text;
+  ip_brute text;
+begin
+  begin
+    entete := current_setting('request.headers', true);
+    if entete is not null then
+      ip_brute := nullif(trim(split_part(entete::json->>'x-forwarded-for', ',', 1)), '');
+      if ip_brute is not null then
+        new.ip := ip_brute::inet;
+      end if;
+    end if;
+  exception when others then
+    new.ip := null; -- en-tête absent/format inattendu : ne bloque jamais l'insertion pour ça
+  end;
+  return new;
+end;
+$$;
+
+drop trigger if exists trig_essais_invite_capturer_ip on public.essais_invite;
+create trigger trig_essais_invite_capturer_ip
+  before insert on public.essais_invite
+  for each row execute function public.essais_invite_capturer_ip();
+
+create index if not exists idx_essais_invite_ip on public.essais_invite(ip) where ip is not null;
+
+-- IMPORTANT : un revoke au niveau colonne seul (`revoke select (ip) on ...`)
+-- n'a AUCUN effet tant qu'un grant plus large existe au niveau de la table
+-- entière (celui que Supabase pose par défaut sur tout le schéma public) --
+-- le grant table-level prime, la colonne resterait lisible. Il faut retirer
+-- l'accès à toute la table puis ne redonner que les colonnes voulues.
+-- anon n'a jamais eu besoin de lire cette table (insert seul, mode invité) :
+-- aucun select accordé du tout.
+revoke select on public.essais_invite from anon, authenticated;
+grant select (id, cree_le) on public.essais_invite to authenticated;
+
+create or replace function public.essais_invite_repetitions() returns table (
+  nb_essais bigint,
+  premiere_fois timestamptz,
+  derniere_fois timestamptz
+) language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from profils where id = auth.uid() and est_modo) then
+    raise exception 'reserve aux moderateurs';
+  end if;
+  return query
+    select count(*)::bigint, min(cree_le), max(cree_le)
+    from public.essais_invite
+    where ip is not null
+    group by ip
+    having count(*) > 1
+    order by count(*) desc
+    limit 50;
+end;
+$$;
+
+revoke all on function public.essais_invite_repetitions() from public;
+grant execute on function public.essais_invite_repetitions() to authenticated;
