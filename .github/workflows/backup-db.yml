@@ -54,6 +54,14 @@ jobs:
           echo "Contient un espace : $(echo "$DATABASE_URL" | grep -c ' ')"
           echo "Nombre de '@' : $(echo -n "$DATABASE_URL" | grep -o '@' | wc -l)"
           echo "Nombre de ':' : $(echo -n "$DATABASE_URL" | grep -o ':' | wc -l)"
+          # Format déjà validé (longueur/structure OK) au tour précédent -- on
+          # révèle ici un tout petit bout du mot de passe (3 premiers + 3
+          # derniers caractères seulement) pour le comparer visuellement à ce
+          # qui est affiché dans le dashboard Supabase, sans exposer le reste.
+          PASS_PART=$(echo "$DATABASE_URL" | sed -E 's#^postgresql://postgres\.[^:]+:([^@]+)@.*#\1#')
+          echo "Longueur du mot de passe seul : ${#PASS_PART}"
+          echo "3 premiers caractères du mot de passe : ${PASS_PART:0:3}"
+          echo "3 derniers caractères du mot de passe : ${PASS_PART: -3}"
 
       - name: Dump + compression + chiffrement
         env:
