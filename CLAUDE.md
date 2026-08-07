@@ -210,11 +210,16 @@ A cosmetic tier system rewarding donations, independent of gameplay data:
     live-update the forum.
   - When changing the schema, edit `supabase-setup.sql` in place (append a new idempotent block,
     e.g. following the existing `-- v4 : ...` comment convention) and re-run it in Supabase — there
-    is no CLI/migration tooling wired up in this repo. Current up to `-- v31`.
+    is no CLI/migration tooling wired up in this repo. Current up to `-- v32`.
   - `sauvegardes_manuelles` (v29): up-to-3 named full-account snapshots per user, distinct from the
     live `sauvegardes_elevage` blob — taken on demand via the "Sauvegarder" header button
     (`creerSauvegardeManuelle` in `src/stockage.js`), oldest dropped client-side once the cap is hit.
     RLS: owner-only select/insert/delete, no update policy (snapshots are immutable once written).
+  - `essais_invite` (v32): one row per click on "Essayer sans compte" (`App()`'s
+    `onEssayerSansCompte`) — no personal data, just a timestamp, used to show a guest-trial → real
+    account conversion estimate in `ModerationPage`. The only table in the schema insertable by the
+    `anon` role (every other insert policy requires `auth.uid()` ownership) since guest mode never
+    authenticates the caller by design; read restricted to `est_modo` like `signalements_bugs`.
 
 ## Build & deploy
 

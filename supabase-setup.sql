@@ -745,3 +745,27 @@ create policy "moderateur traite les signalements" on public.signalements_bugs
 
 create index if not exists idx_signalements_bugs_cree_le
   on public.signalements_bugs(cree_le desc);
+
+-- v32 : compteur anonyme des essais "mode invite" (bouton "Essayer sans
+-- compte" du portail de connexion), pour mesurer combien de visiteurs
+-- testent le site sans jamais creer de compte -- affiche dans ModerationPage
+-- (App.jsx) a cote du nombre total de comptes crees (table profils). Aucune
+-- donnee personnelle : une ligne = un clic, rien d'autre. L'insertion doit
+-- fonctionner sans session (le mode invite n'authentifie jamais l'appelant,
+-- voir le commentaire sur modeInvite dans App()) -- role "anon" autorise en
+-- ecriture seule ; la lecture reste reservee aux moderateurs, meme pattern
+-- que signalements_bugs ci-dessus.
+create table if not exists public.essais_invite (
+  id bigint generated always as identity primary key,
+  cree_le timestamptz not null default now()
+);
+
+alter table public.essais_invite enable row level security;
+
+drop policy if exists "essai invite anonyme" on public.essais_invite;
+create policy "essai invite anonyme" on public.essais_invite
+  for insert to anon, authenticated with check (true);
+
+drop policy if exists "moderateur lit les essais invite" on public.essais_invite;
+create policy "moderateur lit les essais invite" on public.essais_invite
+  for select using (exists (select 1 from profils where id = auth.uid() and est_modo));

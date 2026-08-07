@@ -151,7 +151,19 @@ export default function App() {
   }
 
   if (!compte.session && !modeInvite) {
-    return <PortailConnexion compte={compte} parrainCapture={parrainCapture} onEssayerSansCompte={() => setModeInvite(true)} />;
+    return (
+      <PortailConnexion
+        compte={compte}
+        parrainCapture={parrainCapture}
+        onEssayerSansCompte={() => {
+          // Compteur anonyme (table essais_invite, v32) pour estimer le taux
+          // de conversion essai -> vrai compte dans ModerationPage — best
+          // effort, on n'attend pas la réponse et on ignore les échecs.
+          if (supabase) supabase.from("essais_invite").insert({}).then(() => {}, () => {});
+          setModeInvite(true);
+        }}
+      />
+    );
   }
 
   // Invité : aucune sauvegarde à remonter (utilisateurActuel reste null côté
@@ -3297,6 +3309,27 @@ function ModerationPage({ compte, enLigne }) {
 
   const [profilCible, setProfilCible] = useState(null);
 
+  // Liste complète des membres (paginée) + compteur d'essais "mode invité"
+  // (table essais_invite, v32) pour estimer le taux de conversion essai ->
+  // vrai compte. totalMembres sert aux deux (nombre total de comptes créés).
+  const TAILLE_PAGE_MEMBRES = 30;
+  const [pageMembres, setPageMembres] = useState(0);
+  const [membres, setMembres] = useState(null);
+  const [totalMembres, setTotalMembres] = useState(null);
+  useEffect(() => {
+    let annule = false;
+    const debut = pageMembres * TAILLE_PAGE_MEMBRES;
+    supabase.from("profils").select("id, pseudo, style_ailes, niveau_ailes, serveur, cree_le", { count: "exact" })
+      .order("cree_le", { ascending: false }).range(debut, debut + TAILLE_PAGE_MEMBRES - 1)
+      .then(({ data, count }) => { if (!annule) { setMembres(data || []); setTotalMembres(count ?? null); } });
+    return () => { annule = true; };
+  }, [pageMembres]);
+  const [essaisInvite, setEssaisInvite] = useState(null);
+  useEffect(() => {
+    supabase.from("essais_invite").select("id", { count: "exact", head: true })
+      .then(({ count }) => setEssaisInvite(count ?? 0));
+  }, []);
+
   // Signalements de bugs (table signalements_bugs, v31) : lecture reservee
   // aux moderateurs par RLS, donc aucun risque a tout charger d'un coup (pas
   // de pagination pour un volume qui reste faible en pratique).
@@ -3357,7 +3390,7 @@ function ModerationPage({ compte, enLigne }) {
           ))}
         </div>
       </div>
-      <div className="panel-card">
+      <div className="panel-card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>🔍 Rechercher un éleveur</h3>
         <input className="field" placeholder="Pseudo (2 caractères min.)…" value={recherche} onChange={(e) => setRecherche(e.target.value)} style={{ width: "100%", marginBottom: 10 }} />
         {chargement && <div style={{ color: "var(--muted)", fontSize: 12 }}>Recherche…</div>}
@@ -3372,6 +3405,64 @@ function ModerationPage({ compte, enLigne }) {
             {p.serveur && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {p.serveur}</span>}
           </div>
         ))}
+      </div>
+      <div className="panel-card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>📊 Essai → compte</h3>
+        {essaisInvite === null || totalMembres === null ? (
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>Chargement…</div>
+        ) : (
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>
+            <b style={{ color: "var(--text)" }}>{essaisInvite}</b> essai(s) sans compte ·{" "}
+            <b style={{ color: "var(--text)" }}>{totalMembres}</b> compte(s) créé(s) au total
+            {essaisInvite > 0 && (
+              <> ·{" "}
+                <b style={{ color: "var(--gold2)" }}>{Math.round((totalMembres / essaisInvite) * 100)}%</b> de conversion estimée
+              </>
+            )}
+            <div style={{ fontSize: 11, marginTop: 4, opacity: .75 }}>
+              Estimation approximative : certains comptes sont créés sans jamais passer par le mode essai.
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="panel-card">
+        <h3 style={{ marginTop: 0 }}>👥 Tous les membres{totalMembres !== null ? ` (${totalMembres})` : ""}</h3>
+        {membres === null && <div style={{ color: "var(--muted)", fontSize: 13 }}>Chargement…</div>}
+        {membres && membres.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>Aucun membre.</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 8 }}>
+          {membres?.map((p) => (
+            <div
+              key={p.id}
+              className="row-item"
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "7px 8px", cursor: "pointer", borderRadius: 8, borderBottom: "1px solid rgba(255,255,255,.05)" }}
+              onClick={() => setProfilCible(p)}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <PseudoAvecAiles pseudo={p.pseudo} soutien={p.niveau_ailes > 0} styleAiles={p.style_ailes} niveau={p.niveau_ailes} taille={26} />
+                {p.serveur && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {p.serveur}</span>}
+              </div>
+              <span style={{ fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>
+                {p.cree_le ? new Date(p.cree_le).toLocaleDateString("fr-FR") : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+          <button className="btn btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={pageMembres === 0} onClick={() => setPageMembres((p) => Math.max(0, p - 1))}>
+            ← Précédent
+          </button>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            Page {pageMembres + 1}{totalMembres !== null ? ` / ${Math.max(1, Math.ceil(totalMembres / TAILLE_PAGE_MEMBRES))}` : ""}
+          </span>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: "5px 10px", fontSize: 12 }}
+            disabled={totalMembres !== null && (pageMembres + 1) * TAILLE_PAGE_MEMBRES >= totalMembres}
+            onClick={() => setPageMembres((p) => p + 1)}
+          >
+            Suivant →
+          </button>
+        </div>
       </div>
       {profilCible && (
         <ProfilPublicModal
