@@ -1097,7 +1097,7 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
               <ParrainagePanel session={compte.session} pseudo={compte.profil?.pseudo} showToast={showToast} />
               <MemoElevagePanel />
               <CorbeillePanel corbeille={eleveMuldo.corbeille} onRestaurer={eleveMuldo.restaurerMuldo} onPurger={eleveMuldo.purgerCorbeilleEntree} onVider={eleveMuldo.viderCorbeille} dureeJours={CORBEILLE_DUREE_JOURS} />
-              <SauvegardePanel showToast={showToast} />
+              <SauvegardePanel showToast={showToast} estInvite={estInvite} />
             </>
           )}
 
@@ -3892,7 +3892,7 @@ function detecterDonneesLocalesHeritees() {
   };
 }
 
-function SauvegardePanel({ showToast }) {
+function SauvegardePanel({ showToast, estInvite }) {
   const exporter = async () => {
     await flushToutesEcrituresDebattues();
     const donnees = obtenirCacheComplet();
@@ -3913,6 +3913,11 @@ function SauvegardePanel({ showToast }) {
     const fichier = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!fichier) return;
+    // Le rechargement en fin d'import re-hydrate depuis le compte Supabase ;
+    // en mode invité rien n'est persisté (voir le commentaire sur modeInvite
+    // dans App()), donc ce rechargement renverrait vers l'écran de connexion
+    // et perdrait silencieusement les données tout juste importées.
+    if (estInvite) { showToast("Connecte-toi ou crée un compte pour importer une sauvegarde."); return; }
     const lecteur = new FileReader();
     lecteur.onload = async () => {
       try {
@@ -3957,15 +3962,20 @@ function SauvegardePanel({ showToast }) {
         <div>
           <b>Sauvegarde</b>
           <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-            Tout est enregistré sur ton compte : exporte régulièrement un fichier JSON en plus
-            (cheptel, généalogies, naissances, journal, prix, scans). L'import restaure tout et recharge la page.
+            {estInvite
+              ? "Mode essai : rien n'est enregistré sur un compte. Exporte un fichier JSON avant de fermer la page pour ne rien perdre — tu pourras l'importer après avoir créé un compte."
+              : "Tout est enregistré sur ton compte : exporte régulièrement un fichier JSON en plus (cheptel, généalogies, naissances, journal, prix, scans). L'import restaure tout et recharge la page."}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-coral" onClick={exporter}>Exporter</button>
-          <label className="btn btn-ghost" style={{ cursor: "pointer" }}>
+          <label
+            className="btn btn-ghost"
+            style={{ cursor: estInvite ? "not-allowed" : "pointer", opacity: estInvite ? 0.5 : 1 }}
+            title={estInvite ? "Connecte-toi ou crée un compte pour importer une sauvegarde." : undefined}
+          >
             Importer…
-            <input type="file" accept="application/json,.json" onChange={importer} style={{ display: "none" }} />
+            <input type="file" accept="application/json,.json" disabled={estInvite} onChange={importer} style={{ display: "none" }} />
           </label>
         </div>
       </div>
