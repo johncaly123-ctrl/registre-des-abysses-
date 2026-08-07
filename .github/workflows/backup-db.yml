@@ -39,30 +39,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
 
-      # Étape temporaire de diagnostic (à retirer une fois SUPABASE_DB_URL
-      # validé) : vérifie la FORME du secret sans jamais l'afficher, pour
-      # débusquer un espace/retour-ligne collé par erreur ou un mauvais
-      # format sans avoir à deviner à l'aveugle.
-      - name: Debug format SUPABASE_DB_URL (ne révèle pas le secret)
-        env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          echo "Longueur totale : ${#DATABASE_URL}"
-          echo "Commence par 'postgresql://' : $(echo "$DATABASE_URL" | grep -c '^postgresql://')"
-          echo "Contient '.fcdculpkrcuhtexmqojz' : $(echo "$DATABASE_URL" | grep -c 'fcdculpkrcuhtexmqojz')"
-          echo "Contient 'pooler.supabase.com' : $(echo "$DATABASE_URL" | grep -c 'pooler.supabase.com')"
-          echo "Contient un espace : $(echo "$DATABASE_URL" | grep -c ' ')"
-          echo "Nombre de '@' : $(echo -n "$DATABASE_URL" | grep -o '@' | wc -l)"
-          echo "Nombre de ':' : $(echo -n "$DATABASE_URL" | grep -o ':' | wc -l)"
-          # Format déjà validé (longueur/structure OK) au tour précédent -- on
-          # révèle ici un tout petit bout du mot de passe (3 premiers + 3
-          # derniers caractères seulement) pour le comparer visuellement à ce
-          # qui est affiché dans le dashboard Supabase, sans exposer le reste.
-          PASS_PART=$(echo "$DATABASE_URL" | sed -E 's#^postgresql://postgres\.[^:]+:([^@]+)@.*#\1#')
-          echo "Longueur du mot de passe seul : ${#PASS_PART}"
-          echo "3 premiers caractères du mot de passe : ${PASS_PART:0:3}"
-          echo "3 derniers caractères du mot de passe : ${PASS_PART: -3}"
-
       - name: Dump + compression + chiffrement
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -70,7 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           DATE=$(date -u +%F)
-          pg_dump "$DATABASE_URL" --no-owner --no-privileges \
+          # Chemin complet plutôt que "pg_dump" nu : Ubuntu a déjà un
+          # pg_dump v16 dans le PATH par défaut, qui passerait avant celui
+          # qu'on vient d'installer (v17, requis par le serveur Supabase).
+          /usr/lib/postgresql/17/bin/pg_dump "$DATABASE_URL" --no-owner --no-privileges \
             | gzip -9 \
             | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$PASSPHRASE" -o "backup-${DATE}.sql.gz.gpg"
           echo "DATE=${DATE}" >> "$GITHUB_ENV"
