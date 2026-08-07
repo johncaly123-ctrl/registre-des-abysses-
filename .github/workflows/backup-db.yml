@@ -1,0 +1,62 @@
+name: Sauvegarde quotidienne de la base
+
+# Dump complet de la base Postgres Supabase (schémas public + auth, donc
+# tous les comptes/emails/cheptels/forum/dons), chiffré puis envoyé vers un
+# bucket Cloudflare R2 dédié (10 Go gratuits, même compte que Cloudflare
+# Pages). Un lifecycle rule côté R2 (à configurer une fois dans le dashboard,
+# voir BACKUPS.md) purge automatiquement les fichiers de plus de 30 jours —
+# rien à gérer côté workflow pour la rétention.
+#
+# Secrets requis (Settings > Secrets and variables > Actions) :
+#   SUPABASE_DB_URL         connexion Session Pooler (port 5432) avec le mot
+#                            de passe de la base (Dashboard Supabase >
+#                            Project Settings > Database)
+#   BACKUP_GPG_PASSPHRASE   passphrase de chiffrement, à conserver ailleurs
+#                            (mot de passe perdu = sauvegardes illisibles)
+#   R2_ACCESS_KEY_ID        token API R2 (Cloudflare > R2 > Manage R2 API
+#   R2_SECRET_ACCESS_KEY     Tokens), droits Object Read & Write sur le bucket
+#   R2_BUCKET_NAME           nom du bucket R2 dédié aux sauvegardes
+# CLOUDFLARE_ACCOUNT_ID est déjà défini (utilisé par le déploiement Pages).
+#
+# Voir BACKUPS.md pour la mise en place complète et la procédure de restauration.
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC chaque jour (heure creuse)
+  workflow_dispatch: {} # bouton "Run workflow" manuel dans l'onglet Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installe postgresql-client 17 (aligné sur la version Supabase)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget ca-certificates gnupg lsb-release
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo wget -qO /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump + compression + chiffrement
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%F)
+          pg_dump "$DATABASE_URL" --no-owner --no-privileges \
+            | gzip -9 \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$PASSPHRASE" -o "backup-${DATE}.sql.gz.gpg"
+          echo "DATE=${DATE}" >> "$GITHUB_ENV"
+
+      - name: Envoi vers Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp "backup-${DATE}.sql.gz.gpg" \
+            "s3://${{ secrets.R2_BUCKET_NAME }}/backup-${DATE}.sql.gz.gpg" \
+            --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
