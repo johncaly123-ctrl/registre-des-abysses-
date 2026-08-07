@@ -39,6 +39,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
 
+      # Étape temporaire de diagnostic (à retirer une fois SUPABASE_DB_URL
+      # validé) : vérifie la FORME du secret sans jamais l'afficher, pour
+      # débusquer un espace/retour-ligne collé par erreur ou un mauvais
+      # format sans avoir à deviner à l'aveugle.
+      - name: Debug format SUPABASE_DB_URL (ne révèle pas le secret)
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "Longueur totale : ${#DATABASE_URL}"
+          echo "Commence par 'postgresql://' : $(echo "$DATABASE_URL" | grep -c '^postgresql://')"
+          echo "Contient '.fcdculpkrcuhtexmqojz' : $(echo "$DATABASE_URL" | grep -c 'fcdculpkrcuhtexmqojz')"
+          echo "Contient 'pooler.supabase.com' : $(echo "$DATABASE_URL" | grep -c 'pooler.supabase.com')"
+          echo "Contient un espace : $(echo "$DATABASE_URL" | grep -c ' ')"
+          echo "Nombre de '@' : $(echo -n "$DATABASE_URL" | grep -o '@' | wc -l)"
+          echo "Nombre de ':' : $(echo -n "$DATABASE_URL" | grep -o ':' | wc -l)"
+
       - name: Dump + compression + chiffrement
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
