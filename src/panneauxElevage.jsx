@@ -1929,7 +1929,7 @@ export function BarreEmpilee({ segments, hauteur = 14 }) {
 // derniers jours, courbe d'évolution sur les instantanés quotidiens. Reçoit
 // generationDeCouleurFn/sexeFn/reproductibleFn en props (comme GpsDofusPage)
 // plutôt que d'importer un moteur de créature précis.
-export function GraphiquesPanel({ cheptel, journal, instantanes, generationDeCouleurFn, sexeFn, reproductibleFn, nomEntitePluriel = "Muldos" }) {
+export function GraphiquesPanel({ cheptel, journal, instantanes, generationDeCouleurFn, sexeFn, reproductibleFn, nomEntitePluriel = "Muldos", selecteur }) {
   const parGeneration = new Map();
   (cheptel || []).forEach((m) => {
     const g = generationDeCouleurFn(m.couleur);
@@ -1992,8 +1992,11 @@ export function GraphiquesPanel({ cheptel, journal, instantanes, generationDeCou
 
   return (
     <div className="panel-card" style={{ marginTop: 16 }}>
-      <h2 style={{ marginTop: 0 }}>Progression</h2>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0 }}>Progression</h2>
+        {selecteur}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 24, marginTop: 12 }}>
 
         <div style={{ flex: "1 1 260px", minWidth: 240 }}>
           <div style={{ color: "var(--gold)", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>Cheptel par génération</div>

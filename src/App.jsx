@@ -692,6 +692,9 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
   const [sousPage, setSousPage] = useState("cheptel");
   // Créature affichée sur la page Succès (elle regroupe les 3 sous un seul onglet).
   const [succesCreature, setSuccesCreature] = useState("muldo");
+  // Créature affichée dans le bloc Progression du Dashboard (qui ne montrait
+  // que Muldo jusqu'ici) — même principe que succesCreature ci-dessus.
+  const [creatureDashboard, setCreatureDashboard] = useState("muldo");
   // Serveur Dofus de l'éleveur — choisi tout en haut de page (en-tête),
   // partagé par les 3 créatures pour les prix communautaires. Fait partie de
   // la sauvegarde du compte comme le reste (plus de double-écriture séparée
@@ -1083,7 +1086,20 @@ function AppConnecte({ compte, parrainCapture, theme, setTheme, onQuitterInvite 
                   Ouvrir le simulateur
                 </button>
               </div>
-              <GraphiquesPanel cheptel={eleveMuldo.cheptel} journal={eleveMuldo.journal} instantanes={eleveMuldo.instantanes} generationDeCouleurFn={generationDeCouleur} sexeFn={sexeMuldo} reproductibleFn={muldoReproductible} />
+              <GraphiquesPanel
+                {...{
+                  muldo: { cheptel: eleveMuldo.cheptel, journal: eleveMuldo.journal, instantanes: eleveMuldo.instantanes, generationDeCouleurFn: generationDeCouleur, sexeFn: sexeMuldo, reproductibleFn: muldoReproductible, nomEntitePluriel: "Muldos" },
+                  dragodinde: { cheptel: eleveDragodinde.cheptel, journal: eleveDragodinde.journal, instantanes: eleveDragodinde.instantanes, generationDeCouleurFn: generationDeCouleurDragodinde, sexeFn: sexeDragodinde, reproductibleFn: dragodindeReproductible, nomEntitePluriel: "Dragodindes" },
+                  volkorne: { cheptel: eleveVolkorne.cheptel, journal: eleveVolkorne.journal, instantanes: eleveVolkorne.instantanes, generationDeCouleurFn: generationDeCouleurVolkorne, sexeFn: sexeVolkorne, reproductibleFn: volkorneReproductible, nomEntitePluriel: "Volkornes" },
+                }[creatureDashboard]}
+                selecteur={
+                  <select className="field" value={creatureDashboard} onChange={(e) => setCreatureDashboard(e.target.value)} style={{ padding: "6px 10px", fontSize: 12 }}>
+                    <option value="muldo">🐴 Muldo</option>
+                    <option value="dragodinde">🐲 Dragodinde</option>
+                    <option value="volkorne">🐎 Volkorne</option>
+                  </select>
+                }
+              />
               <EstimationKamasSelecteur cheptelMuldo={eleveMuldo.cheptel} cheptelDragodinde={eleveDragodinde.cheptel} cheptelVolkorne={eleveVolkorne.cheptel} userId={compte.session?.user?.id} serveur={serveur} />
               <PartagePublicPanel
                 session={compte.session}
